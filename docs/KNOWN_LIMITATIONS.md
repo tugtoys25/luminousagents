@@ -1,0 +1,3 @@
+# Known limitations and external gates
+
+This archive is source implementation, not proof of release readiness. Live tests, dependency install, typecheck/lint, real Cloudflare staging, scanner provider integration, backups and restore, performance/accessibility tests, legal approval and review of 198 imported records remain outstanding. The build environment could not download pnpm; no lockfile is fabricated. Configure a real scanner adapter implementing the contract in `docs/FINAL_SPRINT.md`. Create Cloudflare dead-letter queues before deployment. Confirm the queue consumer's retry/DLQ behavior in staging. Legal text must be approved by counsel. Keep all unreviewed legacy records non-public.

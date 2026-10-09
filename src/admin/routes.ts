@@ -1,0 +1,1705 @@
+import { Hono } from 'hono';
+import type { Context } from 'hono';
+import { z } from 'zod';
+import type { Env } from '../env';
+import { staffAuth, requireRole, type StaffIdentity } from '../auth/cloudflare-access';
+import { slugify } from '../domain/opportunities/slug';
+import { scanR2Document, ScannerError } from '../security/malware-scanner';
+
+const admin = new Hono<{ Bindings: Env; Variables: { requestId: string; staff: StaffIdentity } }>();
+admin.use('*', staffAuth());
+const editorRoles = ['admin', 'editor', 'broker', 'super_admin'];
+const publisherRoles = ['admin', 'publisher', 'super_admin'];
+const opportunityInput = z.object({
+  title: z.string().trim().min(3).max(180),
+  country: z.string().trim().max(100).optional().default(''),
+  opportunityType: z
+    .enum(['casino-hotel', 'casino', 'hotel', 'resort', 'gaming-venue', 'other'])
+    .default('casino-hotel'),
+  priceText: z.string().trim().max(180).optional().default(''),
+  summary: z.string().trim().max(1000).optional().default(''),
+  bodyHtml: z.string().max(20000).optional().default(''),
+  availability: z.string().trim().max(300).optional().default(''),
+  seoTitle: z.string().trim().max(180).optional().default(''),
+  seoDescription: z.string().trim().max(320).optional().default(''),
+  assignedBrokerId: z.string().uuid().nullable().optional(),
+});
+const publicationInput = z.object({
+  lifecycle: z.enum([
+    'draft',
+    'in_review',
+    'published',
+    'on_hold',
+    'under_offer',
+    'sold',
+    'off_market',
+    'archived',
+  ]),
+  publicVisibility: z.boolean(),
+  changeReason: z.string().trim().min(3).max(500),
+});
+const now = () => new Date().toISOString();
+const id = () => crypto.randomUUID();
+
+async function purgeOpportunityPublicCache(
+  env: Env,
+  slug: string,
+  country?: string | null,
+): Promise<{ configured: boolean; purged: boolean }> {
+  if (!env.CLOUDFLARE_ZONE_ID || !env.CLOUDFLARE_CACHE_PURGE_TOKEN || !env.PUBLIC_BASE_URL)
+    return { configured: false, purged: false };
+  const base = env.PUBLIC_BASE_URL.replace(/\/$/, '');
+  const urls = new Set([
+    `${base}/`,
+    `${base}/casinos-for-sale`,
+    `${base}/casino-hotels`,
+    `${base}/archive`,
+    `${base}/sitemap.xml`,
+    `${base}/opportunities/${encodeURIComponent(slug)}`,
+  ]);
+  if (country) urls.add(`${base}/casinos-for-sale/${encodeURIComponent(slugify(country))}`);
+  try {
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${encodeURIComponent(env.CLOUDFLARE_ZONE_ID)}/purge_cache`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.CLOUDFLARE_CACHE_PURGE_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ files: [...urls] }),
+        signal: AbortSignal.timeout(5000),
+      },
+    );
+    if (!response.ok) return { configured: true, purged: false };
+    const result = (await response.json().catch(() => null)) as { success?: boolean } | null;
+    return { configured: true, purged: result?.success === true };
+  } catch {
+    return { configured: true, purged: false };
+  }
+}
+
+function hasExpectedFileSignature(contentType: string, bytes: Uint8Array): boolean {
+  const starts = (...signature: number[]) =>
+    signature.every((value, index) => bytes[index] === value);
+  if (contentType === 'application/pdf')
+    return bytes.length >= 5 && new TextDecoder().decode(bytes.slice(0, 5)) === '%PDF-';
+  if (contentType === 'image/jpeg') return starts(0xff, 0xd8, 0xff);
+  if (contentType === 'image/png') return starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+  // DOCX and XLSX are ZIP containers. This checks the container signature, not its internal structure or safety.
+  if (
+    contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  )
+    return (
+      starts(0x50, 0x4b, 0x03, 0x04) ||
+      starts(0x50, 0x4b, 0x05, 0x06) ||
+      starts(0x50, 0x4b, 0x07, 0x08)
+    );
+  return false;
+}
+
+async function audit(
+  c: Context<{ Bindings: Env; Variables: { requestId: string; staff: StaffIdentity } }>,
+  action: string,
+  entityType: string,
+  entityId: string,
+  details: Record<string, unknown> = {},
+) {
+  const staff = c.get('staff');
+  await c.env.DB.prepare(
+    'INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  )
+    .bind(
+      id(),
+      staff.id,
+      'staff',
+      action,
+      entityType,
+      entityId,
+      c.get('requestId'),
+      JSON.stringify(details),
+      now(),
+    )
+    .run();
+}
+
+admin.get('/', async (c) => {
+  const staff = c.get('staff');
+  const brokerOnly = staff.role === 'broker' ? 1 : 0;
+  const [counts, pending, recent] = await Promise.all([
+    c.env.DB.prepare(
+      "SELECT COUNT(*) AS total, SUM(CASE WHEN content_review_status = 'pending' THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN lifecycle = 'published' AND public_visibility = 1 AND content_review_status = 'approved' THEN 1 ELSE 0 END) AS published FROM opportunities WHERE (? = 0 OR assigned_broker_id = ?)",
+    )
+      .bind(brokerOnly, staff.id)
+      .first<{ total: number; pending: number; published: number }>(),
+    c.env.DB.prepare(
+      "SELECT id, title, country, legacy_status AS legacyStatus, updated_at AS updatedAt FROM opportunities WHERE content_review_status = 'pending' AND (? = 0 OR assigned_broker_id = ?) ORDER BY updated_at DESC LIMIT 8",
+    )
+      .bind(brokerOnly, staff.id)
+      .all(),
+    c.env.DB.prepare(
+      'SELECT id, title, country, lifecycle, content_review_status AS reviewStatus, updated_at AS updatedAt FROM opportunities WHERE (? = 0 OR assigned_broker_id = ?) ORDER BY updated_at DESC LIMIT 10',
+    )
+      .bind(brokerOnly, staff.id)
+      .all(),
+  ]);
+  const escape = (s: unknown) =>
+    String(s ?? '').replace(
+      /[&<>"']/g,
+      (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!,
+    );
+  const rows = (recent.results ?? [])
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      return `<tr><td>${escape(row.title)}</td><td>${escape(row.country || '—')}</td><td>${escape(row.lifecycle)}</td><td>${escape(row.reviewStatus)}</td><td><a href="/dashboard/opportunities/ui?selected=${encodeURIComponent(String(row.id))}">Open</a></td></tr>`;
+    })
+    .join('');
+  const pendingRows = (pending.results ?? [])
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      return `<li><a href="/dashboard/opportunities/ui?selected=${encodeURIComponent(String(row.id))}">${escape(row.title)}</a> <span>${escape(row.country || 'Country not set')}</span></li>`;
+    })
+    .join('');
+  return c.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff dashboard · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform dashboard</h1><p class="muted">Signed in as ${escape(staff.displayName || staff.email)} · ${escape(staff.role)}</p><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries">Enquiries</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/nda-templates/ui">NDA templates</a><a href="/dashboard/audit">Audit log</a><a href="/">View public site</a></nav><section class="metric-grid"><div class="metric"><span class="muted">Total records</span><strong>${counts?.total ?? 0}</strong></div><div class="metric"><span class="muted">Awaiting review</span><strong>${counts?.pending ?? 0}</strong></div><div class="metric"><span class="muted">Published & approved</span><strong>${counts?.published ?? 0}</strong></div></section><h2>Needs content review</h2><ul>${pendingRows || '<li>No records awaiting review.</li>'}</ul><h2>Recently updated opportunities</h2><div class="overflow-x-auto"><table><thead><tr><th>Title</th><th>Country</th><th>Lifecycle</th><th>Review</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No records yet.</td></tr>'}</tbody></table></div></main></body></html>`,
+  );
+});
+
+admin.get(
+  '/brokers',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
+  async (c) => {
+    const result = await c.env.DB.prepare(
+      "SELECT id, display_name AS displayName, email FROM users WHERE user_type = 'staff' AND status = 'active' AND role = 'broker' ORDER BY display_name COLLATE NOCASE",
+    ).all();
+    return c.json({ data: result.results ?? [] });
+  },
+);
+
+admin.get(
+  '/opportunities/ui',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
+  async (c) =>
+    c.html(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opportunity CMS · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Opportunity CMS</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/nda-requests/ui">NDA requests</a></nav><p class="muted">All legacy records start private. Approval and publication are separate actions.</p><div class="cms-layout"><section><label>Search <input id="cms-search" maxlength="100"></label> <label>Review <select id="cms-review"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="">All</option></select></label><button id="cms-refresh" type="button">Refresh</button><ul id="cms-list" class="cms-list" aria-live="polite">Loading…</ul></section><section class="cms-editor"><h2 id="cms-form-title">Create opportunity</h2><form id="cms-form"><input type="hidden" name="id"><label>Title <input name="title" minlength="3" maxlength="180" required></label><label>Country <input name="country" maxlength="100"></label><label>Assigned broker <select name="assignedBrokerId"><option value="">Unassigned</option></select></label><label>Type <select name="opportunityType"><option value="casino-hotel">Casino & hotel</option><option value="casino">Casino</option><option value="hotel">Hotel</option><option value="resort">Resort</option><option value="gaming-venue">Gaming venue</option><option value="other">Other</option></select></label><label>Price text <input name="priceText" maxlength="180"></label><label>Summary <textarea name="summary" maxlength="1000"></textarea></label><label>Availability <input name="availability" maxlength="300"></label><label>SEO title <input name="seoTitle" maxlength="180"></label><label>SEO description <textarea name="seoDescription" maxlength="320"></textarea></label><label>Body HTML (staff-only editing; sanitisation review required) <textarea name="bodyHtml" maxlength="20000"></textarea></label><button type="submit">Save draft</button><button id="cms-new" type="button">New</button></form><div id="cms-review-actions" hidden><h3>Review & publication</h3><label>Reason <textarea id="cms-reason" minlength="3" maxlength="500"></textarea></label><button id="cms-approve" type="button">Approve content</button><button id="cms-reject" type="button">Reject content</button><label><input id="cms-publish" type="checkbox"> Make public after approval (only after authority, accuracy and rights checks)</label><button id="cms-publish-button" type="button">Publish approved record</button></div><p id="cms-notice" role="status" aria-live="polite"></p></section></div></main><script src="/static/js/dashboard-opportunities.js" defer></script></body></html>`,
+    ),
+);
+
+admin.get('/opportunities', async (c) => {
+  const q = c.req.query('q')?.trim().slice(0, 100) ?? '';
+  const status = c.req.query('review') ?? '';
+  const validStatus = ['pending', 'approved', 'rejected'].includes(status) ? status : '';
+  const staff = c.get('staff');
+  const brokerOnly = staff.role === 'broker' ? 1 : 0;
+  const result = await c.env.DB.prepare(
+    `SELECT id, title, country, lifecycle, content_review_status AS reviewStatus, public_visibility AS publicVisibility, assigned_broker_id AS assignedBrokerId, updated_at AS updatedAt FROM opportunities WHERE (? = '' OR title LIKE ? OR country LIKE ?) AND (? = '' OR content_review_status = ?) AND (? = 0 OR assigned_broker_id = ?) ORDER BY updated_at DESC LIMIT 100`,
+  )
+    .bind(q, `%${q}%`, `%${q}%`, validStatus, validStatus, brokerOnly, staff.id)
+    .all();
+  return c.json({ data: result.results ?? [], limit: 100 });
+});
+
+admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
+  const parsed = opportunityInput.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Check the opportunity fields.',
+          fields: parsed.error.flatten().fieldErrors,
+        },
+      },
+      422,
+    );
+  const input = parsed.data;
+  const opportunityId = id();
+  const timestamp = now();
+  const assignedBrokerId =
+    input.assignedBrokerId ?? (c.get('staff').role === 'broker' ? c.get('staff').id : null);
+  if (c.get('staff').role === 'broker' && assignedBrokerId !== c.get('staff').id)
+    return c.json(
+      {
+        error: { code: 'FORBIDDEN', message: 'Brokers can only assign new records to themselves.' },
+      },
+      403,
+    );
+  if (assignedBrokerId && !['admin', 'super_admin', 'broker'].includes(c.get('staff').role))
+    return c.json(
+      {
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Only administrators can assign an opportunity to a broker.',
+        },
+      },
+      403,
+    );
+  if (assignedBrokerId) {
+    const broker = await c.env.DB.prepare(
+      "SELECT id FROM users WHERE id = ? AND user_type = 'staff' AND role = 'broker' AND status = 'active'",
+    )
+      .bind(assignedBrokerId)
+      .first();
+    if (!broker)
+      return c.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Assigned broker must be an active broker account.',
+          },
+        },
+        422,
+      );
+  }
+  let slug = slugify(input.title);
+  const collision = await c.env.DB.prepare('SELECT 1 AS found FROM opportunities WHERE slug = ?')
+    .bind(slug)
+    .first();
+  if (collision) slug = `${slug}-${opportunityId.slice(0, 8)}`;
+  const record = {
+    id: opportunityId,
+    slug,
+    title: input.title,
+    country: input.country,
+    opportunityType: input.opportunityType,
+    priceText: input.priceText,
+    lifecycle: 'draft',
+    contentReviewStatus: 'pending',
+    summary: input.summary,
+    bodyHtml: input.bodyHtml,
+    availability: input.availability,
+    publicVisibility: 0,
+    seoTitle: input.seoTitle,
+    seoDescription: input.seoDescription,
+    assignedBrokerId,
+  };
+  await c.env.DB.prepare(
+    "INSERT INTO opportunities (id, slug, title, country, opportunity_type, price_text, lifecycle, content_review_status, summary, body_html, availability, public_visibility, seo_title, seo_description, assigned_broker_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'draft', 'pending', ?, ?, ?, 0, ?, ?, ?, ?, ?)",
+  )
+    .bind(
+      opportunityId,
+      slug,
+      input.title,
+      input.country,
+      input.opportunityType,
+      input.priceText,
+      input.summary,
+      input.bodyHtml,
+      input.availability,
+      input.seoTitle,
+      input.seoDescription,
+      assignedBrokerId,
+      timestamp,
+      timestamp,
+    )
+    .run();
+  await c.env.DB.prepare(
+    'INSERT INTO opportunity_versions (id, opportunity_id, version_number, snapshot_json, changed_by, change_reason, created_at) VALUES (?, ?, 1, ?, ?, ?, ?)',
+  )
+    .bind(
+      id(),
+      opportunityId,
+      JSON.stringify(record),
+      c.get('staff').id,
+      'Initial creation',
+      timestamp,
+    )
+    .run();
+  await audit(c, 'opportunity.created', 'opportunity', opportunityId, { slug });
+  return c.json(
+    { data: { id: opportunityId, slug, lifecycle: 'draft', contentReviewStatus: 'pending' } },
+    201,
+  );
+});
+
+admin.get('/opportunities/:id', async (c) => {
+  const staff = c.get('staff');
+  const brokerOnly = staff.role === 'broker' ? 1 : 0;
+  const row = await c.env.DB.prepare(
+    'SELECT * FROM opportunities WHERE id = ? AND (? = 0 OR assigned_broker_id = ?)',
+  )
+    .bind(c.req.param('id'), brokerOnly, staff.id)
+    .first<Record<string, unknown>>();
+  if (!row) return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
+  return c.json({ data: row });
+});
+
+admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
+  const parsed = opportunityInput.partial().safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success || Object.keys(parsed.data ?? {}).length === 0)
+    return c.json(
+      {
+        error: { code: 'VALIDATION_ERROR', message: 'Provide at least one valid editable field.' },
+      },
+      422,
+    );
+  const staff = c.get('staff');
+  const brokerOnly = staff.role === 'broker' ? 1 : 0;
+  const existing = await c.env.DB.prepare(
+    'SELECT * FROM opportunities WHERE id = ? AND (? = 0 OR assigned_broker_id = ?)',
+  )
+    .bind(c.req.param('id'), brokerOnly, staff.id)
+    .first<Record<string, unknown>>();
+  if (!existing)
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
+  const input = parsed.data;
+  const updatedAt = now();
+  if (Object.prototype.hasOwnProperty.call(input, 'assignedBrokerId')) {
+    const requested = input.assignedBrokerId ?? null;
+    const current =
+      typeof existing.assigned_broker_id === 'string' ? existing.assigned_broker_id : null;
+    if (!['admin', 'super_admin'].includes(staff.role) && requested !== current)
+      return c.json(
+        { error: { code: 'FORBIDDEN', message: 'Only administrators can reassign a broker.' } },
+        403,
+      );
+    if (requested) {
+      const broker = await c.env.DB.prepare(
+        "SELECT id FROM users WHERE id = ? AND user_type = 'staff' AND role = 'broker' AND status = 'active'",
+      )
+        .bind(requested)
+        .first();
+      if (!broker)
+        return c.json(
+          {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Assigned broker must be an active broker account.',
+            },
+          },
+          422,
+        );
+    }
+  }
+  const mapping: Record<string, string> = {
+    title: 'title',
+    country: 'country',
+    opportunityType: 'opportunity_type',
+    priceText: 'price_text',
+    summary: 'summary',
+    bodyHtml: 'body_html',
+    availability: 'availability',
+    seoTitle: 'seo_title',
+    seoDescription: 'seo_description',
+    assignedBrokerId: 'assigned_broker_id',
+  };
+  const sets = Object.entries(input).map(([key]) => `${mapping[key]} = ?`);
+  const values = Object.entries(input).map(([, value]) => value);
+  if (input.title && input.title !== existing.title) {
+    let slug = slugify(input.title);
+    const found = await c.env.DB.prepare(
+      'SELECT 1 AS found FROM opportunities WHERE slug = ? AND id != ?',
+    )
+      .bind(slug, existing.id)
+      .first();
+    if (found) slug = `${slug}-${String(existing.id).slice(0, 8)}`;
+    sets.push('slug = ?');
+    values.push(slug);
+  }
+  sets.push("content_review_status = 'pending'", 'public_visibility = 0', 'updated_at = ?');
+  values.push(updatedAt, String(existing.id));
+  await c.env.DB.prepare(`UPDATE opportunities SET ${sets.join(', ')} WHERE id = ?`)
+    .bind(...values)
+    .run();
+  const cachePurge = await purgeOpportunityPublicCache(
+    c.env,
+    String(existing.slug),
+    typeof existing.country === 'string' ? existing.country : null,
+  );
+  const updated = await c.env.DB.prepare('SELECT * FROM opportunities WHERE id = ?')
+    .bind(existing.id)
+    .first<Record<string, unknown>>();
+  const version = await c.env.DB.prepare(
+    'SELECT COALESCE(MAX(version_number), 0) + 1 AS next FROM opportunity_versions WHERE opportunity_id = ?',
+  )
+    .bind(existing.id)
+    .first<{ next: number }>();
+  await c.env.DB.prepare(
+    'INSERT INTO opportunity_versions (id, opportunity_id, version_number, snapshot_json, changed_by, change_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  )
+    .bind(
+      id(),
+      existing.id,
+      version?.next ?? 1,
+      JSON.stringify(updated),
+      c.get('staff').id,
+      'Opportunity edited; sent back for content review',
+      updatedAt,
+    )
+    .run();
+  await audit(c, 'opportunity.updated', 'opportunity', String(existing.id), {
+    fields: Object.keys(input),
+    reviewReset: true,
+    cachePurge,
+  });
+  return c.json({ data: updated });
+});
+
+admin.post('/opportunities/:id/publication', requireRole(...publisherRoles), async (c) => {
+  const parsed = publicationInput.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Provide a valid lifecycle, visibility and change reason.',
+        },
+      },
+      422,
+    );
+  const existing = await c.env.DB.prepare('SELECT * FROM opportunities WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<Record<string, unknown>>();
+  if (!existing)
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
+  const { lifecycle, publicVisibility, changeReason } = parsed.data;
+  if (
+    publicVisibility &&
+    (lifecycle !== 'published' ||
+      existing.content_review_status !== 'approved' ||
+      !existing.last_verified_at)
+  )
+    return c.json(
+      {
+        error: {
+          code: 'PUBLICATION_BLOCKED',
+          message:
+            'Public visibility requires approved content, published lifecycle and a verification timestamp.',
+        },
+      },
+      409,
+    );
+  const timestamp = now();
+  await c.env.DB.prepare(
+    'UPDATE opportunities SET lifecycle = ?, public_visibility = ?, published_at = CASE WHEN ? = 1 THEN COALESCE(published_at, ?) ELSE published_at END, updated_at = ? WHERE id = ?',
+  )
+    .bind(
+      lifecycle,
+      publicVisibility ? 1 : 0,
+      publicVisibility ? 1 : 0,
+      timestamp,
+      timestamp,
+      existing.id,
+    )
+    .run();
+  const cachePurge = await purgeOpportunityPublicCache(
+    c.env,
+    String(existing.slug),
+    typeof existing.country === 'string' ? existing.country : null,
+  );
+  await audit(c, 'opportunity.publication_changed', 'opportunity', String(existing.id), {
+    lifecycle,
+    publicVisibility,
+    changeReason,
+    cachePurge,
+  });
+  return c.json({ data: { id: existing.id, lifecycle, publicVisibility, cachePurge } });
+});
+
+admin.post('/opportunities/:id/review', requireRole(...publisherRoles), async (c) => {
+  const schema = z.object({
+    decision: z.enum(['approved', 'rejected']),
+    reason: z.string().trim().min(3).max(500),
+    verifiedAt: z.string().datetime().optional(),
+  });
+  const parsed = schema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: 'Provide a review decision and reason.' } },
+      422,
+    );
+  const existing = await c.env.DB.prepare(
+    'SELECT id, slug, country FROM opportunities WHERE id = ?',
+  )
+    .bind(c.req.param('id'))
+    .first<{ id: string; slug: string; country: string | null }>();
+  if (!existing)
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
+  const timestamp = now();
+  await c.env.DB.prepare(
+    "UPDATE opportunities SET content_review_status = ?, last_verified_at = CASE WHEN ? = 'approved' THEN ? ELSE last_verified_at END, public_visibility = 0, updated_at = ? WHERE id = ?",
+  )
+    .bind(
+      parsed.data.decision,
+      parsed.data.decision,
+      parsed.data.verifiedAt ?? timestamp,
+      timestamp,
+      c.req.param('id'),
+    )
+    .run();
+  const cachePurge = await purgeOpportunityPublicCache(c.env, existing.slug, existing.country);
+  await audit(c, `opportunity.review.${parsed.data.decision}`, 'opportunity', c.req.param('id'), {
+    reason: parsed.data.reason,
+    verifiedAt: parsed.data.verifiedAt ?? timestamp,
+    cachePurge,
+  });
+  return c.json({
+    data: {
+      id: c.req.param('id'),
+      reviewStatus: parsed.data.decision,
+      publicVisibility: false,
+      cachePurge,
+    },
+  });
+});
+
+const enquiryStatuses = ['new', 'assigned', 'in_progress', 'waiting', 'closed', 'spam'] as const;
+admin.get(
+  '/enquiries',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'auditor', 'super_admin'),
+  async (c) => {
+    const status = c.req.query('status') ?? '';
+    const q = (c.req.query('q') ?? '').trim().slice(0, 100);
+    const safeStatus = (enquiryStatuses as readonly string[]).includes(status) ? status : '';
+    const staff = c.get('staff');
+    const brokerOnly = staff.role === 'broker' ? 1 : 0;
+    const result = await c.env.DB.prepare(
+      "SELECT e.id, e.name, e.email, e.company, e.message, e.status, e.assigned_to AS assignedTo, e.opportunity_id AS opportunityId, e.created_at AS createdAt, e.updated_at AS updatedAt, o.title AS opportunityTitle FROM enquiries e LEFT JOIN opportunities o ON o.id = e.opportunity_id WHERE (? = '' OR e.status = ?) AND (? = '' OR e.name LIKE ? OR e.email LIKE ? OR e.company LIKE ?) AND (? = 0 OR e.assigned_to = ?) ORDER BY e.created_at DESC LIMIT 100",
+    )
+      .bind(safeStatus, safeStatus, q, `%${q}%`, `%${q}%`, `%${q}%`, brokerOnly, staff.id)
+      .all();
+    return c.json({ data: result.results ?? [], limit: 100 });
+  },
+);
+admin.get(
+  '/enquiries/:id',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'auditor', 'super_admin'),
+  async (c) => {
+    const staff = c.get('staff');
+    const brokerOnly = staff.role === 'broker' ? 1 : 0;
+    const row = await c.env.DB.prepare(
+      'SELECT * FROM enquiries WHERE id = ? AND (? = 0 OR assigned_to = ?)',
+    )
+      .bind(c.req.param('id'), brokerOnly, staff.id)
+      .first<Record<string, unknown>>();
+    if (!row) return c.json({ error: { code: 'NOT_FOUND', message: 'Enquiry not found.' } }, 404);
+    const notes = await c.env.DB.prepare(
+      'SELECT n.id, n.note, n.created_at AS createdAt, u.email AS authorEmail FROM enquiry_notes n JOIN users u ON u.id = n.author_id WHERE n.enquiry_id = ? ORDER BY n.created_at DESC LIMIT 100',
+    )
+      .bind(c.req.param('id'))
+      .all();
+    return c.json({ data: row, notes: notes.results ?? [] });
+  },
+);
+admin.patch(
+  '/enquiries/:id',
+  requireRole('admin', 'editor', 'broker', 'super_admin'),
+  async (c) => {
+    const schema = z
+      .object({
+        status: z.enum(enquiryStatuses).optional(),
+        assignedTo: z.string().uuid().nullable().optional(),
+      })
+      .refine((v) => Object.keys(v).length > 0);
+    const parsed = schema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'Provide a valid status or assignee.' } },
+        422,
+      );
+    const staff = c.get('staff');
+    const brokerOnly = staff.role === 'broker' ? 1 : 0;
+    const existing = await c.env.DB.prepare(
+      'SELECT id, status, assigned_to AS assignedTo FROM enquiries WHERE id = ? AND (? = 0 OR assigned_to = ?)',
+    )
+      .bind(c.req.param('id'), brokerOnly, staff.id)
+      .first<{ id: string; status: string; assignedTo: string | null }>();
+    if (!existing)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Enquiry not found.' } }, 404);
+    if (staff.role === 'broker' && Object.prototype.hasOwnProperty.call(parsed.data, 'assignedTo'))
+      return c.json(
+        { error: { code: 'FORBIDDEN', message: 'Brokers cannot reassign enquiries.' } },
+        403,
+      );
+    if (parsed.data.assignedTo) {
+      const staffUser = await c.env.DB.prepare(
+        "SELECT id FROM users WHERE id = ? AND user_type = 'staff' AND status = 'active'",
+      )
+        .bind(parsed.data.assignedTo)
+        .first();
+      if (!staffUser)
+        return c.json(
+          {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Assignee must be an active staff member.',
+            },
+          },
+          422,
+        );
+    }
+    const sets: string[] = ['updated_at = ?'];
+    const values: (string | null)[] = [now()];
+    if (parsed.data.status) {
+      sets.push('status = ?');
+      values.push(parsed.data.status);
+    }
+    if (Object.prototype.hasOwnProperty.call(parsed.data, 'assignedTo')) {
+      sets.push('assigned_to = ?');
+      values.push(parsed.data.assignedTo ?? null);
+    }
+    values.push(existing.id);
+    await c.env.DB.prepare(`UPDATE enquiries SET ${sets.join(', ')} WHERE id = ?`)
+      .bind(...values)
+      .run();
+    await audit(c, 'enquiry.updated', 'enquiry', existing.id, {
+      status: parsed.data.status,
+      assignedTo: parsed.data.assignedTo,
+    });
+    return c.json({
+      data: {
+        id: existing.id,
+        status: parsed.data.status ?? existing.status,
+        assignedTo: Object.prototype.hasOwnProperty.call(parsed.data, 'assignedTo')
+          ? (parsed.data.assignedTo ?? null)
+          : existing.assignedTo,
+      },
+    });
+  },
+);
+admin.post(
+  '/enquiries/:id/notes',
+  requireRole('admin', 'editor', 'broker', 'super_admin'),
+  async (c) => {
+    const parsed = z
+      .object({ note: z.string().trim().min(2).max(3000) })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'Provide a note of 2 to 3000 characters.' } },
+        422,
+      );
+    const staff = c.get('staff');
+    const brokerOnly = staff.role === 'broker' ? 1 : 0;
+    const found = await c.env.DB.prepare(
+      'SELECT id FROM enquiries WHERE id = ? AND (? = 0 OR assigned_to = ?)',
+    )
+      .bind(c.req.param('id'), brokerOnly, staff.id)
+      .first();
+    if (!found) return c.json({ error: { code: 'NOT_FOUND', message: 'Enquiry not found.' } }, 404);
+    const noteId = id();
+    const timestamp = now();
+    await c.env.DB.prepare(
+      'INSERT INTO enquiry_notes (id, enquiry_id, author_id, note, created_at) VALUES (?, ?, ?, ?, ?)',
+    )
+      .bind(noteId, c.req.param('id'), c.get('staff').id, parsed.data.note, timestamp)
+      .run();
+    await audit(c, 'enquiry.note_added', 'enquiry', c.req.param('id'), { noteId });
+    return c.json({ data: { id: noteId, createdAt: timestamp } }, 201);
+  },
+);
+
+admin.get('/buyers/ui', requireRole('admin', 'super_admin'), async (c) =>
+  c.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buyer access · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Buyer access provisioning</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a></nav><p class="muted">Provision only verified business contacts. Active buyers can request an email OTP; there is no public self-registration.</p><form id="buyer-provision" class="buyer-provision"><label>Full name <input name="displayName" minlength="2" maxlength="120" required></label><label>Business email <input name="email" type="email" maxlength="254" required></label><button type="submit">Provision buyer</button></form><p id="buyer-notice" role="status"></p><section><h2>Recent buyer accounts</h2><button id="buyer-refresh" type="button">Refresh</button><ul id="buyer-list"></ul></section></main><script src="/static/js/dashboard-buyers.js" defer></script></body></html>`,
+  ),
+);
+
+admin.get('/buyers', requireRole('admin', 'super_admin'), async (c) => {
+  const result = await c.env.DB.prepare(
+    "SELECT id, email, display_name AS displayName, status, created_at AS createdAt FROM users WHERE user_type = 'buyer' ORDER BY created_at DESC LIMIT 100",
+  ).all();
+  return c.json({ data: result.results ?? [] });
+});
+
+admin.post('/buyers/provision', requireRole('admin', 'super_admin'), async (c) => {
+  const parsed = z
+    .object({
+      email: z.string().trim().email().max(254),
+      displayName: z.string().trim().min(2).max(120),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Provide a valid business email and full name.',
+        },
+      },
+      422,
+    );
+  const email = parsed.data.email.toLowerCase();
+  const existing = await c.env.DB.prepare(
+    'SELECT id, user_type AS userType, status FROM users WHERE email = ? COLLATE NOCASE',
+  )
+    .bind(email)
+    .first<{ id: string; userType: string; status: string }>();
+  const timestamp = now();
+  if (existing && existing.userType !== 'buyer')
+    return c.json(
+      { error: { code: 'ACCOUNT_CONFLICT', message: 'That email belongs to a staff account.' } },
+      409,
+    );
+  if (existing && existing.status === 'active')
+    return c.json(
+      { error: { code: 'ALREADY_ACTIVE', message: 'An active buyer account already exists.' } },
+      409,
+    );
+  if (existing && existing.status !== 'invited')
+    return c.json(
+      {
+        error: {
+          code: 'ACCOUNT_STATUS_BLOCKED',
+          message: 'Suspended or deleted accounts require a separate administrative review.',
+        },
+      },
+      409,
+    );
+  const buyerId = existing?.id ?? id();
+  const auditDetails = JSON.stringify({ email, reactivated: Boolean(existing) });
+  if (existing) {
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        "UPDATE users SET display_name = ?, status = 'active', updated_at = ? WHERE id = ? AND user_type = 'buyer' AND status = 'invited'",
+      ).bind(parsed.data.displayName, timestamp, buyerId),
+      c.env.DB.prepare(
+        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', 'buyer.provisioned', 'user', ?, ?, ?, ? WHERE changes() > 0",
+      ).bind(id(), c.get('staff').id, buyerId, c.get('requestId'), auditDetails, timestamp),
+    ]);
+    const activated = await c.env.DB.prepare(
+      "SELECT id FROM users WHERE id = ? AND status = 'active' AND user_type = 'buyer'",
+    )
+      .bind(buyerId)
+      .first();
+    if (!activated)
+      return c.json(
+        {
+          error: {
+            code: 'ACCOUNT_STATUS_CONFLICT',
+            message:
+              'The buyer account changed during provisioning. Refresh and review its status.',
+          },
+        },
+        409,
+      );
+  } else {
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        "INSERT INTO users (id, email, display_name, user_type, role, status, created_at, updated_at) VALUES (?, ?, ?, 'buyer', 'buyer', 'active', ?, ?)",
+      ).bind(buyerId, email, parsed.data.displayName, timestamp, timestamp),
+      c.env.DB.prepare(
+        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'buyer.provisioned', 'user', ?, ?, ?, ?)",
+      ).bind(id(), c.get('staff').id, buyerId, c.get('requestId'), auditDetails, timestamp),
+    ]);
+  }
+  return c.json(
+    {
+      data: {
+        id: buyerId,
+        email,
+        displayName: parsed.data.displayName,
+        status: 'active',
+        signIn: 'email-otp',
+      },
+    },
+    201,
+  );
+});
+
+admin.get('/nda-templates/ui', requireRole('admin', 'super_admin'), async (c) =>
+  c.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NDA templates · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>NDA template versions</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/nda-templates/ui">NDA templates</a></nav><p class="muted">Template content is private in R2. Legal approval is required before activation. The seeded version is explicitly a draft and must not be treated as counsel-approved.</p><form id="nda-template-form" class="buyer-provision"><label>Template name <input name="name" value="Mayfair NDA Acknowledgement" minlength="3" maxlength="160" required></label><label>Template text <textarea name="content" minlength="100" maxlength="100000" required></textarea></label><label><input type="checkbox" name="activate"> Activate immediately (only if approved by counsel)</label><button type="submit">Create version</button></form><p id="nda-template-notice" role="status"></p><ul id="nda-template-list"></ul></main><script src="/static/js/dashboard-nda-templates.js" defer></script></body></html>`,
+  ),
+);
+
+admin.get('/nda-templates', requireRole('admin', 'publisher', 'super_admin'), async (c) => {
+  const rows = await c.env.DB.prepare(
+    'SELECT id, name, version, r2_key AS r2Key, content_hash AS contentHash, status, created_at AS createdAt FROM nda_templates ORDER BY version DESC',
+  ).all();
+  return c.json({ data: rows.results ?? [] });
+});
+
+admin.post('/nda-templates', requireRole('admin', 'super_admin'), async (c) => {
+  const parsed = z
+    .object({
+      name: z.string().trim().min(3).max(160),
+      content: z.string().trim().min(100).max(100000),
+      activate: z.boolean().default(false),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Provide a template name and content (100–100,000 characters).',
+        },
+      },
+      422,
+    );
+  const latest = await c.env.DB.prepare(
+    'SELECT COALESCE(MAX(version), 0) AS version FROM nda_templates WHERE name = ?',
+  )
+    .bind(parsed.data.name)
+    .first<{ version: number }>();
+  const version = (latest?.version ?? 0) + 1;
+  const templateId = id();
+  const timestamp = now();
+  const bytes = new TextEncoder().encode(parsed.data.content);
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) =>
+    b.toString(16).padStart(2, '0'),
+  ).join('');
+  const r2Key = `nda/templates/${templateId}/v${version}.txt`;
+  await c.env.PRIVATE_FILES.put(r2Key, bytes, {
+    httpMetadata: { contentType: 'text/plain; charset=utf-8', cacheControl: 'private, no-store' },
+    customMetadata: { contentHash: digest },
+  });
+  try {
+    const statements = [];
+    if (parsed.data.activate)
+      statements.push(
+        c.env.DB.prepare(
+          "UPDATE nda_templates SET status = 'retired' WHERE status = 'active'",
+        ).bind(),
+      );
+    statements.push(
+      c.env.DB.prepare(
+        'INSERT INTO nda_templates (id, name, version, r2_key, content_hash, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      ).bind(
+        templateId,
+        parsed.data.name,
+        version,
+        r2Key,
+        digest,
+        parsed.data.activate ? 'active' : 'draft',
+        c.get('staff').id,
+        timestamp,
+      ),
+    );
+    statements.push(
+      c.env.DB.prepare(
+        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'nda.template.created', 'nda_template', ?, ?, ?, ?)",
+      ).bind(
+        id(),
+        c.get('staff').id,
+        templateId,
+        c.get('requestId'),
+        JSON.stringify({
+          name: parsed.data.name,
+          version,
+          contentHash: digest,
+          activated: parsed.data.activate,
+        }),
+        timestamp,
+      ),
+    );
+    await c.env.DB.batch(statements);
+  } catch (error) {
+    await c.env.PRIVATE_FILES.delete(r2Key);
+    throw error;
+  }
+  return c.json(
+    {
+      data: {
+        id: templateId,
+        name: parsed.data.name,
+        version,
+        contentHash: digest,
+        status: parsed.data.activate ? 'active' : 'draft',
+      },
+    },
+    201,
+  );
+});
+
+admin.post('/nda-templates/:id/activate', requireRole('admin', 'super_admin'), async (c) => {
+  const template = await c.env.DB.prepare(
+    'SELECT id, name, version, r2_key AS r2Key, content_hash AS contentHash, status FROM nda_templates WHERE id = ?',
+  )
+    .bind(c.req.param('id'))
+    .first<{
+      id: string;
+      name: string;
+      version: number;
+      r2Key: string | null;
+      contentHash: string;
+      status: string;
+    }>();
+  if (!template)
+    return c.json({ error: { code: 'NOT_FOUND', message: 'NDA template not found.' } }, 404);
+  if (!template.r2Key)
+    return c.json(
+      {
+        error: {
+          code: 'SEED_TEMPLATE_NOT_MANAGED',
+          message:
+            'The bootstrap template is seeded from the repository. Create a managed version with approved content before activating a replacement.',
+        },
+      },
+      409,
+    );
+  const object = await c.env.PRIVATE_FILES.get(template.r2Key);
+  if (!object)
+    return c.json(
+      {
+        error: {
+          code: 'TEMPLATE_OBJECT_MISSING',
+          message: 'Template content is missing from private storage.',
+        },
+      },
+      409,
+    );
+  const content = await object.arrayBuffer();
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', content)), (b) =>
+    b.toString(16).padStart(2, '0'),
+  ).join('');
+  if (digest !== template.contentHash)
+    return c.json(
+      {
+        error: {
+          code: 'TEMPLATE_HASH_MISMATCH',
+          message: 'Stored template content does not match its recorded hash.',
+        },
+      },
+      409,
+    );
+  const timestamp = now();
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE nda_templates SET status = 'retired' WHERE status = 'active'").bind(),
+    c.env.DB.prepare(
+      "UPDATE nda_templates SET status = 'active' WHERE id = ? AND status IN ('draft','retired')",
+    ).bind(template.id),
+    c.env.DB.prepare(
+      "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'nda.template.activated', 'nda_template', ?, ?, ?, ?)",
+    ).bind(
+      id(),
+      c.get('staff').id,
+      template.id,
+      c.get('requestId'),
+      JSON.stringify({ version: template.version, contentHash: digest }),
+      timestamp,
+    ),
+  ]);
+  return c.json({ data: { id: template.id, status: 'active', contentHash: digest } });
+});
+
+admin.get(
+  '/nda-requests/ui',
+  requireRole('admin', 'broker', 'publisher', 'super_admin'),
+  async (c) => {
+    return c.html(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NDA review · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>NDA request review</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/audit">Audit log</a></nav><p class="muted">Review requests and record a reason. Approval grants time-limited data-room access; it is not a legal opinion or an electronic signature.</p><label>Filter <select id="status-filter"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="revoked">Revoked</option><option value="">All statuses</option></select></label><p id="notice" role="status"></p><section id="requests" aria-live="polite">Loading requests…</section></main><script src="/static/js/dashboard-nda.js" defer></script></body></html>`,
+    );
+  },
+);
+
+admin.get(
+  '/nda-requests',
+  requireRole('admin', 'broker', 'publisher', 'super_admin'),
+  async (c) => {
+    const status = c.req.query('status') ?? '';
+    const valid = ['pending', 'approved', 'rejected', 'revoked'].includes(status) ? status : '';
+    const staff = c.get('staff');
+    const brokerOnly = staff.role === 'broker' ? 1 : 0;
+    const result = await c.env.DB.prepare(
+      "SELECT n.id, n.status, n.acceptance_name AS acceptanceName, n.accepted_at AS acceptedAt, n.review_reason AS reviewReason, n.created_at AS createdAt, u.email AS buyerEmail, u.display_name AS buyerName, o.title AS opportunityTitle FROM nda_requests n JOIN users u ON u.id = n.user_id JOIN opportunities o ON o.id = n.opportunity_id WHERE (? = '' OR n.status = ?) AND (? = 0 OR o.assigned_broker_id = ?) ORDER BY n.created_at DESC LIMIT 100",
+    )
+      .bind(valid, valid, brokerOnly, staff.id)
+      .all();
+    return c.json({ data: result.results ?? [] });
+  },
+);
+
+admin.patch(
+  '/nda-requests/:id/review',
+  requireRole('admin', 'publisher', 'super_admin'),
+  async (c) => {
+    const parsed = z
+      .object({
+        decision: z.enum(['approved', 'rejected']),
+        reason: z.string().trim().min(3).max(1000),
+        accessDays: z.number().int().min(1).max(90).default(30),
+        tier: z.union([z.literal(1), z.literal(2)]).default(2),
+      })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'Provide a decision and review reason.' } },
+        422,
+      );
+    const request = await c.env.DB.prepare(
+      'SELECT id, user_id AS userId, opportunity_id AS opportunityId, status FROM nda_requests WHERE id = ?',
+    )
+      .bind(c.req.param('id'))
+      .first<{ id: string; userId: string; opportunityId: string; status: string }>();
+    if (!request)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'NDA request not found.' } }, 404);
+    if (request.status !== 'pending')
+      return c.json(
+        { error: { code: 'CONFLICT', message: 'Only pending NDA requests can be reviewed.' } },
+        409,
+      );
+    const timestamp = now();
+    const grantId = id();
+    const expiry = new Date(Date.now() + parsed.data.accessDays * 86400000).toISOString();
+    const statements = [
+      c.env.DB.prepare(
+        'UPDATE nda_requests SET status = ?, review_reason = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?',
+      ).bind(
+        parsed.data.decision,
+        parsed.data.reason,
+        c.get('staff').id,
+        timestamp,
+        timestamp,
+        request.id,
+      ),
+    ];
+    if (parsed.data.decision === 'approved')
+      statements.push(
+        c.env.DB.prepare(
+          'INSERT INTO access_grants (id, user_id, opportunity_id, nda_request_id, tier, granted_by, granted_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        ).bind(
+          grantId,
+          request.userId,
+          request.opportunityId,
+          request.id,
+          parsed.data.tier,
+          c.get('staff').id,
+          timestamp,
+          expiry,
+        ),
+      );
+    statements.push(
+      c.env.DB.prepare(
+        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', ?, 'nda_request', ?, ?, ?, ?)",
+      ).bind(
+        id(),
+        c.get('staff').id,
+        `nda.${parsed.data.decision}`,
+        request.id,
+        c.get('requestId'),
+        JSON.stringify({
+          reason: parsed.data.reason,
+          tier: parsed.data.tier,
+          expiresAt: parsed.data.decision === 'approved' ? expiry : null,
+        }),
+        timestamp,
+      ),
+    );
+    await c.env.DB.batch(statements);
+    return c.json({
+      data: {
+        id: request.id,
+        status: parsed.data.decision,
+        accessExpiresAt: parsed.data.decision === 'approved' ? expiry : null,
+      },
+    });
+  },
+);
+
+admin.post(
+  '/opportunities/:id/documents',
+  requireRole('admin', 'editor', 'publisher', 'super_admin'),
+  async (c) => {
+    const opportunity = await c.env.DB.prepare('SELECT id FROM opportunities WHERE id = ?')
+      .bind(c.req.param('id'))
+      .first();
+    if (!opportunity)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
+    const body = await c.req.parseBody();
+    const upload = body.file;
+    const filename =
+      typeof body.filename === 'string'
+        ? body.filename.trim()
+        : upload instanceof File
+          ? upload.name
+          : '';
+    const tier = Number(body.tier ?? 2);
+    if (
+      !(upload instanceof File) ||
+      upload.size < 1 ||
+      upload.size > 20 * 1024 * 1024 ||
+      !filename ||
+      filename.length > 180 ||
+      ![1, 2].includes(tier)
+    )
+      return c.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Upload a file up to 20 MB with a valid filename and tier.',
+          },
+        },
+        422,
+      );
+    const allowed = new Map([
+      ['application/pdf', '.pdf'],
+      ['image/jpeg', '.jpg'],
+      ['image/png', '.png'],
+      ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
+      ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'],
+    ]);
+    const contentType = upload.type || 'application/octet-stream';
+    if (!allowed.has(contentType))
+      return c.json(
+        {
+          error: {
+            code: 'UNSUPPORTED_MEDIA_TYPE',
+            message: 'Only PDF, JPEG, PNG, DOCX and XLSX files are accepted.',
+          },
+        },
+        415,
+      );
+    const bytes = new Uint8Array(await upload.arrayBuffer());
+    if (!hasExpectedFileSignature(contentType, bytes))
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_FILE_SIGNATURE',
+            message: 'The file contents do not match the declared file type.',
+          },
+        },
+        415,
+      );
+    // eslint-disable-next-line no-control-regex
+    const safeFilename = filename.replace(/[\\/\r\n\u0000-\u001f]/g, '_').slice(0, 180);
+    const digestBuffer = await crypto.subtle.digest('SHA-256', bytes);
+    const sha256 = Array.from(new Uint8Array(digestBuffer), (value) =>
+      value.toString(16).padStart(2, '0'),
+    ).join('');
+    const key = `opportunities/${c.req.param('id')}/documents/${crypto.randomUUID()}${allowed.get(contentType)}`;
+    await c.env.PRIVATE_FILES.put(key, bytes.buffer as ArrayBuffer, {
+      httpMetadata: { contentType, cacheControl: 'private, no-store' },
+      customMetadata: { originalName: safeFilename, uploadedBy: c.get('staff').id },
+    });
+    const documentId = id();
+    const timestamp = now();
+    try {
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "INSERT INTO documents (id, opportunity_id, r2_key, filename, content_type, byte_size, tier, uploaded_by, created_at, sha256, scan_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+        ).bind(
+          documentId,
+          c.req.param('id'),
+          key,
+          safeFilename,
+          contentType,
+          upload.size,
+          tier,
+          c.get('staff').id,
+          timestamp,
+          sha256,
+        ),
+        c.env.DB.prepare(
+          "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'document.uploaded', 'document', ?, ?, ?, ?)",
+        ).bind(
+          id(),
+          c.get('staff').id,
+          documentId,
+          c.get('requestId'),
+          JSON.stringify({
+            opportunityId: c.req.param('id'),
+            byteSize: upload.size,
+            tier,
+            contentType,
+          }),
+          timestamp,
+        ),
+      ]);
+    } catch (error) {
+      await c.env.PRIVATE_FILES.delete(key);
+      throw error;
+    }
+    return c.json(
+      {
+        data: {
+          id: documentId,
+          filename: safeFilename,
+          contentType,
+          byteSize: upload.size,
+          tier,
+          createdAt: timestamp,
+          scanStatus: 'pending',
+        },
+      },
+      201,
+    );
+  },
+);
+
+admin.post('/documents/:id/scan', requireRole('admin', 'super_admin'), async (c) => {
+  const document = await c.env.DB.prepare(
+    'SELECT id, opportunity_id AS opportunityId, r2_key AS r2Key, content_type AS contentType, sha256, scan_status AS scanStatus FROM documents WHERE id = ?',
+  )
+    .bind(c.req.param('id'))
+    .first<{
+      id: string;
+      opportunityId: string;
+      r2Key: string;
+      contentType: string;
+      sha256: string;
+      scanStatus: string;
+    }>();
+  if (!document)
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Document not found.' } }, 404);
+  if (document.scanStatus !== 'pending')
+    return c.json(
+      { error: { code: 'CONFLICT', message: 'Only pending documents can be scanned.' } },
+      409,
+    );
+  let result;
+  try {
+    result = await scanR2Document(c.env, {
+      documentId: document.id,
+      r2Key: document.r2Key,
+      contentType: document.contentType,
+      expectedSha256: document.sha256,
+    });
+  } catch (error) {
+    const code = error instanceof ScannerError ? error.code : 'UNAVAILABLE';
+    const status =
+      code === 'NOT_CONFIGURED'
+        ? 503
+        : code === 'OBJECT_MISSING' || code === 'OBJECT_CHANGED'
+          ? 409
+          : 503;
+    return c.json(
+      {
+        error: {
+          code: `SCANNER_${code}`,
+          message:
+            code === 'OBJECT_CHANGED'
+              ? 'Stored file bytes do not match the recorded digest; the file remains unavailable.'
+              : code === 'OBJECT_MISSING'
+                ? 'Stored file is missing; the file remains unavailable.'
+                : 'A verified malware scan could not be completed; the file remains unavailable.',
+        },
+      },
+      status,
+    );
+  }
+  const scanStatus = result.verdict === 'clean' ? 'clean' : 'rejected';
+  const timestamp = now();
+  const update = c.env.DB.prepare(
+    "UPDATE documents SET scan_status = ?, scan_provider = ?, scan_job_id = ?, scan_verdict = ?, scan_digest = ?, scanned_at = ?, scan_engine_version = ? WHERE id = ? AND scan_status = 'pending' AND sha256 = ?",
+  ).bind(
+    scanStatus,
+    result.provider,
+    result.reference,
+    result.verdict,
+    result.sha256,
+    result.scannedAt,
+    result.engineVersion,
+    document.id,
+    document.sha256,
+  );
+  const auditInsert = c.env.DB.prepare(
+    "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', ?, 'document', ?, ?, ?, ? WHERE changes() > 0 AND EXISTS (SELECT 1 FROM documents WHERE id = ? AND scan_job_id = ? AND scan_status = ?)",
+  ).bind(
+    id(),
+    c.get('staff').id,
+    `document.scan.${scanStatus}`,
+    document.id,
+    c.get('requestId'),
+    JSON.stringify({
+      provider: result.provider,
+      reference: result.reference,
+      verdict: result.verdict,
+      sha256: result.sha256,
+      scannedAt: result.scannedAt,
+      engineVersion: result.engineVersion,
+      opportunityId: document.opportunityId,
+    }),
+    timestamp,
+    document.id,
+    result.reference,
+    scanStatus,
+  );
+  try {
+    await c.env.DB.batch([update, auditInsert]);
+  } catch {
+    return c.json(
+      {
+        error: {
+          code: 'SCAN_AUDIT_FAILED',
+          message:
+            'The scan result could not be recorded atomically; the file remains unavailable.',
+        },
+      },
+      500,
+    );
+  }
+  const saved = await c.env.DB.prepare(
+    'SELECT scan_status AS scanStatus, scan_job_id AS scanJobId FROM documents WHERE id = ?',
+  )
+    .bind(document.id)
+    .first<{ scanStatus: string; scanJobId: string | null }>();
+  if (!saved || saved.scanJobId !== result.reference || saved.scanStatus !== scanStatus)
+    return c.json(
+      {
+        error: {
+          code: 'SCAN_STATE_CONFLICT',
+          message: 'The document state changed during scanning; review is required.',
+        },
+      },
+      409,
+    );
+  return c.json({
+    data: {
+      id: document.id,
+      scanStatus,
+      provider: result.provider,
+      scanJobId: result.reference,
+      sha256: result.sha256,
+      scannedAt: result.scannedAt,
+      engineVersion: result.engineVersion,
+    },
+  });
+});
+
+admin.patch('/documents/:id/scan-status', requireRole('admin', 'super_admin'), async (c) => {
+  const parsed = z
+    .object({
+      status: z.enum(['clean', 'rejected']),
+      reason: z.string().trim().min(5).max(1000),
+      scannerReference: z.string().trim().min(1).max(300).optional(),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: 'Provide a status and a review reason.' } },
+      422,
+    );
+  if (parsed.data.status === 'clean')
+    return c.json(
+      {
+        error: {
+          code: 'VERIFIED_SCAN_REQUIRED',
+          message:
+            'Use POST /dashboard/documents/:id/scan to scan the exact stored object and verify the signed provider result.',
+        },
+      },
+      409,
+    );
+  const document = await c.env.DB.prepare(
+    'SELECT id, opportunity_id AS opportunityId, scan_status AS scanStatus, sha256 FROM documents WHERE id = ?',
+  )
+    .bind(c.req.param('id'))
+    .first<{ id: string; opportunityId: string; scanStatus: string; sha256: string }>();
+  if (!document)
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Document not found.' } }, 404);
+  const timestamp = now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE documents SET scan_status = ? WHERE id = ?').bind(
+      parsed.data.status,
+      document.id,
+    ),
+    c.env.DB.prepare(
+      "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', ?, 'document', ?, ?, ?, ?)",
+    ).bind(
+      id(),
+      c.get('staff').id,
+      `document.scan.${parsed.data.status}`,
+      document.id,
+      c.get('requestId'),
+      JSON.stringify({
+        reason: parsed.data.reason,
+        scannerReference: parsed.data.scannerReference ?? null,
+        sha256: document.sha256,
+        opportunityId: document.opportunityId,
+      }),
+      timestamp,
+    ),
+  ]);
+  return c.json({
+    data: { id: document.id, scanStatus: parsed.data.status, updatedAt: timestamp },
+  });
+});
+
+admin.delete('/documents/:id', requireRole('admin', 'publisher', 'super_admin'), async (c) => {
+  const doc = await c.env.DB.prepare(
+    'SELECT id, r2_key AS r2Key, opportunity_id AS opportunityId FROM documents WHERE id = ?',
+  )
+    .bind(c.req.param('id'))
+    .first<{ id: string; r2Key: string; opportunityId: string }>();
+  if (!doc) return c.json({ error: { code: 'NOT_FOUND', message: 'Document not found.' } }, 404);
+  await c.env.DB.prepare('DELETE FROM documents WHERE id = ?').bind(doc.id).run();
+  await c.env.PRIVATE_FILES.delete(doc.r2Key);
+  await audit(c, 'document.deleted', 'document', doc.id, { opportunityId: doc.opportunityId });
+  return c.json({ data: { deleted: true } });
+});
+
+admin.get(
+  '/tasks/ui',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
+  async (c) => {
+    return c.html(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff tasks · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Task management</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries">Enquiries</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/audit">Audit log</a></nav><p class="muted">Create and assign operational follow-ups. Avoid putting sensitive buyer or deal information in task descriptions.</p><form id="task-create" class="task-form"><label>Task title<input name="title" minlength="3" maxlength="180" required></label><label>Priority<select name="priority"><option value="normal">Normal</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><label>Due date<input name="dueAt" type="datetime-local"></label><label>Assignee user ID (optional)<input name="assignedTo" placeholder="Staff user UUID"></label><label class="full-row">Description<textarea name="description" maxlength="4000"></textarea></label><button type="submit">Create task</button></form><p id="task-notice" class="notice" role="status"></p><section id="task-list" class="task-list" aria-live="polite"><p>Loading tasks…</p></section></main><script src="/static/js/dashboard-tasks.js" defer></script></body></html>`,
+    );
+  },
+);
+
+admin.get('/notifications/ui', requireRole('admin', 'auditor', 'super_admin'), async (c) => {
+  return c.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Notification operations · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Notification operations</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/jobs">Notification job API</a><a href="/dashboard/audit">Audit log</a></nav><p class="muted">Delivery status only. Payloads and one-time sign-in codes are never exposed here.</p><p id="notice" role="status"></p><section id="jobs">Loading notification jobs…</section></main><script src="/static/js/dashboard-notifications.js" defer></script></body></html>`,
+  );
+});
+
+admin.get(
+  '/tasks',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'auditor', 'super_admin'),
+  async (c) => {
+    const status = c.req.query('status') ?? '';
+    const assignedTo = c.req.query('assignedTo') ?? '';
+    const validStatus = ['open', 'in_progress', 'blocked', 'done', 'cancelled'].includes(status)
+      ? status
+      : '';
+    const staff = c.get('staff');
+    const brokerOnly = staff.role === 'broker' ? 1 : 0;
+    const result = await c.env.DB.prepare(
+      `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_at AS dueAt, t.assigned_to AS assignedTo, t.related_entity_type AS relatedEntityType, t.related_entity_id AS relatedEntityId, t.created_at AS createdAt, t.updated_at AS updatedAt, u.display_name AS assigneeName, u.email AS assigneeEmail FROM staff_tasks t LEFT JOIN users u ON u.id = t.assigned_to WHERE (? = '' OR t.status = ?) AND (? = '' OR t.assigned_to = ?) AND (? = 0 OR t.assigned_to = ?) ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, t.due_at IS NULL, t.due_at ASC, t.updated_at DESC LIMIT 200`,
+    )
+      .bind(validStatus, validStatus, assignedTo, assignedTo, brokerOnly, staff.id)
+      .all();
+    return c.json({ data: result.results ?? [], limit: 200 });
+  },
+);
+
+admin.post(
+  '/tasks',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
+  async (c) => {
+    const parsed = z
+      .object({
+        title: z.string().trim().min(3).max(180),
+        description: z.string().trim().max(4000).optional().default(''),
+        priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
+        dueAt: z.string().datetime().optional(),
+        assignedTo: z.string().uuid().optional(),
+        relatedEntityType: z
+          .enum(['opportunity', 'enquiry', 'nda_request', 'access_grant'])
+          .optional(),
+        relatedEntityId: z.string().max(100).optional(),
+      })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'Check the task fields.' } },
+        422,
+      );
+    const input = parsed.data;
+    const staff = c.get('staff');
+    if (staff.role === 'broker' && input.assignedTo && input.assignedTo !== staff.id)
+      return c.json(
+        { error: { code: 'FORBIDDEN', message: 'Brokers can only assign tasks to themselves.' } },
+        403,
+      );
+    const taskAssignee = staff.role === 'broker' ? staff.id : (input.assignedTo ?? null);
+    if (taskAssignee) {
+      const assignee = await c.env.DB.prepare(
+        "SELECT id FROM users WHERE id = ? AND user_type = 'staff' AND status = 'active'",
+      )
+        .bind(taskAssignee)
+        .first();
+      if (!assignee)
+        return c.json(
+          { error: { code: 'INVALID_ASSIGNEE', message: 'Choose an active staff member.' } },
+          422,
+        );
+    }
+    if (input.relatedEntityType && !input.relatedEntityId)
+      return c.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'Related entity ID is required.' } },
+        422,
+      );
+    const taskId = id();
+    const timestamp = now();
+    await c.env.DB.prepare(
+      "INSERT INTO staff_tasks (id,title,description,status,priority,due_at,assigned_to,related_entity_type,related_entity_id,created_by,created_at,updated_at) VALUES (?,?,?,'open',?,?,?,?,?,?,?,?)",
+    )
+      .bind(
+        taskId,
+        input.title,
+        input.description,
+        input.priority,
+        input.dueAt ?? null,
+        taskAssignee,
+        input.relatedEntityType ?? null,
+        input.relatedEntityId ?? null,
+        staff.id,
+        timestamp,
+        timestamp,
+      )
+      .run();
+    await audit(c, 'task.created', 'staff_task', taskId, {
+      priority: input.priority,
+      assignedTo: taskAssignee,
+    });
+    return c.json(
+      {
+        data: {
+          id: taskId,
+          status: 'open',
+          ...input,
+          assignedTo: taskAssignee,
+          createdAt: timestamp,
+        },
+      },
+      201,
+    );
+  },
+);
+
+admin.patch(
+  '/tasks/:id',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
+  async (c) => {
+    const parsed = z
+      .object({
+        title: z.string().trim().min(3).max(180).optional(),
+        description: z.string().trim().max(4000).optional(),
+        status: z.enum(['open', 'in_progress', 'blocked', 'done', 'cancelled']).optional(),
+        priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+        dueAt: z.string().datetime().nullable().optional(),
+        assignedTo: z.string().uuid().nullable().optional(),
+      })
+      .refine((value) => Object.keys(value).length > 0)
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'Provide at least one valid task field.' } },
+        422,
+      );
+    const staff = c.get('staff');
+    const brokerOnly = staff.role === 'broker' ? 1 : 0;
+    const current = await c.env.DB.prepare(
+      'SELECT id, status, assigned_to AS assignedTo FROM staff_tasks WHERE id = ? AND (? = 0 OR assigned_to = ?)',
+    )
+      .bind(c.req.param('id'), brokerOnly, staff.id)
+      .first<{ id: string; status: string; assignedTo: string | null }>();
+    if (!current) return c.json({ error: { code: 'NOT_FOUND', message: 'Task not found.' } }, 404);
+    const input = parsed.data;
+    if (staff.role === 'broker' && input.assignedTo !== undefined && input.assignedTo !== staff.id)
+      return c.json(
+        { error: { code: 'FORBIDDEN', message: 'Brokers cannot reassign tasks.' } },
+        403,
+      );
+    if (input.assignedTo) {
+      const assignee = await c.env.DB.prepare(
+        "SELECT id FROM users WHERE id = ? AND user_type = 'staff' AND status = 'active'",
+      )
+        .bind(input.assignedTo)
+        .first();
+      if (!assignee)
+        return c.json(
+          { error: { code: 'INVALID_ASSIGNEE', message: 'Choose an active staff member.' } },
+          422,
+        );
+    }
+    const timestamp = now();
+    await c.env.DB.prepare(
+      'UPDATE staff_tasks SET title=COALESCE(?,title), description=COALESCE(?,description), status=COALESCE(?,status), priority=COALESCE(?,priority), due_at=CASE WHEN ? = 1 THEN ? ELSE due_at END, assigned_to=CASE WHEN ? = 1 THEN ? ELSE assigned_to END, completed_at=CASE WHEN ? = 1 THEN ? WHEN ? = 1 THEN NULL ELSE completed_at END, updated_at=? WHERE id=?',
+    )
+      .bind(
+        input.title ?? null,
+        input.description ?? null,
+        input.status ?? null,
+        input.priority ?? null,
+        Number(input.dueAt !== undefined),
+        input.dueAt ?? null,
+        Number(input.assignedTo !== undefined),
+        input.assignedTo ?? null,
+        Number(input.status === 'done'),
+        timestamp,
+        Number(input.status !== undefined && input.status !== 'done'),
+        timestamp,
+        c.req.param('id'),
+      )
+      .run();
+    await audit(c, 'task.updated', 'staff_task', current.id, { fields: Object.keys(input) });
+    return c.json({ data: { id: current.id, updatedAt: timestamp } });
+  },
+);
+
+admin.post(
+  '/access-grants/:id/revoke',
+  requireRole('admin', 'publisher', 'super_admin'),
+  async (c) => {
+    const parsed = z
+      .object({ reason: z.string().trim().min(3).max(1000) })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'A revocation reason is required.' } },
+        422,
+      );
+    const grant = await c.env.DB.prepare(
+      'SELECT id, revoked_at AS revokedAt, user_id AS userId, opportunity_id AS opportunityId FROM access_grants WHERE id = ?',
+    )
+      .bind(c.req.param('id'))
+      .first<{ id: string; revokedAt: string | null; userId: string; opportunityId: string }>();
+    if (!grant)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Access grant not found.' } }, 404);
+    if (grant.revokedAt)
+      return c.json({ data: { id: grant.id, revoked: true, alreadyRevoked: true } });
+    const timestamp = now();
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        'UPDATE access_grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL',
+      ).bind(timestamp, grant.id),
+      c.env.DB.prepare(
+        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'access_grant.revoked', 'access_grant', ?, ?, ?, ?)",
+      ).bind(
+        id(),
+        c.get('staff').id,
+        grant.id,
+        c.get('requestId'),
+        JSON.stringify({
+          reason: parsed.data.reason,
+          userId: grant.userId,
+          opportunityId: grant.opportunityId,
+        }),
+        timestamp,
+      ),
+    ]);
+    return c.json({ data: { id: grant.id, revoked: true, revokedAt: timestamp } });
+  },
+);
+
+admin.get('/notifications/jobs', requireRole('admin', 'auditor', 'super_admin'), async (c) => {
+  const result = await c.env.DB.prepare(
+    'SELECT id, job_type AS jobType, status, attempts, available_at AS availableAt, created_at AS createdAt, updated_at AS updatedAt FROM notification_jobs ORDER BY created_at DESC LIMIT 100',
+  ).all();
+  return c.json({ data: result.results ?? [], limit: 100 });
+});
+
+admin.post('/notifications/jobs/:id/retry', requireRole('admin', 'super_admin'), async (c) => {
+  const job = await c.env.DB.prepare(
+    'SELECT id, job_type AS jobType, status FROM notification_jobs WHERE id = ?',
+  )
+    .bind(c.req.param('id'))
+    .first<{ id: string; jobType: string; status: string }>();
+  if (!job)
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Notification job not found.' } }, 404);
+  if (job.status === 'sent' || job.status === 'processing')
+    return c.json(
+      { error: { code: 'CONFLICT', message: 'Only unsent jobs can be retried.' } },
+      409,
+    );
+  const timestamp = now();
+  await c.env.DB.prepare(
+    "UPDATE notification_jobs SET status = 'queued', available_at = ?, updated_at = ? WHERE id = ?",
+  )
+    .bind(timestamp, timestamp, job.id)
+    .run();
+  await audit(c, 'notification.retry_requested', 'notification_job', job.id, {
+    previousStatus: job.status,
+  });
+  try {
+    await c.env.NOTIFICATIONS_QUEUE.send({ jobId: job.id, type: job.jobType });
+  } catch {
+    /* Scheduled recovery will re-enqueue due jobs. */
+  }
+  return c.json({ data: { id: job.id, status: 'queued' } });
+});
+
+admin.get('/audit', requireRole('admin', 'auditor', 'super_admin'), async (c) => {
+  const result = await c.env.DB.prepare(
+    'SELECT a.id, a.action, a.entity_type AS entityType, a.entity_id AS entityId, a.details_json AS details, a.created_at AS createdAt, u.email AS actorEmail FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id ORDER BY a.created_at DESC LIMIT 200',
+  ).all();
+  return c.json({ data: result.results ?? [], limit: 200 });
+});
+
+export default admin;

@@ -1,0 +1,3 @@
+# Legacy opportunity content review
+
+All 198 imported legacy records must remain non-public until reviewed individually by an authorized content reviewer and approved by a publisher. Review title, country, location, ownership/mandate, asking price and currency, operating status, evidence freshness, source attribution, unsupported financial claims, prohibited funding copy, completeness, images/rights, SEO metadata and confidentiality. Record reviewer, timestamp, evidence/source, decision and remediation. Blank country, stale claims or unverifiable assertions block publication. Do not bulk-publish based only on import success.

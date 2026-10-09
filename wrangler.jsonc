@@ -1,0 +1,158 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mayfair-platform",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/healthz", "/api/*", "/dashboard/*", "/account/*"],
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"],
+  },
+  "vars": {
+    "APP_ENV": "dev",
+    "LOG_LEVEL": "info",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mayfair-platform-dev",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PRIVATE_FILES",
+      "bucket_name": "mayfair-platform-private-dev",
+    },
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "00000000000000000000000000000000",
+    },
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "NOTIFICATIONS_QUEUE",
+        "queue": "mayfair-notifications-dev",
+      },
+    ],
+    "consumers": [
+      {
+        "queue": "mayfair-notifications-dev",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "mayfair-notifications-dev-dlq",
+      },
+    ],
+  },
+  "env": {
+    "staging": {
+      "name": "mayfair-platform-staging",
+      "workers_dev": true,
+      "vars": {
+        "APP_ENV": "staging",
+        "LOG_LEVEL": "info",
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "mayfair-platform-staging",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "PRIVATE_FILES",
+          "bucket_name": "mayfair-platform-private-staging",
+        },
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "CACHE",
+          "id": "00000000000000000000000000000000",
+        },
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "NOTIFICATIONS_QUEUE",
+            "queue": "mayfair-notifications-staging",
+          },
+        ],
+        "consumers": [
+          {
+            "queue": "mayfair-notifications-staging",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "dead_letter_queue": "mayfair-notifications-staging-dlq",
+          },
+        ],
+      },
+      "triggers": {
+        "crons": ["*/5 * * * *"],
+      },
+    },
+    "production": {
+      "name": "mayfair-platform-production",
+      "workers_dev": false,
+      "vars": {
+        "APP_ENV": "production",
+        "LOG_LEVEL": "warn",
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "mayfair-platform-production",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "PRIVATE_FILES",
+          "bucket_name": "mayfair-platform-private-production",
+        },
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "CACHE",
+          "id": "00000000000000000000000000000000",
+        },
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "NOTIFICATIONS_QUEUE",
+            "queue": "mayfair-notifications-production",
+          },
+        ],
+        "consumers": [
+          {
+            "queue": "mayfair-notifications-production",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "dead_letter_queue": "mayfair-notifications-production-dlq",
+          },
+        ],
+      },
+      "triggers": {
+        "crons": ["*/5 * * * *"],
+      },
+    },
+  },
+}

@@ -1,0 +1,47 @@
+{
+  "name": "mayfair-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Confidential B2B casino and casino-hotel brokerage platform",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@10.18.3",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "import:legacy": "tsx scripts/import-legacy-listings.ts",
+    "verify:import": "tsx scripts/verify-import.ts",
+    "preflight:sprint7": "node scripts/sprint7-preflight.mjs",
+    "preflight:sprint8": "node scripts/sprint8-release-gate.mjs",
+    "test:e2e:buyer-staff": "vitest run test/buyer-staff-workflows.e2e.test.ts",
+    "preflight:sprint9": "node scripts/sprint9-workflow-gate.mjs",
+    "preflight:final": "node scripts/release-readiness.mjs",
+    "preflight:sprint10": "node scripts/sprint10-readiness.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.9.8",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.8.49",
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "@eslint/js": "^9.37.0",
+    "eslint": "^9.37.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.1",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.40.3",
+    "tsx": "^4.20.6"
+  }
+}

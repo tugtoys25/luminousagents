@@ -1,0 +1,31 @@
+CASINOS OF MAYFAIR — SPRINT 8 DEVELOPMENT HANDOFF
+
+Purpose
+Close the four production blockers: trusted malware scanning, buyer/staff end-to-end authorization, reproducible Cloudflare staging deployment, and safe review of the 198 imported legacy opportunities.
+
+P0 — Malware scanner
+The current staff-entered scanner reference is not evidence. Select an approved provider. Scan the exact private R2 object bytes, compare the computed SHA-256 with the stored digest, authenticate the scanner result, persist provider/job/verdict/digest/time/engine version, and fail closed on every error or mismatch. Only a dedicated verified service may atomically change pending to clean. Test clean, malicious, timeout, provider error, invalid signature, wrong digest, changed/deleted object, duplicate/out-of-order callbacks, unsupported file, audit failure, and concurrency. Until complete, do not release confidential documents.
+
+P0 — Buyer/staff workflow tests
+Use disposable D1 and non-production R2. Test anonymous/wrong buyer, no grant, pending/rejected NDA, active/expired/revoked grant, insufficient tier, unpublished/unapproved opportunity, pending/rejected/clean scan states, and direct URL downloads. Test staff role permissions, audit logs, OTP/rate limits/session revocation, origin/CSRF controls, and notification failure. Denied downloads must never return file bytes.
+
+P0 — Build and staging
+Use Node 22 and pnpm 10.18.3. Generate the lockfile from package.json in the approved network-enabled environment; commit it, do not hand-write integrity hashes. Run:
+  pnpm install --frozen-lockfile
+  pnpm typecheck
+  pnpm lint
+  pnpm test
+  pnpm exec prettier --check .
+  node scripts/sprint7-preflight.mjs
+  node scripts/sprint8-release-gate.mjs
+Replace placeholder D1/KV IDs with actual environment-specific IDs. Verify R2 buckets and queues exist. Store secrets only with Cloudflare secret management. Apply migrations to disposable DB then staging; capture migration, test and deployment logs, commit SHA, staging URL, deployment ID and rollback owner. Do not deploy production without explicit approval.
+
+P0 — Legacy listings
+Keep all 198 imported records non-public until individually reviewed. Inventory IDs/slugs/lifecycle/public_visibility/content_review_status/source provenance. Check authority to market, current status, accuracy, rights, confidentiality, duplicates and staleness. Record reviewer, timestamp and reason. Confirm public listing/search/sitemap/SEO/API/direct slug endpoints all enforce lifecycle=published AND content_review_status=approved AND public_visibility=1. Publish individually, never bulk-publish because import succeeded. Recount in the target DB; do not assume the total remains 198.
+
+Files added
+- docs/SPRINT_8.md — detailed scope, requirements, commands, release gates and acceptance criteria.
+- scripts/sprint8-release-gate.mjs — source/configuration audit; expected to fail until lockfile, real Cloudflare IDs, and a scanner adapter exist.
+
+Truthful status
+This handoff is a plan and source-level gate, not evidence that malware scanning, automated tests, staging, or production deployment succeeded. Sprint 8 is staging-verified only after the release gates have evidence from the connected environment.

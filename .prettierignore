@@ -1,0 +1,7 @@
+node_modules
+dist
+.wrangler
+legacy-source
+pnpm-lock.yaml
+public/static/img
+scripts/generated

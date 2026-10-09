@@ -1,0 +1,62 @@
+name: Encrypted D1 backups to private R2
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backup-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Export, encrypt and upload staging D1
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$BACKUP_ENCRYPTION_PASSPHRASE" || { echo 'BACKUP_ENCRYPTION_PASSPHRASE is required'; exit 1; }
+          mkdir -p /tmp/mayfair-backup
+          trap 'rm -f /tmp/mayfair-backup/*' EXIT
+          pnpm exec wrangler d1 export mayfair-platform-staging --remote --output /tmp/mayfair-backup/staging.sql --env staging
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" --symmetric --cipher-algo AES256 --output /tmp/mayfair-backup/staging.sql.gpg /tmp/mayfair-backup/staging.sql
+          KEY="backups/staging/$(date -u +%F)/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.sql.gpg"
+          pnpm exec wrangler r2 object put "mayfair-backups-staging/$KEY" --file /tmp/mayfair-backup/staging.sql.gpg --content-type application/octet-stream
+  backup-production:
+    runs-on: ubuntu-latest
+    environment: production-backup
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Export, encrypt and upload production D1
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$BACKUP_ENCRYPTION_PASSPHRASE" || { echo 'BACKUP_ENCRYPTION_PASSPHRASE is required'; exit 1; }
+          mkdir -p /tmp/mayfair-backup
+          trap 'rm -f /tmp/mayfair-backup/*' EXIT
+          pnpm exec wrangler d1 export mayfair-platform-production --remote --output /tmp/mayfair-backup/production.sql --env production
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" --symmetric --cipher-algo AES256 --output /tmp/mayfair-backup/production.sql.gpg /tmp/mayfair-backup/production.sql
+          KEY="backups/production/$(date -u +%F)/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.sql.gpg"
+          pnpm exec wrangler r2 object put "mayfair-backups-production/$KEY" --file /tmp/mayfair-backup/production.sql.gpg --content-type application/octet-stream

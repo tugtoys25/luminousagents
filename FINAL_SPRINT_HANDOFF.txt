@@ -1,0 +1,5 @@
+Casinos of Mayfair Platform — Prior Final Sprint handoff
+
+This file is retained for history only. It is superseded by SPRINT_10_HANDOFF.txt and docs/SPRINT_10.md.
+
+The old scanner contract at POST {MALWARE_SCANNER_API_URL}/v1/scans/verify is no longer used. Sprint 10 uses src/security/malware-scanner.ts and a raw-byte POST /v1/scans provider contract with HMAC-signed results. Follow the Sprint 10 handoff for current setup, migrations, testing, and launch blockers.

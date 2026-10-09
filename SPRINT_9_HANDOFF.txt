@@ -1,0 +1,38 @@
+CASINOS OF MAYFAIR — SPRINT 9 HANDOFF
+Buyer and staff workflow verification
+
+GOAL
+Implement and verify the buyer/staff confidential access workflows before further production readiness work.
+
+FILES ADDED
+- test/buyer-staff-workflows.e2e.test.ts
+- docs/SPRINT_9.md
+- scripts/sprint9-workflow-gate.mjs
+- package scripts: test:e2e:buyer-staff and preflight:sprint9
+
+WORKFLOW COVERAGE
+1. Unauthenticated buyer document list and direct download must return 401.
+2. Expired grants must be denied for both list and download.
+3. Revoked grants must be denied.
+4. Active grants may access only clean documents for currently published, approved opportunities, subject to access tier.
+5. Downloads must be private/no-store and logged.
+6. Pending/rejected scan-state documents must not be listed or downloaded.
+7. Staff NDA endpoints must reject requests without a valid Cloudflare Access identity.
+
+DEVELOPER COMMANDS
+pnpm install
+pnpm test:e2e:buyer-staff
+pnpm test
+pnpm typecheck
+pnpm lint
+pnpm preflight:sprint9
+
+ACCEPTANCE
+- Run against the Cloudflare Vitest worker pool with migrations applied.
+- Fix every test failure; do not skip a security regression to obtain a green build.
+- Add tests for cross-buyer isolation, expired sessions, suspended accounts, insufficient tier, unpublished opportunities, missing private R2 objects and audit records.
+- In staging, verify email-code sign-in, browser cookies, staff approve/reject UI, grant expiry/revocation, download denial, queue/email delivery, and logs/audit trail.
+- Save CI output and staging evidence with the release record.
+
+IMPORTANT
+A source check is not runtime proof. Do not declare Sprint 9 complete or production ready until automated tests and staging checks have actually passed. Do not use production buyer data for test fixtures.

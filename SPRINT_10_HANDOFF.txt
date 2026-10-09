@@ -1,0 +1,49 @@
+CASINOS OF MAYFAIR PLATFORM — SPRINT 10 HANDOFF
+Date: 2026-10-09
+Status: STAGING CANDIDATE ONLY — NOT VERIFIED IN STAGING OR DEPLOYED
+
+DELIVERED IN THIS SPRINT
+1. Real scanner adapter boundary: src/security/malware-scanner.ts reads the exact private R2 object bytes, recomputes SHA-256, sends raw bytes to a configured scanner service, verifies a signed HMAC result, and supports clean/malicious/unsupported verdicts. POST /dashboard/documents/:id/scan persists provider, job, verdict, digest, timestamp and engine version. Clean release is blocked from the manual status endpoint; update plus audit insertion are batched and conditional on pending state.
+2. Migrations 0010-0012:
+   - 0010 adds scanner provenance and NDA template-hash snapshot fields and seeds a version-1 bootstrap template hash.
+   - 0011 imports all 198 legacy records as draft/pending/private.
+   - 0012 adds opportunity broker ownership.
+3. NDA template management: private R2-backed version creation, hash verification, activation, buyer-side display of the exact active template, template-hash capture and salted IP hash on acceptance. The seeded NDA wording is a draft only and requires counsel approval.
+4. Buyer provisioning: /dashboard/buyers/ui and /dashboard/buyers/provision. Public self-registration stays disabled; buyers use email OTP after staff provisioning.
+5. Opportunity CMS: /dashboard/opportunities/ui for create/edit, review queue, approve/reject and separate publication. Public visibility remains a separate action.
+6. Broker scoping for opportunities, enquiries, NDA request lists and tasks. Enquiries linked to assigned opportunities are routed to that broker, create a follow-up task due the next working day, and queue ops notification, broker notification and visitor acknowledgement. Turnstile and IP-hash configuration are required in staging/production.
+7. CSP: dashboard and buyer portal inline styles moved into public/static/css/dashboard.css; pages use same-origin CSS and scripts.
+8. Public caching and invalidation: anonymous GET pages use a 60-second shared-cache TTL, private API/dashboard/account paths remain no-store, static assets receive a one-hour cache policy, and publication/edit/review changes attempt URL purging through the Cloudflare API when configured.
+9. SEO and operations: configurable canonical base URL, sitemap/robots base URL, Organization/WebSite/BreadcrumbList/FAQPage JSON-LD, web manifest, removed unused AUDIT_QUEUE binding, resource setup helper, and encrypted D1 backup workflow to private staging/production R2 buckets.
+10. Added scanner-focused tests, cache-policy tests, Sprint 10 security-invariant tests, and updated Sprint 7 preflight to recognize the verified scanner adapter.
+
+LOCAL VERIFICATION PERFORMED
+- Executed the complete SQL migration chain 0001-0012 against in-memory SQLite successfully.
+- Verified 198 legacy records; all 198 are pending and public_visibility=0; no records are public. Status distribution: OPPORTUNITY 109, SOLD / STATUS UPDATE 71, OFF THE MARKET 16, ON HOLD / UNDER OFFER 2.
+- TypeScript/TSX parser diagnostics: no syntax parse errors.
+- Node syntax checks passed for JavaScript and MJS scripts.
+- package.json, wrangler.jsonc and public/site.webmanifest JSON syntax parsed successfully.
+- Sprint 7 source preflight passes all source checks but is blocked by missing pnpm-lock.yaml.
+- Sprint 10 source readiness gate is blocked only by missing pnpm-lock.yaml.
+- Sprint 8 release gate remains blocked by missing pnpm-lock.yaml and placeholder D1/KV IDs.
+- Sprint 9 workflow gate confirms its E2E suite exists, but dependencies are not installed.
+
+NOT RUN / NOT VERIFIED
+- Dependency installation, lockfile generation, TypeScript typecheck, lint, Prettier check, unit tests, E2E tests, browser CSP console, staging, deployment, live scanner, Cloudflare resource configuration, queue/email delivery, backup execution, restore drill, legal review, accessibility, Lighthouse, load testing, alerts, or rollback rehearsal.
+- Corepack could not reach registry.npmjs.org in this environment, so no pnpm-lock.yaml was fabricated. All CI jobs using --frozen-lockfile will fail until the team generates and commits the lockfile.
+
+TEAM ACTIONS BEFORE STAGING
+1. Run pinned pnpm@10.18.3 install in a network-enabled environment and commit pnpm-lock.yaml.
+2. Run scripts/cloudflare-resource-setup.sh after confirming the correct Cloudflare account; copy real D1 database IDs and KV namespace IDs into wrangler.jsonc. Verify private R2 buckets, queues and DLQs exist.
+3. Configure Worker variables: APP_ENV, PUBLIC_BASE_URL, CLOUDFLARE_ZONE_ID, MALWARE_SCANNER_API_URL, MALWARE_SCANNER_PROVIDER, ACCESS_TEAM_DOMAIN, ACCESS_AUD, TURNSTILE_SITE_KEY, EMAIL_FROM and OPS_EMAIL as appropriate.
+4. Configure Worker secrets: MALWARE_SCANNER_API_TOKEN, MALWARE_SCANNER_SIGNING_SECRET, IP_HASH_SECRET, CLOUDFLARE_CACHE_PURGE_TOKEN, RESEND_API_KEY, OTP_ENCRYPTION_KEY and TURNSTILE_SECRET_KEY. Use a trusted scanner provider that implements the documented raw-byte POST /v1/scans contract and HMAC signature. Confirm privacy/data-processing terms before scanning confidential documents with a third party.
+5. Configure GitHub secrets in staging and production-backup environments: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and BACKUP_ENCRYPTION_PASSPHRASE. Create private mayfair-backups-staging and mayfair-backups-production buckets. Keep production deployment approval separate.
+6. Apply pending D1 migrations to staging, then run verify-import and confirm counts/statuses in actual D1. Smoke-test Access, D1, R2, queues, Resend and Turnstile.
+7. Run pnpm typecheck, pnpm lint, pnpm format:check, pnpm test, E2E tests and all preflight scripts; attach command output and CI links.
+8. Test scanner clean, malicious, timeout, provider error, bad signature, wrong digest, deleted/changed object, unsupported type, audit failure and concurrent scans. Confirm buyer downloads are impossible unless scan state is clean and grant/tier checks pass.
+9. Complete and record staging restore drill. Current backup workflow covers D1 only; create and test a separate backup/replication policy for private R2 deal documents.
+10. Obtain counsel approval for NDA/privacy/terms and manually review each of the 198 legacy records for authority, accuracy, rights, confidentiality, duplicates and staleness. Publish individually only after approval.
+11. Complete remaining role-by-route, CSRF, OTP replay/brute-force, XSS, SQL injection, redaction, queue retry/duplicate delivery, Playwright, WCAG 2.1 AA, Lighthouse mobile >=90, load, alerting, production cutover and rollback evidence.
+
+DECISION
+This package is a substantial Sprint 10 implementation candidate, but it is not production-ready and cannot honestly be described as having only tests remaining. Lockfile, real Cloudflare resources, real scanner provider, staging evidence, backup/restore and legal/content approvals are still external blockers.

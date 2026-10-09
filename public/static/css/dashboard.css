@@ -1,0 +1,308 @@
+/* CSP-safe styles for staff and buyer portal pages. */
+.admin {
+  max-width: 1180px;
+  margin: 3rem auto;
+  padding: 0 1.25rem;
+}
+.admin-nav {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 1.5rem 0;
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+}
+.metric {
+  padding: 1.25rem;
+  border: 1px solid #ded7ca;
+  border-radius: 12px;
+  background: #fff;
+}
+.metric strong {
+  display: block;
+  font-size: 2rem;
+  color: #8c1d28;
+}
+.admin table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+.admin th,
+.admin td {
+  text-align: left;
+  padding: 0.8rem;
+  border-bottom: 1px solid #eee;
+}
+.admin li {
+  padding: 0.5rem 0;
+}
+.muted {
+  color: #6b665e;
+}
+.admin {
+  max-width: 1180px;
+  margin: 3rem auto;
+  padding: 0 1.25rem;
+}
+.request {
+  border: 1px solid #ded7ca;
+  border-radius: 12px;
+  padding: 1rem;
+  margin: 1rem 0;
+  background: #fff;
+}
+.request header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.request form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.request input,
+.request select,
+.request textarea,
+.request button {
+  font: inherit;
+  padding: 0.65rem;
+  border: 1px solid #cfc8bb;
+  border-radius: 6px;
+}
+.request button {
+  background: #8c1d28;
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+.muted {
+  color: #6b665e;
+}
+.status {
+  font-weight: 700;
+}
+.admin {
+  max-width: 1180px;
+  margin: 3rem auto;
+  padding: 0 1.25rem;
+}
+.task-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid #ded7ca;
+  border-radius: 12px;
+  background: #fff;
+}
+.task-form label {
+  display: grid;
+  gap: 0.35rem;
+}
+.task-form input,
+.task-form textarea,
+.task-form select {
+  font: inherit;
+  padding: 0.7rem;
+  border: 1px solid #cfc8bb;
+  border-radius: 6px;
+}
+.task-form textarea {
+  min-height: 90px;
+}
+.task-form button {
+  align-self: end;
+  background: #8c1d28;
+  color: white;
+  border: 0;
+  padding: 0.8rem 1rem;
+  border-radius: 6px;
+}
+.task-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+.task {
+  padding: 1rem;
+  border: 1px solid #ded7ca;
+  border-radius: 10px;
+  background: #fff;
+}
+.task header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.task form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+.task select,
+.task button {
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid #cfc8bb;
+  border-radius: 6px;
+}
+.notice {
+  margin: 1rem 0;
+}
+.muted {
+  color: #6b665e;
+}
+.admin {
+  max-width: 1180px;
+  margin: 3rem auto;
+  padding: 0 1.25rem;
+}
+.job {
+  padding: 1rem;
+  margin: 0.75rem 0;
+  border: 1px solid #ded7ca;
+  border-radius: 10px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.job form {
+  display: inline;
+}
+.job button {
+  padding: 0.5rem 0.8rem;
+}
+.muted {
+  color: #6b665e;
+}
+.account {
+  max-width: 1080px;
+  margin: 3rem auto;
+  padding: 0 1.25rem;
+}
+.panel {
+  border: 1px solid #ded7ca;
+  border-radius: 12px;
+  background: #fff;
+  padding: 1.25rem;
+  margin: 1rem 0;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.panel input,
+.panel button {
+  font: inherit;
+  padding: 0.7rem;
+  border: 1px solid #cfc8bb;
+  border-radius: 6px;
+}
+.panel button {
+  background: #8c1d28;
+  color: #fff;
+  cursor: pointer;
+}
+.muted {
+  color: #6b665e;
+}
+.item {
+  border-top: 1px solid #eee;
+  padding: 0.9rem 0;
+}
+.item:first-child {
+  border-top: 0;
+}
+.notice {
+  min-height: 1.5rem;
+}
+.overflow-x-auto {
+  overflow-x: auto;
+}
+.full-row {
+  grid-column: 1/-1;
+}
+
+.cms-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+.cms-list {
+  padding-left: 1.2rem;
+}
+.cms-list li {
+  margin: 0.65rem 0;
+}
+.cms-editor,
+.buyer-provision {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #ded7ca;
+  border-radius: 12px;
+  background: #fff;
+}
+.cms-editor label,
+.buyer-provision label {
+  display: grid;
+  gap: 0.35rem;
+}
+.cms-editor input,
+.cms-editor textarea,
+.cms-editor select,
+.buyer-provision input {
+  font: inherit;
+  padding: 0.65rem;
+  border: 1px solid #cfc8bb;
+  border-radius: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.cms-editor textarea {
+  min-height: 5rem;
+}
+.cms-editor button,
+.buyer-provision button {
+  font: inherit;
+  padding: 0.65rem 0.9rem;
+  border: 0;
+  border-radius: 6px;
+  background: #8c1d28;
+  color: white;
+  cursor: pointer;
+  margin: 0.2rem;
+}
+.cms-layout input,
+.cms-layout select {
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid #cfc8bb;
+  border-radius: 6px;
+}
+@media (max-width: 800px) {
+  .cms-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.nda-template-content {
+  max-height: 18rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  padding: 1rem;
+  background: #f7f4ee;
+  border: 1px solid #ded7ca;
+  border-radius: 8px;
+  font: inherit;
+}

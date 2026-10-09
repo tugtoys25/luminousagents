@@ -1,0 +1,31 @@
+# Local-only examples. Never commit actual credentials.
+# APP_ENV is configured in wrangler.jsonc.
+# Add secrets only when their corresponding sprint implements and validates them.
+# TURNSTILE_SECRET_KEY=
+# IP_HASH_SECRET=
+# RESEND_API_KEY=
+# SESSION_HMAC_SECRET=
+# CLOUDFLARE_ACCESS_TEAM_DOMAIN=
+# CLOUDFLARE_ACCESS_AUD=
+
+# Cloudflare Access JWT validation for staff routes
+ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
+ACCESS_AUD=replace-with-access-application-audience-tag
+
+# Non-secret public key for the Turnstile widget (configure in Wrangler vars).
+# TURNSTILE_SITE_KEY=
+
+# Sprint 5 notification delivery. Use test credentials in development only.
+# RESEND_API_KEY=re_...
+# OTP_ENCRYPTION_KEY=base64-encoded-32-random-bytes
+# EMAIL_FROM=Casinos of Mayfair <notifications@example.com>
+# OPS_EMAIL=operations@example.com
+# PUBLIC_BASE_URL=https://casinosofmayfair.com
+# Sprint 10 malware scanner adapter (configure only with a trusted scanner endpoint).
+# MALWARE_SCANNER_API_URL=https://scanner.internal.example
+# MALWARE_SCANNER_API_TOKEN=
+# MALWARE_SCANNER_SIGNING_SECRET=generate-a-random-secret-of-at-least-32-bytes
+# MALWARE_SCANNER_PROVIDER=your-provider-id
+# IP_HASH_SECRET=generate-a-separate-random-secret
+# CLOUDFLARE_ZONE_ID=
+# CLOUDFLARE_CACHE_PURGE_TOKEN=zone-scoped-cache-purge-token

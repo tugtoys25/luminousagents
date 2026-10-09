@@ -1,0 +1,6 @@
+-- Run manually against the intended D1 database after verifying the identity.
+-- Replace the placeholders; never commit a real staff email or user id.
+INSERT INTO users (id, email, display_name, user_type, role, status, created_at, updated_at)
+VALUES ('REPLACE_WITH_RANDOM_UUID', 'staff@example.com', 'Staff Member', 'staff', 'admin', 'active', datetime('now'), datetime('now'));
+-- Supported application roles: super_admin, admin, editor, broker, publisher, auditor.
+-- Cloudflare Access must independently restrict the staff application to approved identities.
