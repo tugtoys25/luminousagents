@@ -1007,51 +1007,108 @@ publicPages.get('/media/opportunities/:opportunityId/:mediaId', async (c) => {
   return c.body(bytes, 200);
 });
 
+const PUBLIC_FILTER =
+  "lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public'";
+const xmlEscape = (value: string) => value.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+const isoDate = (value: string | null | undefined) => {
+  const time = value ? Date.parse(value) : Number.NaN;
+  return Number.isNaN(time) ? '' : new Date(time).toISOString();
+};
+
+/** Canonical origin: configured URL in production; the request origin on staging/dev. */
+const siteOrigin = (c: { env: Env; req: { url: string } }) =>
+  (
+    c.env.PUBLIC_BASE_URL || (c.env.APP_ENV === 'production' ? SITE_URL : new URL(c.req.url).origin)
+  ).replace(/\/$/, '');
+
 publicPages.get('/robots.txt', (c) => {
-  const baseUrl = (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, '');
-  return c.text(
-    `User-agent: *\nAllow: /\nDisallow: /dashboard/\nDisallow: /account/\nDisallow: /api/\nDisallow: /admin/\nDisallow: /register\nSitemap: ${baseUrl}/sitemap.xml\n`,
-    200,
-    { 'Content-Type': 'text/plain; charset=utf-8' },
-  );
+  const baseUrl = siteOrigin(c);
+  // Only production is indexable; staging and dev must never appear in search results.
+  const body =
+    c.env.APP_ENV === 'production'
+      ? `User-agent: *\nAllow: /\nDisallow: /dashboard/\nDisallow: /account/\nDisallow: /api/\nDisallow: /admin/\nDisallow: /register\nDisallow: /staff-access\nDisallow: /forms/\nDisallow: /media/\n\nSitemap: ${baseUrl}/sitemap.xml\n`
+      : 'User-agent: *\nDisallow: /\n';
+  return c.text(body, 200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'public, max-age=300',
+  });
 });
+
 publicPages.get('/sitemap.xml', async (c) => {
-  const rows = await c.env.DB.prepare(
-    "SELECT slug FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY updated_at DESC LIMIT 5000",
-  ).all<{ slug: string }>();
-  const countries = await c.env.DB.prepare(
-    "SELECT DISTINCT country FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' AND country IS NOT NULL ORDER BY country",
-  ).all<{ country: string }>();
-  const managedPages = await c.env.DB.prepare(
-    "SELECT slug FROM managed_pages WHERE status = 'published' ORDER BY updated_at DESC LIMIT 500",
-  ).all<{ slug: string }>();
-  const countryPaths = countries.results.map(
-    (row) => `/casinos-for-sale/${encodeURIComponent(slugify(row.country))}`,
-  );
-  const baseUrl = (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, '');
-  const paths = [
-    '/',
-    '/casinos-for-sale',
-    '/casino-hotels',
-    '/archive',
-    '/services',
-    '/about',
-    '/faq',
-    '/contact',
-    '/legal/privacy',
-    '/legal/terms',
-    '/legal/cookies',
-    '/legal/aml-kyc',
-    '/legal/sanctions',
-    '/legal/anti-bribery',
-    '/legal/complaints',
-    '/legal/disclaimer',
-    '/legal/modern-slavery',
-    ...managedPages.results.map((row) => `/pages/${encodeURIComponent(row.slug)}`),
-    ...countryPaths,
-    ...rows.results.map((row) => `/opportunities/${encodeURIComponent(row.slug)}`),
+  const baseUrl = siteOrigin(c);
+  const entries: { path: string; lastmod?: string; priority?: string }[] = [
+    { path: '/', priority: '1.0' },
+    { path: '/casinos-for-sale', priority: '0.9' },
+    { path: '/casino-hotels', priority: '0.8' },
+    { path: '/archive', priority: '0.5' },
+    { path: '/services', priority: '0.8' },
+    { path: '/about', priority: '0.7' },
+    { path: '/faq', priority: '0.6' },
+    { path: '/contact', priority: '0.8' },
+    ...STATIC_PAGES.filter(([path]) => path.startsWith('/legal/')).map(([path]) => ({
+      path,
+      priority: '0.3',
+    })),
   ];
-  const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${paths.map((path) => `<url><loc>${baseUrl}${path}</loc></url>`).join('')}</urlset>`;
+  try {
+    const [listings, countries, pages, archived] = await Promise.all([
+      c.env.DB.prepare(
+        `SELECT slug, updated_at AS updatedAt FROM opportunities WHERE ${PUBLIC_FILTER} ORDER BY updated_at DESC LIMIT 5000`,
+      ).all<{ slug: string; updatedAt: string }>(),
+      c.env.DB.prepare(
+        `SELECT country, MAX(updated_at) AS updatedAt FROM opportunities WHERE ${PUBLIC_FILTER} AND country IS NOT NULL GROUP BY country ORDER BY country`,
+      ).all<{ country: string; updatedAt: string }>(),
+      c.env.DB.prepare(
+        "SELECT slug, updated_at AS updatedAt FROM managed_pages WHERE status = 'published' ORDER BY updated_at DESC LIMIT 500",
+      ).all<{ slug: string; updatedAt: string }>(),
+      c.env.DB.prepare(
+        "SELECT MAX(updated_at) AS updatedAt FROM opportunities WHERE lifecycle IN ('sold','off_market') AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public'",
+      ).first<{ updatedAt: string | null }>(),
+    ]);
+    const newest = listings.results[0]?.updatedAt;
+    entries[1].lastmod = isoDate(newest);
+    entries[0].lastmod = isoDate(newest);
+    entries[3].lastmod = isoDate(archived?.updatedAt);
+    // Managed pages that override a built-in page are served at the built-in path.
+    const builtIn = new Map(STATIC_PAGES.map(([path]) => [staticPageSlug(path), path]));
+    for (const row of pages.results) {
+      const override = builtIn.get(row.slug);
+      if (override) {
+        const entry = entries.find((item) => item.path === override);
+        if (entry) entry.lastmod = isoDate(row.updatedAt);
+      } else {
+        entries.push({
+          path: `/pages/${encodeURIComponent(row.slug)}`,
+          lastmod: isoDate(row.updatedAt),
+          priority: '0.5',
+        });
+      }
+    }
+    for (const row of countries.results)
+      entries.push({
+        path: `/casinos-for-sale/${encodeURIComponent(slugify(row.country))}`,
+        lastmod: isoDate(row.updatedAt),
+        priority: '0.7',
+      });
+    for (const row of listings.results)
+      entries.push({
+        path: `/opportunities/${encodeURIComponent(row.slug)}`,
+        lastmod: isoDate(row.updatedAt),
+        priority: '0.8',
+      });
+  } catch (error) {
+    // Still serve the static URLs if the database is briefly unavailable.
+    console.error('sitemap_query_failed', {
+      requestId: c.get('requestId'),
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+    });
+  }
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${entries
+    .map(
+      (entry) =>
+        `<url><loc>${xmlEscape(baseUrl + entry.path)}</loc>${entry.lastmod ? `<lastmod>${entry.lastmod}</lastmod>` : ''}${entry.priority ? `<priority>${entry.priority}</priority>` : ''}</url>`,
+    )
+    .join('')}</urlset>`;
   return c.body(xml, 200, {
     'Content-Type': 'application/xml; charset=utf-8',
     'Cache-Control': 'public, max-age=300',
