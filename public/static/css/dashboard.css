@@ -2126,3 +2126,12 @@ html[data-theme='midnight'] .serp-title {
     position: static;
   }
 }
+
+.setting-field select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}

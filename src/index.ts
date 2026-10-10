@@ -200,18 +200,34 @@ app.use('*', async (c, next) => {
           : ''
       }}</style>`;
     if (/^G-[A-Z0-9]+$/.test(ga4))
-      head += `<script src="/static/js/analytics-consent.js" data-ga4="${ga4}" defer></script>`;
+      head += `<script src="/static/js/analytics-consent.js" data-ga4="${ga4}" data-days="${Math.min(730, Math.max(1, Number.parseInt(get('cookie_consent_days'), 10) || 180))}" defer></script>`;
     if (head) html = html.replace('</head>', `${head}</head>`);
     if (whatsapp.length >= 8 && whatsapp.length <= 15)
       html = html.replace(
         '</body>',
         `<a class="mayfair-whatsapp" href="https://wa.me/${whatsapp}?text=${whatsappMessage}" target="_blank" rel="noopener noreferrer" aria-label="Contact us on WhatsApp">WhatsApp&nbsp; ↗</a></body>`,
       );
-    if (/^G-[A-Z0-9]+$/.test(ga4))
+    if (get('cookie_banner_enabled', 'on') !== 'off') {
+      const safeLink = (value: string, fallback: string) =>
+        (value.startsWith('/') && !value.startsWith('//')) || /^https:\/\//i.test(value)
+          ? value
+          : fallback;
+      const text = (key: string, fallback: string, max: number) =>
+        escape((get(key).trim() || fallback).slice(0, max));
+      const position = ['bottom-left', 'bottom', 'center'].includes(get('cookie_banner_position'))
+        ? get('cookie_banner_position')
+        : 'bottom-left';
+      const days = Math.min(
+        730,
+        Math.max(1, Number.parseInt(get('cookie_consent_days'), 10) || 180),
+      );
+      const privacyUrl = safeLink(get('cookie_privacy_url').trim(), '/legal/privacy');
+      const cookieUrl = safeLink(get('cookie_policy_url').trim(), '/legal/cookies');
       html = html.replace(
         '</body>',
-        `<aside class="analytics-consent" id="analytics-consent" hidden role="dialog" aria-label="Analytics cookie preferences"><p>We use optional analytics to understand site usage. You can accept or reject analytics cookies.</p><button type="button" data-consent="accept">Accept analytics</button><button type="button" data-consent="reject">Reject analytics</button><a href="/legal/cookies">Cookie notice</a></aside><script src="/static/js/analytics-consent-ui.js" defer></script></body>`,
+        `<aside class="cookie-banner" id="analytics-consent" data-position="${position}" data-days="${days}" data-ga4="${/^G-[A-Z0-9]+$/.test(ga4) ? ga4 : ''}" hidden role="dialog" aria-modal="false" aria-labelledby="cookie-title" aria-describedby="cookie-text"><div class="cookie-banner-body"><strong id="cookie-title">${text('cookie_banner_title', 'Your privacy matters', 80)}</strong><p id="cookie-text">${text('cookie_banner_text', 'We use essential cookies to run this site. With your consent we also use analytics cookies to understand how it is used.', 600)}</p><p class="cookie-links"><a href="${escape(privacyUrl)}">Privacy notice</a><a href="${escape(cookieUrl)}">Cookie notice</a></p></div><div class="cookie-actions"><button type="button" class="cookie-btn cookie-btn-ghost" data-consent="reject">${text('cookie_reject_label', 'Reject non-essential', 40)}</button><button type="button" class="cookie-btn cookie-btn-primary" data-consent="accept">${text('cookie_accept_label', 'Accept all', 40)}</button></div></aside><script src="/static/js/analytics-consent-ui.js" defer></script></body>`,
       );
+    }
     const headers = new Headers(c.res.headers);
     headers.delete('content-length');
     c.res = new Response(html, { status: c.res.status, statusText: c.res.statusText, headers });

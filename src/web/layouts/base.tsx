@@ -276,7 +276,12 @@ export function BaseLayout({
           </div>
           <div class="container footer-bottom">
             <span>© {new Date().getUTCFullYear()} Casinos of Mayfair. All rights reserved.</span>
-            <span>All opportunities are subject to verification and qualification.</span>
+            <span>
+              All opportunities are subject to verification and qualification.{' '}
+              <a href="/legal/cookies" data-cookie-settings>
+                Cookie settings
+              </a>
+            </span>
           </div>
         </footer>
       </body>

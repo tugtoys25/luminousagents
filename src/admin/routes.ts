@@ -2026,6 +2026,15 @@ const platformSettingKeys = [
   'favicon_url',
   'favicon_svg_url',
   'ga4_id',
+  'cookie_banner_enabled',
+  'cookie_banner_title',
+  'cookie_banner_text',
+  'cookie_accept_label',
+  'cookie_reject_label',
+  'cookie_banner_position',
+  'cookie_consent_days',
+  'cookie_privacy_url',
+  'cookie_policy_url',
   'whatsapp_number',
   'whatsapp_message',
   'contact_phone_mobile',
@@ -2092,6 +2101,21 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
       ],
     ],
     [
+      'Cookie banner and privacy',
+      'The consent pop-up shown to visitors. Leave a text field empty to use its default (shown as a placeholder). Visitors can change their choice from the footer link.',
+      [
+        'cookie_banner_enabled',
+        'cookie_banner_title',
+        'cookie_banner_text',
+        'cookie_accept_label',
+        'cookie_reject_label',
+        'cookie_banner_position',
+        'cookie_consent_days',
+        'cookie_privacy_url',
+        'cookie_policy_url',
+      ],
+    ],
+    [
       'Colours and typography',
       'Brand colours (any CSS colour) and font families.',
       [
@@ -2109,12 +2133,50 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
       ['header_navigation', 'footer_navigation', 'homepage_sections', 'geo_sections'],
     ],
   ];
+  const selectFields: Record<string, Array<[string, string]>> = {
+    cookie_banner_enabled: [
+      ['on', 'On - show the banner'],
+      ['off', 'Off - hide the banner'],
+    ],
+    cookie_banner_position: [
+      ['bottom-left', 'Bottom left'],
+      ['bottom', 'Bottom, full width'],
+      ['center', 'Centre of the screen'],
+    ],
+  };
+  const selectDefaults: Record<string, string> = {
+    cookie_banner_enabled: 'on',
+    cookie_banner_position: 'bottom-left',
+  };
+  const placeholders: Record<string, string> = {
+    cookie_banner_title: 'Your privacy matters',
+    cookie_banner_text:
+      'We use essential cookies to run this site. With your consent we also use analytics cookies to understand how it is used.',
+    cookie_accept_label: 'Accept all',
+    cookie_reject_label: 'Reject non-essential',
+    cookie_consent_days: '180',
+    cookie_privacy_url: '/legal/privacy',
+    cookie_policy_url: '/legal/cookies',
+  };
   const renderField = (key: string) => {
     const structured = structuredKeys.includes(key);
     const value = values[key] ?? (structured ? [] : '');
     const rendered = structured ? JSON.stringify(value, null, 2) : String(value);
-    const longText = structured || key === 'site_description' || key === 'whatsapp_message';
-    return `<label class="setting-field"${longText ? ' data-wide' : ''}><span>${key.replace(/_/g, ' ')}</span><textarea name="${key}" rows="${structured ? 6 : 2}">${escapeHtml(rendered)}</textarea></label>`;
+    const label = key.replace(/_/g, ' ');
+    const options = selectFields[key];
+    if (options) {
+      const current = rendered || selectDefaults[key] || '';
+      return `<label class="setting-field"><span>${label}</span><select name="${key}">${options
+        .map(
+          ([option, text]) =>
+            `<option value="${option}"${option === current ? ' selected' : ''}>${text}</option>`,
+        )
+        .join('')}</select></label>`;
+    }
+    const longText =
+      structured || ['site_description', 'whatsapp_message', 'cookie_banner_text'].includes(key);
+    const placeholder = placeholders[key] ? ` placeholder="${escapeHtml(placeholders[key])}"` : '';
+    return `<label class="setting-field"${longText ? ' data-wide' : ''}><span>${label}</span><textarea name="${key}" rows="${structured ? 6 : key === 'cookie_banner_text' ? 4 : 2}"${placeholder}>${escapeHtml(rendered)}</textarea></label>`;
   };
   const grouped = new Set(settingGroups.flatMap(([, , keys]) => keys));
   const leftovers = platformSettingKeys.filter((key) => !grouped.has(key));
@@ -2149,7 +2211,7 @@ admin.get('/settings', requireRole('admin', 'super_admin', 'editor'), async (c) 
 });
 admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length > 40)
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length > 60)
     return c.json(
       { error: { code: 'VALIDATION_ERROR', message: 'Provide a settings object.' } },
       422,
@@ -2201,6 +2263,55 @@ admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
             message: 'Notification email must be a valid email address.',
           },
         },
+        422,
+      );
+    if (key === 'cookie_banner_enabled' && value && !['on', 'off'].includes(String(value)))
+      return c.json(
+        { error: { code: 'INVALID_COOKIE_SETTING', message: 'Banner must be on or off.' } },
+        422,
+      );
+    if (
+      key === 'cookie_banner_position' &&
+      value &&
+      !['bottom-left', 'bottom', 'center'].includes(String(value))
+    )
+      return c.json(
+        { error: { code: 'INVALID_COOKIE_SETTING', message: 'Unknown banner position.' } },
+        422,
+      );
+    if (
+      key === 'cookie_consent_days' &&
+      value &&
+      !(/^\d{1,3}$/.test(String(value)) && Number(value) >= 1 && Number(value) <= 730)
+    )
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_COOKIE_SETTING',
+            message: 'Consent lifetime must be 1 to 730 days.',
+          },
+        },
+        422,
+      );
+    if (
+      ['cookie_privacy_url', 'cookie_policy_url'].includes(key) &&
+      value &&
+      (typeof value !== 'string' ||
+        !((value.startsWith('/') && !value.startsWith('//')) || /^https:\/\//i.test(value)))
+    )
+      return c.json(
+        { error: { code: 'INVALID_URL', message: `${key} must be a site-relative or HTTPS URL.` } },
+        422,
+      );
+    if (
+      ['cookie_banner_title', 'cookie_accept_label', 'cookie_reject_label'].includes(key) &&
+      typeof value === 'string' &&
+      value.length > (key === 'cookie_banner_title' ? 80 : 40)
+    )
+      return c.json({ error: { code: 'VALUE_TOO_LONG', message: `${key} is too long.` } }, 422);
+    if (key === 'cookie_banner_text' && typeof value === 'string' && value.length > 600)
+      return c.json(
+        { error: { code: 'VALUE_TOO_LONG', message: 'Banner text is limited to 600 characters.' } },
         422,
       );
     if (
