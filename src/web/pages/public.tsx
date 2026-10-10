@@ -16,7 +16,8 @@ import {
   StatsBand,
   WorldwideSection,
 } from '../components/sections';
-import { OFFICES } from '../content/site-content';
+import { OFFICES, SERVICES } from '../content/site-content';
+import { itemListLd, servicesLd, webPageLd } from '../seo';
 import { loadContact, type ContactSettings } from '../site-settings';
 
 const publicPages = new Hono<{
@@ -249,6 +250,13 @@ publicPages.get('/casinos-for-sale', async (c) => {
         title="Casino & Hotel Opportunities | Casinos of Mayfair"
         description="Browse published casino and casino-hotel investment opportunities."
         canonicalPath="/casinos-for-sale"
+        jsonLd={[
+          itemListLd(
+            (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''),
+            'Casino and hotel opportunities',
+            opportunities,
+          ),
+        ]}
       >
         <section class="page-hero">
           <div class="container">
@@ -414,6 +422,14 @@ publicPages.get('/casinos-for-sale/:country', async (c) => {
       title={`Casino Opportunities in ${countryName} | Casinos of Mayfair`}
       description={`Explore verified public casino and hospitality opportunities in ${countryName}.`}
       canonicalPath={`/casinos-for-sale/${encodeURIComponent(countrySlug)}`}
+      crumbs={[{ name: 'Opportunities', path: '/casinos-for-sale' }, { name: countryName }]}
+      jsonLd={[
+        itemListLd(
+          (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''),
+          `Casino opportunities in ${countryName}`,
+          items,
+        ),
+      ]}
     >
       <section class="page-hero">
         <div class="container">
@@ -472,6 +488,10 @@ publicPages.get('/casino-hotels', async (c) => {
       title="Casino Hotels for Sale | Casinos of Mayfair"
       description="Explore publicly approved casino-hotel investment opportunities."
       canonicalPath="/casino-hotels"
+      crumbs={[{ name: 'Opportunities', path: '/casinos-for-sale' }, { name: 'Casino hotels' }]}
+      jsonLd={[
+        itemListLd((c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''), 'Casino hotels', items),
+      ]}
     >
       <section class="page-hero">
         <div class="container">
@@ -580,6 +600,15 @@ publicPages.get('/opportunities/:slug', async (c) => {
       title={`${item.seoTitle} | Casinos of Mayfair`}
       description={item.seoDescription}
       canonicalPath={`/opportunities/${encodeURIComponent(item.slug)}`}
+      crumbs={[{ name: 'Opportunities', path: '/casinos-for-sale' }, { name: item.title }]}
+      jsonLd={[
+        webPageLd(
+          (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''),
+          `/opportunities/${encodeURIComponent(item.slug)}`,
+          item.title,
+          item.seoDescription,
+        ),
+      ]}
     >
       <section class="page-hero">
         <div class="container">
@@ -900,6 +929,11 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
         title={`${title} | Casinos of Mayfair`}
         description={description}
         canonicalPath={path}
+        jsonLd={
+          path === '/services'
+            ? [servicesLd((c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''), SERVICES)]
+            : []
+        }
       >
         <section class="page-hero">
           <div class="container">

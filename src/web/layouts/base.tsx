@@ -1,6 +1,14 @@
 import type { Child } from 'hono/jsx';
 import { FAQS } from '../content/site-content';
 import { DEFAULT_CONTACT, telHref, type ContactSettings } from '../site-settings';
+import {
+  breadcrumbLd,
+  crumbsFromPath,
+  ldJson,
+  organizationLd,
+  websiteLd,
+  type Crumb,
+} from '../seo';
 
 interface BaseProps {
   title: string;
@@ -9,6 +17,10 @@ interface BaseProps {
   siteUrl?: string;
   contact?: ContactSettings;
   noindex?: boolean;
+  /** Breadcrumb trail after Home; derived from canonicalPath when omitted. */
+  crumbs?: Crumb[];
+  /** Extra schema.org objects for this page. */
+  jsonLd?: unknown[];
   children: Child;
 }
 
@@ -21,23 +33,14 @@ export function BaseLayout({
   siteUrl = SITE_URL,
   contact = DEFAULT_CONTACT,
   noindex = false,
+  crumbs,
+  jsonLd = [],
   children,
 }: BaseProps) {
   const baseUrl = siteUrl.replace(/\/$/, '');
   const canonical = `${baseUrl}${canonicalPath}`;
-  const segments = canonicalPath.split('/').filter(Boolean);
-  const breadcrumb = [
-    { name: 'Home', item: baseUrl },
-    ...segments.map((segment, index) => ({
-      name: decodeURIComponent(segment)
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, (char) => char.toUpperCase()),
-      item: `${baseUrl}/${segments
-        .slice(0, index + 1)
-        .map(encodeURIComponent)
-        .join('/')}`,
-    })),
-  ];
+  const trail = crumbs ?? crumbsFromPath(canonicalPath);
+  const breadcrumbSchema = breadcrumbLd(baseUrl, trail);
   return (
     <html lang="en">
       <head>
@@ -50,46 +53,38 @@ export function BaseLayout({
         <meta name="description" content={description} />
         <link rel="canonical" href={canonical} />
         <link rel="manifest" href="/site.webmanifest" />
-        <script type="application/ld+json">
-          {JSON.stringify({
-            '@context': 'https://schema.org',
-            '@type': 'Organization',
-            name: 'Casinos of Mayfair',
-            url: baseUrl,
-          })}
-        </script>
-        <script type="application/ld+json">
-          {JSON.stringify({
-            '@context': 'https://schema.org',
-            '@type': 'WebSite',
-            name: 'Casinos of Mayfair',
-            url: baseUrl,
-          })}
-        </script>
-        <script type="application/ld+json">
-          {JSON.stringify({
-            '@context': 'https://schema.org',
-            '@type': 'BreadcrumbList',
-            itemListElement: breadcrumb.map((item, index) => ({
-              '@type': 'ListItem',
-              position: index + 1,
-              name: item.name,
-              item: item.item,
-            })),
-          })}
-        </script>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: ldJson(organizationLd(baseUrl, contact)) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: ldJson(websiteLd(baseUrl)) }}
+        />
+        {breadcrumbSchema && (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: ldJson(breadcrumbSchema) }}
+          />
+        )}
+        {jsonLd.map((item) => (
+          <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: ldJson(item) }} />
+        ))}
         {(canonicalPath === '/faq' || canonicalPath === '/') && (
-          <script type="application/ld+json">
-            {JSON.stringify({
-              '@context': 'https://schema.org',
-              '@type': 'FAQPage',
-              mainEntity: FAQS.map(([name, text]) => ({
-                '@type': 'Question',
-                name,
-                acceptedAnswer: { '@type': 'Answer', text },
-              })),
-            })}
-          </script>
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: ldJson({
+                '@context': 'https://schema.org',
+                '@type': 'FAQPage',
+                mainEntity: FAQS.map(([name, text]) => ({
+                  '@type': 'Question',
+                  name,
+                  acceptedAnswer: { '@type': 'Answer', text },
+                })),
+              }),
+            }}
+          />
         )}
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="Casinos of Mayfair" />
@@ -185,6 +180,26 @@ export function BaseLayout({
             </div>
           </div>
         </header>
+        {trail.length > 0 && (
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <ol class="container">
+              <li>
+                <a href="/">Home</a>
+              </li>
+              {trail.map((crumb, index) => (
+                <li>
+                  {crumb.path && index < trail.length - 1 ? (
+                    <a href={crumb.path}>{crumb.name}</a>
+                  ) : (
+                    <span aria-current={index === trail.length - 1 ? 'page' : undefined}>
+                      {crumb.name}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </nav>
+        )}
         <main id="main">{children}</main>
         <footer class="site-footer">
           <div class="container footer-grid">
