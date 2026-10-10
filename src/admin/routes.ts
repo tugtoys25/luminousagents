@@ -17,7 +17,9 @@ const opportunityInput = z.object({
   opportunityType: z
     .enum(['casino-hotel', 'casino', 'hotel', 'resort', 'gaming-venue', 'other'])
     .default('casino-hotel'),
-  classification: z.enum(['confidential', 'public', 'off_market', 'sold', 'under_offer', 'on_hold']).default('confidential'),
+  classification: z
+    .enum(['confidential', 'public', 'off_market', 'sold', 'under_offer', 'on_hold'])
+    .default('confidential'),
   labels: z.array(z.string().trim().min(1).max(32)).max(12).default([]),
   priceText: z.string().trim().max(180).optional().default(''),
   summary: z.string().trim().max(1000).optional().default(''),
@@ -43,7 +45,11 @@ const publicationInput = z.object({
 });
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
-const escapeHtml = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
+const escapeHtml = (s: unknown) =>
+  String(s ?? '').replace(
+    /[&<>"']/g,
+    (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!,
+  );
 
 async function purgeOpportunityPublicCache(
   env: Env,
@@ -395,7 +401,9 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
     assignedBrokerId: 'assigned_broker_id',
   };
   const sets = Object.entries(input).map(([key]) => `${mapping[key]} = ?`);
-  const values = Object.entries(input).map(([key, value]) => key === 'labels' ? JSON.stringify(value) : value);
+  const values = Object.entries(input).map(([key, value]) =>
+    key === 'labels' ? JSON.stringify(value) : value,
+  );
   if (input.title && input.title !== existing.title) {
     let slug = slugify(input.title);
     const found = await c.env.DB.prepare(
@@ -702,7 +710,9 @@ admin.post(
 );
 
 admin.get('/buyers/ui', requireRole('admin', 'super_admin'), async (c) =>
-  c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buyer access · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Buyer registrations</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/admin/logout">Sign out</a></nav><p class="muted">New registrations remain invited until an administrator approves them. Activating an account allows email and password sign-in but does not grant confidential data-room access.</p><p id="notice" role="status"></p><section id="buyers">Loading registrations…</section></main><script src="/static/js/dashboard-buyers.js" defer></script></body></html>`),
+  c.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buyer access · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Buyer registrations</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/admin/logout">Sign out</a></nav><p class="muted">New registrations remain invited until an administrator approves them. Activating an account allows email and password sign-in but does not grant confidential data-room access.</p><p id="notice" role="status"></p><section id="buyers">Loading registrations…</section></main><script src="/static/js/dashboard-buyers.js" defer></script></body></html>`,
+  ),
 );
 
 admin.get('/buyers', requireRole('admin', 'super_admin'), async (c) => {
@@ -713,15 +723,38 @@ admin.get('/buyers', requireRole('admin', 'super_admin'), async (c) => {
 });
 
 admin.patch('/buyers/:id', requireRole('admin', 'super_admin'), async (c) => {
-  const parsed = z.object({ status: z.enum(['active', 'invited', 'suspended']) }).safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Choose a valid buyer status.' } }, 422);
-  const user = await c.env.DB.prepare("SELECT id, status FROM users WHERE id = ? AND user_type = 'buyer'").bind(c.req.param('id')).first<{id:string;status:string}>();
+  const parsed = z
+    .object({ status: z.enum(['active', 'invited', 'suspended']) })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: 'Choose a valid buyer status.' } },
+      422,
+    );
+  const user = await c.env.DB.prepare(
+    "SELECT id, status FROM users WHERE id = ? AND user_type = 'buyer'",
+  )
+    .bind(c.req.param('id'))
+    .first<{ id: string; status: string }>();
   if (!user) return c.json({ error: { code: 'NOT_FOUND', message: 'Buyer not found.' } }, 404);
   const timestamp = now();
   await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE users SET status = ?, updated_at = ? WHERE id = ? AND user_type = 'buyer'").bind(parsed.data.status, timestamp, user.id),
-    c.env.DB.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND ? != 'active'").bind(timestamp, user.id, parsed.data.status),
-    c.env.DB.prepare("INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'buyer.status_changed', 'user', ?, ?, ?, ?)").bind(id(), c.get('staff').id, user.id, c.get('requestId'), JSON.stringify({ from: user.status, to: parsed.data.status }), timestamp),
+    c.env.DB.prepare(
+      "UPDATE users SET status = ?, updated_at = ? WHERE id = ? AND user_type = 'buyer'",
+    ).bind(parsed.data.status, timestamp, user.id),
+    c.env.DB.prepare(
+      "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND ? != 'active'",
+    ).bind(timestamp, user.id, parsed.data.status),
+    c.env.DB.prepare(
+      "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'buyer.status_changed', 'user', ?, ?, ?, ?)",
+    ).bind(
+      id(),
+      c.get('staff').id,
+      user.id,
+      c.get('requestId'),
+      JSON.stringify({ from: user.status, to: parsed.data.status }),
+      timestamp,
+    ),
   ]);
   return c.json({ data: { id: user.id, status: parsed.data.status } });
 });
@@ -807,7 +840,9 @@ admin.post('/buyers/provision', requireRole('admin', 'super_admin'), async (c) =
       ).bind(id(), c.get('staff').id, buyerId, c.get('requestId'), auditDetails, timestamp),
     ]);
   }
-  const inviteQueued = Boolean(await issueResetToken(c.env, { id: buyerId, email }, 'invite', 'buyer'));
+  const inviteQueued = Boolean(
+    await issueResetToken(c.env, { id: buyerId, email }, 'invite', 'buyer'),
+  );
   return c.json(
     {
       data: {
@@ -1253,8 +1288,17 @@ admin.post(
       'SELECT id, slug, country, public_visibility AS publicVisibility, assigned_broker_id AS assignedBrokerId FROM opportunities WHERE id = ?',
     )
       .bind(opportunityId)
-      .first<{ id: string; slug: string; country: string | null; publicVisibility: number; assignedBrokerId: string | null }>();
-    if (!opportunity || (c.get('staff').role === 'broker' && opportunity.assignedBrokerId !== c.get('staff').id))
+      .first<{
+        id: string;
+        slug: string;
+        country: string | null;
+        publicVisibility: number;
+        assignedBrokerId: string | null;
+      }>();
+    if (
+      !opportunity ||
+      (c.get('staff').role === 'broker' && opportunity.assignedBrokerId !== c.get('staff').id)
+    )
       return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
 
     const body = await c.req.parseBody();
@@ -1288,15 +1332,24 @@ admin.post(
     const png =
       contentType === 'image/png' &&
       bytes.length >= 8 &&
-      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value);
+      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every(
+        (value, index) => bytes[index] === value,
+      );
     if (!jpeg && !png)
       return c.json(
-        { error: { code: 'INVALID_FILE_SIGNATURE', message: 'Image bytes do not match JPEG or PNG.' } },
+        {
+          error: {
+            code: 'INVALID_FILE_SIGNATURE',
+            message: 'Image bytes do not match JPEG or PNG.',
+          },
+        },
         415,
       );
 
     const hash = await crypto.subtle.digest('SHA-256', bytes);
-    const sha256 = [...new Uint8Array(hash)].map((value) => value.toString(16).padStart(2, '0')).join('');
+    const sha256 = [...new Uint8Array(hash)]
+      .map((value) => value.toString(16).padStart(2, '0'))
+      .join('');
     const mediaId = id();
     const key = `opportunities/${opportunityId}/media/${mediaId}.${jpeg ? 'jpg' : 'png'}`;
     const timestamp = now();
@@ -1319,7 +1372,17 @@ admin.post(
         ).bind(id(), c.get('staff').id, opportunityId, c.get('requestId'), timestamp),
         c.env.DB.prepare(
           'INSERT INTO opportunity_media (id, opportunity_id, r2_key, alt_text, sort_order, created_at, content_type, byte_size, sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        ).bind(mediaId, opportunityId, key, altText, order?.next ?? 0, timestamp, contentType, upload.size, sha256),
+        ).bind(
+          mediaId,
+          opportunityId,
+          key,
+          altText,
+          order?.next ?? 0,
+          timestamp,
+          contentType,
+          upload.size,
+          sha256,
+        ),
         c.env.DB.prepare(
           "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'opportunity.media_uploaded', 'opportunity_media', ?, ?, ?, ?)",
         ).bind(
@@ -1335,9 +1398,24 @@ admin.post(
       await c.env.PRIVATE_FILES.delete(key);
       throw error;
     }
-    const cachePurge = await purgeOpportunityPublicCache(c.env, opportunity.slug, opportunity.country);
+    const cachePurge = await purgeOpportunityPublicCache(
+      c.env,
+      opportunity.slug,
+      opportunity.country,
+    );
     return c.json(
-      { data: { id: mediaId, opportunityId, altText, sortOrder: order?.next ?? 0, contentType, byteSize: upload.size, sha256, cachePurge } },
+      {
+        data: {
+          id: mediaId,
+          opportunityId,
+          altText,
+          sortOrder: order?.next ?? 0,
+          contentType,
+          byteSize: upload.size,
+          sha256,
+          cachePurge,
+        },
+      },
       201,
     );
   },
@@ -1348,7 +1426,7 @@ admin.get(
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) => {
     const result = await c.env.DB.prepare(
-      "SELECT m.id, m.alt_text AS altText, m.sort_order AS sortOrder, m.content_type AS contentType, m.byte_size AS byteSize, m.sha256 FROM opportunity_media m JOIN opportunities o ON o.id = m.opportunity_id WHERE m.opportunity_id = ? AND (? = 0 OR o.assigned_broker_id = ?) ORDER BY m.sort_order, m.created_at",
+      'SELECT m.id, m.alt_text AS altText, m.sort_order AS sortOrder, m.content_type AS contentType, m.byte_size AS byteSize, m.sha256 FROM opportunity_media m JOIN opportunities o ON o.id = m.opportunity_id WHERE m.opportunity_id = ? AND (? = 0 OR o.assigned_broker_id = ?) ORDER BY m.sort_order, m.created_at',
     )
       .bind(c.req.param('id'), c.get('staff').role === 'broker' ? 1 : 0, c.get('staff').id)
       .all();
@@ -1364,8 +1442,17 @@ admin.delete(
       'SELECT m.id, m.r2_key AS r2Key, o.slug, o.country, o.assigned_broker_id AS assignedBrokerId FROM opportunity_media m JOIN opportunities o ON o.id = m.opportunity_id WHERE m.id = ? AND m.opportunity_id = ?',
     )
       .bind(c.req.param('mediaId'), c.req.param('id'))
-      .first<{ id: string; r2Key: string; slug: string; country: string | null; assignedBrokerId: string | null }>();
-    if (!media || (c.get('staff').role === 'broker' && media.assignedBrokerId !== c.get('staff').id))
+      .first<{
+        id: string;
+        r2Key: string;
+        slug: string;
+        country: string | null;
+        assignedBrokerId: string | null;
+      }>();
+    if (
+      !media ||
+      (c.get('staff').role === 'broker' && media.assignedBrokerId !== c.get('staff').id)
+    )
       return c.json({ error: { code: 'NOT_FOUND', message: 'Listing image not found.' } }, 404);
     const timestamp = now();
     await c.env.DB.batch([
@@ -1780,13 +1867,24 @@ admin.patch(
   },
 );
 
+admin.get('/access-grants/ui', requireRole('admin', 'publisher', 'super_admin'), async (c) =>
+  c.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Data-room access · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Data-room access grants</h1><p class="muted">Access is time-limited, independent from account status and revocable. Every revocation requires a reason and is audited.</p><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/admin/logout">Sign out</a></nav><p id="notice" role="status"></p><section id="grants">Loading access grants…</section></main><script src="/static/js/dashboard-access-grants.js" defer></script></body></html>`,
+  ),
+);
 
-admin.get('/access-grants/ui', requireRole('admin', 'publisher', 'super_admin'), async (c) => c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Data-room access · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Data-room access grants</h1><p class="muted">Access is time-limited, independent from account status and revocable. Every revocation requires a reason and is audited.</p><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/admin/logout">Sign out</a></nav><p id="notice" role="status"></p><section id="grants">Loading access grants…</section></main><script src="/static/js/dashboard-access-grants.js" defer></script></body></html>`));
-
-admin.get('/access-grants', requireRole('admin', 'publisher', 'auditor', 'super_admin'), async (c) => {
-  const result = await c.env.DB.prepare("SELECT g.id, g.tier, g.granted_at AS grantedAt, g.expires_at AS expiresAt, g.revoked_at AS revokedAt, u.email AS buyerEmail, u.display_name AS buyerName, o.title AS opportunityTitle FROM access_grants g JOIN users u ON u.id = g.user_id JOIN opportunities o ON o.id = g.opportunity_id ORDER BY CASE WHEN g.revoked_at IS NULL AND g.expires_at > ? THEN 0 ELSE 1 END, g.granted_at DESC LIMIT 300").bind(now()).all();
-  return c.json({ data: result.results ?? [] });
-});
+admin.get(
+  '/access-grants',
+  requireRole('admin', 'publisher', 'auditor', 'super_admin'),
+  async (c) => {
+    const result = await c.env.DB.prepare(
+      'SELECT g.id, g.tier, g.granted_at AS grantedAt, g.expires_at AS expiresAt, g.revoked_at AS revokedAt, u.email AS buyerEmail, u.display_name AS buyerName, o.title AS opportunityTitle FROM access_grants g JOIN users u ON u.id = g.user_id JOIN opportunities o ON o.id = g.opportunity_id ORDER BY CASE WHEN g.revoked_at IS NULL AND g.expires_at > ? THEN 0 ELSE 1 END, g.granted_at DESC LIMIT 300',
+    )
+      .bind(now())
+      .all();
+    return c.json({ data: result.results ?? [] });
+  },
+);
 
 admin.post(
   '/access-grants/:id/revoke',
@@ -1877,75 +1975,353 @@ admin.get('/audit', requireRole('admin', 'auditor', 'super_admin'), async (c) =>
   return c.json({ data: result.results ?? [], limit: 200 });
 });
 
-
-const platformSettingKeys = ['site_name','site_description','logo_url','logo_text','favicon_url','favicon_svg_url','ga4_id','whatsapp_number','whatsapp_message','primary_color','accent_color','background_color','font_family','header_navigation','footer_navigation','geo_sections','homepage_sections','notification_email','font_heading','font_body','logo_alt'];
-admin.get('/settings/ui', requireRole('admin','super_admin','editor'), async (c) => {
-  const rows = await c.env.DB.prepare('SELECT setting_key AS key,value_json AS value FROM platform_settings ORDER BY setting_key').all<{key:string;value:string}>();
+const platformSettingKeys = [
+  'site_name',
+  'site_description',
+  'logo_url',
+  'logo_text',
+  'favicon_url',
+  'favicon_svg_url',
+  'ga4_id',
+  'whatsapp_number',
+  'whatsapp_message',
+  'primary_color',
+  'accent_color',
+  'background_color',
+  'font_family',
+  'header_navigation',
+  'footer_navigation',
+  'geo_sections',
+  'homepage_sections',
+  'notification_email',
+  'font_heading',
+  'font_body',
+  'logo_alt',
+];
+admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (c) => {
+  const rows = await c.env.DB.prepare(
+    'SELECT setting_key AS key,value_json AS value FROM platform_settings ORDER BY setting_key',
+  ).all<{ key: string; value: string }>();
   const values: Record<string, unknown> = {};
-  for (const row of rows.results ?? []) { try { values[row.key] = JSON.parse(row.value); } catch { values[row.key] = row.value; } }
-  const fields = platformSettingKeys.map(key => { const structured = ['header_navigation','footer_navigation','geo_sections','homepage_sections'].includes(key); const value = values[key] ?? (structured ? [] : ''); const rendered = structured ? JSON.stringify(value, null, 2) : String(value); return `<label class="setting-field"><span>${key.replace(/_/g,' ')}</span><textarea name="${key}" rows="${structured ? 5 : 2}">${escapeHtml(rendered)}</textarea></label>`; }).join('');
-  return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform settings</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform settings</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Platform settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/dashboard/audit">Audit log</a><a href="/admin/change-password">Change password</a><a href="/admin/logout">Sign out</a></nav><p class="setting-help">Edit branding, contact channels, GA4, typography, colours, navigation and structured homepage/geo sections. Values are stored in D1 and applied to public pages where supported. JSON fields must contain valid JSON; navigation and sections should be arrays of objects.</p><form id="settings-form"><div class="settings-grid">${fields}</div><p><button type="submit">Save platform settings</button></p><p id="settings-notice" role="status" aria-live="polite"></p></form><h2>Custom content</h2><p><a href="/dashboard/pages/ui">Manage pages</a> · <a href="/dashboard/forms/ui">Manage custom forms</a></p></main><script src="/static/js/dashboard-settings.js" defer></script></body></html>`);
-});
-admin.get('/settings', requireRole('admin','super_admin','editor'), async c => {
-  const rows = await c.env.DB.prepare('SELECT setting_key AS key,value_json AS value,updated_at AS updatedAt FROM platform_settings ORDER BY setting_key').all<{key:string;value:string;updatedAt:string}>();
-  return c.json({data:(rows.results??[]).map(r=>({key:r.key,value:JSON.parse(r.value),updatedAt:r.updatedAt}))});
-});
-admin.put('/settings', requireRole('admin','super_admin'), async c => {
-  const body = await c.req.json().catch(()=>null) as Record<string,unknown>|null;
-  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length > 40) return c.json({error:{code:'VALIDATION_ERROR',message:'Provide a settings object.'}},422);
-  const allowed = new Set(platformSettingKeys); const timestamp=now(); const staff=c.get('staff');
-  const statements=[] as D1PreparedStatement[];
-  for (const [key,value] of Object.entries(body)) {
-    if (!allowed.has(key)) return c.json({error:{code:'UNKNOWN_SETTING',message:`Unsupported setting: ${key}`}},422);
-    if (typeof value === 'string' && value.length > 5000) return c.json({error:{code:'VALUE_TOO_LONG',message:`Setting ${key} is too long.`}},422);
-    if (['header_navigation','footer_navigation','geo_sections','homepage_sections'].includes(key) && (!Array.isArray(value) || value.length > 50)) return c.json({error:{code:'INVALID_JSON_SETTING',message:`${key} must be an array with at most 50 items.`}},422);
-    if (key === 'ga4_id' && value && (typeof value !== 'string' || !/^G-[A-Z0-9]+$/.test(value))) return c.json({error:{code:'INVALID_GA4_ID',message:'GA4 ID must use the G-XXXXXXXX format.'}},422);
-    if (key === 'notification_email' && value && (typeof value !== 'string' || !z.string().email().safeParse(value).success)) return c.json({error:{code:'INVALID_NOTIFICATION_EMAIL',message:'Notification email must be a valid email address.'}},422);
-    if (['primary_color','accent_color','background_color'].includes(key) && value && (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(value))) return c.json({error:{code:'INVALID_COLOR',message:`${key} must be a six-digit hex colour.`}},422);
-    if (['logo_url','favicon_url','favicon_svg_url'].includes(key) && value && (typeof value !== 'string' || !(value.startsWith('/') || /^https:\/\//i.test(value)))) return c.json({error:{code:'INVALID_URL',message:`${key} must be a site-relative or HTTPS URL.`}},422);
-    statements.push(c.env.DB.prepare('INSERT INTO platform_settings (setting_key,value_json,updated_by,updated_at) VALUES (?,?,?,?) ON CONFLICT(setting_key) DO UPDATE SET value_json=excluded.value_json,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(key,JSON.stringify(value),staff.id,timestamp));
+  for (const row of rows.results ?? []) {
+    try {
+      values[row.key] = JSON.parse(row.value);
+    } catch {
+      values[row.key] = row.value;
+    }
   }
-  if (statements.length) statements.push(c.env.DB.prepare("INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,'staff','platform.settings_updated','platform_settings','global',?,?,?)").bind(id(),staff.id,c.get('requestId'),JSON.stringify({keys:Object.keys(body)}),timestamp));
+  const fields = platformSettingKeys
+    .map((key) => {
+      const structured = [
+        'header_navigation',
+        'footer_navigation',
+        'geo_sections',
+        'homepage_sections',
+      ].includes(key);
+      const value = values[key] ?? (structured ? [] : '');
+      const rendered = structured ? JSON.stringify(value, null, 2) : String(value);
+      return `<label class="setting-field"><span>${key.replace(/_/g, ' ')}</span><textarea name="${key}" rows="${structured ? 5 : 2}">${escapeHtml(rendered)}</textarea></label>`;
+    })
+    .join('');
+  return c.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform settings</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform settings</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Platform settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/dashboard/audit">Audit log</a><a href="/admin/change-password">Change password</a><a href="/admin/logout">Sign out</a></nav><p class="setting-help">Edit branding, contact channels, GA4, typography, colours, navigation and structured homepage/geo sections. Values are stored in D1 and applied to public pages where supported. JSON fields must contain valid JSON; navigation and sections should be arrays of objects.</p><form id="settings-form"><div class="settings-grid">${fields}</div><p><button type="submit">Save platform settings</button></p><p id="settings-notice" role="status" aria-live="polite"></p></form><h2>Custom content</h2><p><a href="/dashboard/pages/ui">Manage pages</a> · <a href="/dashboard/forms/ui">Manage custom forms</a></p></main><script src="/static/js/dashboard-settings.js" defer></script></body></html>`,
+  );
+});
+admin.get('/settings', requireRole('admin', 'super_admin', 'editor'), async (c) => {
+  const rows = await c.env.DB.prepare(
+    'SELECT setting_key AS key,value_json AS value,updated_at AS updatedAt FROM platform_settings ORDER BY setting_key',
+  ).all<{ key: string; value: string; updatedAt: string }>();
+  return c.json({
+    data: (rows.results ?? []).map((r) => ({
+      key: r.key,
+      value: JSON.parse(r.value),
+      updatedAt: r.updatedAt,
+    })),
+  });
+});
+admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length > 40)
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: 'Provide a settings object.' } },
+      422,
+    );
+  const allowed = new Set(platformSettingKeys);
+  const timestamp = now();
+  const staff = c.get('staff');
+  const statements = [] as D1PreparedStatement[];
+  for (const [key, value] of Object.entries(body)) {
+    if (!allowed.has(key))
+      return c.json(
+        { error: { code: 'UNKNOWN_SETTING', message: `Unsupported setting: ${key}` } },
+        422,
+      );
+    if (typeof value === 'string' && value.length > 5000)
+      return c.json(
+        { error: { code: 'VALUE_TOO_LONG', message: `Setting ${key} is too long.` } },
+        422,
+      );
+    if (
+      ['header_navigation', 'footer_navigation', 'geo_sections', 'homepage_sections'].includes(
+        key,
+      ) &&
+      (!Array.isArray(value) || value.length > 50)
+    )
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_JSON_SETTING',
+            message: `${key} must be an array with at most 50 items.`,
+          },
+        },
+        422,
+      );
+    if (key === 'ga4_id' && value && (typeof value !== 'string' || !/^G-[A-Z0-9]+$/.test(value)))
+      return c.json(
+        { error: { code: 'INVALID_GA4_ID', message: 'GA4 ID must use the G-XXXXXXXX format.' } },
+        422,
+      );
+    if (
+      key === 'notification_email' &&
+      value &&
+      (typeof value !== 'string' || !z.string().email().safeParse(value).success)
+    )
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_NOTIFICATION_EMAIL',
+            message: 'Notification email must be a valid email address.',
+          },
+        },
+        422,
+      );
+    if (
+      ['primary_color', 'accent_color', 'background_color'].includes(key) &&
+      value &&
+      (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(value))
+    )
+      return c.json(
+        { error: { code: 'INVALID_COLOR', message: `${key} must be a six-digit hex colour.` } },
+        422,
+      );
+    if (
+      ['logo_url', 'favicon_url', 'favicon_svg_url'].includes(key) &&
+      value &&
+      (typeof value !== 'string' || !(value.startsWith('/') || /^https:\/\//i.test(value)))
+    )
+      return c.json(
+        { error: { code: 'INVALID_URL', message: `${key} must be a site-relative or HTTPS URL.` } },
+        422,
+      );
+    statements.push(
+      c.env.DB.prepare(
+        'INSERT INTO platform_settings (setting_key,value_json,updated_by,updated_at) VALUES (?,?,?,?) ON CONFLICT(setting_key) DO UPDATE SET value_json=excluded.value_json,updated_by=excluded.updated_by,updated_at=excluded.updated_at',
+      ).bind(key, JSON.stringify(value), staff.id, timestamp),
+    );
+  }
+  if (statements.length)
+    statements.push(
+      c.env.DB.prepare(
+        "INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,'staff','platform.settings_updated','platform_settings','global',?,?,?)",
+      ).bind(
+        id(),
+        staff.id,
+        c.get('requestId'),
+        JSON.stringify({ keys: Object.keys(body) }),
+        timestamp,
+      ),
+    );
   if (statements.length) await c.env.DB.batch(statements);
-  return c.json({data:{saved:Object.keys(body).length,updatedAt:timestamp}});
+  return c.json({ data: { saved: Object.keys(body).length, updatedAt: timestamp } });
 });
 
-admin.get('/pages/ui', requireRole('admin','super_admin','editor'), c => c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Managed pages</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><h1>Managed pages</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/logout">Sign out</a></nav><p>Create SEO-friendly content pages. Content is rendered as escaped plain text; HTML is not executed.</p><form id="managed-page-form"><input type="hidden" name="id"><label>Title <input name="title" minlength="3" maxlength="180" required></label><label>Slug <input name="slug" pattern="[a-z0-9-]+" maxlength="100" required></label><label>Description <textarea name="description" maxlength="500"></textarea></label><label>Body (plain text; HTML is not executed) <textarea name="bodyMarkdown" rows="10" maxlength="20000" required></textarea></label><label>SEO title <input name="seoTitle" maxlength="180"></label><label>SEO description <input name="seoDescription" maxlength="320"></label><label>Status <select name="status"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label><button>Save page</button></form><p id="page-notice" role="status"></p><ul id="managed-pages"></ul></main><script src="/static/js/dashboard-pages.js" defer></script></body></html>`));
-admin.get('/pages', requireRole('admin','super_admin','editor'), async c => { const r=await c.env.DB.prepare('SELECT id,slug,title,description,body_markdown AS bodyMarkdown,status,seo_title AS seoTitle,seo_description AS seoDescription,updated_at AS updatedAt FROM managed_pages ORDER BY updated_at DESC LIMIT 200').all(); return c.json({data:r.results??[]}); });
-admin.post('/pages', requireRole('admin','super_admin','editor'), async c => {
-  const p=z.object({id:z.string().uuid().optional(),title:z.string().trim().min(3).max(180),slug:z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(100),description:z.string().max(500).default(''),bodyMarkdown:z.string().min(1).max(20000),status:z.enum(['draft','published','archived']),seoTitle:z.string().max(180).default(''),seoDescription:z.string().max(320).default('')}).safeParse(await c.req.json().catch(()=>null));
-  if(!p.success)return c.json({error:{code:'VALIDATION_ERROR',message:'Check the page fields.'}},422);
-  const d=p.data, staff=c.get('staff'), timestamp=now(), pageId=d.id??id();
-  try { await c.env.DB.prepare('INSERT INTO managed_pages (id,slug,title,description,body_markdown,status,seo_title,seo_description,created_by,updated_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,title=excluded.title,description=excluded.description,body_markdown=excluded.body_markdown,status=excluded.status,seo_title=excluded.seo_title,seo_description=excluded.seo_description,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(pageId,d.slug,d.title,d.description,d.bodyMarkdown,d.status,d.seoTitle,d.seoDescription,staff.id,staff.id,timestamp,timestamp).run(); } catch { return c.json({error:{code:'SLUG_CONFLICT',message:'That slug is already in use.'}},409); }
-  await audit(c,'managed_page.saved','managed_page',pageId,{slug:d.slug,status:d.status}); return c.json({data:{id:pageId,slug:d.slug,status:d.status}});
+admin.get('/pages/ui', requireRole('admin', 'super_admin', 'editor'), (c) =>
+  c.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Managed pages</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><h1>Managed pages</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/logout">Sign out</a></nav><p>Create SEO-friendly content pages. Content is rendered as escaped plain text; HTML is not executed.</p><form id="managed-page-form"><input type="hidden" name="id"><label>Title <input name="title" minlength="3" maxlength="180" required></label><label>Slug <input name="slug" pattern="[a-z0-9-]+" maxlength="100" required></label><label>Description <textarea name="description" maxlength="500"></textarea></label><label>Body (plain text; HTML is not executed) <textarea name="bodyMarkdown" rows="10" maxlength="20000" required></textarea></label><label>SEO title <input name="seoTitle" maxlength="180"></label><label>SEO description <input name="seoDescription" maxlength="320"></label><label>Status <select name="status"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label><button>Save page</button></form><p id="page-notice" role="status"></p><ul id="managed-pages"></ul></main><script src="/static/js/dashboard-pages.js" defer></script></body></html>`,
+  ),
+);
+admin.get('/pages', requireRole('admin', 'super_admin', 'editor'), async (c) => {
+  const r = await c.env.DB.prepare(
+    'SELECT id,slug,title,description,body_markdown AS bodyMarkdown,status,seo_title AS seoTitle,seo_description AS seoDescription,updated_at AS updatedAt FROM managed_pages ORDER BY updated_at DESC LIMIT 200',
+  ).all();
+  return c.json({ data: r.results ?? [] });
+});
+admin.post('/pages', requireRole('admin', 'super_admin', 'editor'), async (c) => {
+  const p = z
+    .object({
+      id: z.string().uuid().optional(),
+      title: z.string().trim().min(3).max(180),
+      slug: z
+        .string()
+        .trim()
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+        .max(100),
+      description: z.string().max(500).default(''),
+      bodyMarkdown: z.string().min(1).max(20000),
+      status: z.enum(['draft', 'published', 'archived']),
+      seoTitle: z.string().max(180).default(''),
+      seoDescription: z.string().max(320).default(''),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!p.success)
+    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Check the page fields.' } }, 422);
+  const d = p.data,
+    staff = c.get('staff'),
+    timestamp = now(),
+    pageId = d.id ?? id();
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO managed_pages (id,slug,title,description,body_markdown,status,seo_title,seo_description,created_by,updated_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,title=excluded.title,description=excluded.description,body_markdown=excluded.body_markdown,status=excluded.status,seo_title=excluded.seo_title,seo_description=excluded.seo_description,updated_by=excluded.updated_by,updated_at=excluded.updated_at',
+    )
+      .bind(
+        pageId,
+        d.slug,
+        d.title,
+        d.description,
+        d.bodyMarkdown,
+        d.status,
+        d.seoTitle,
+        d.seoDescription,
+        staff.id,
+        staff.id,
+        timestamp,
+        timestamp,
+      )
+      .run();
+  } catch {
+    return c.json(
+      { error: { code: 'SLUG_CONFLICT', message: 'That slug is already in use.' } },
+      409,
+    );
+  }
+  await audit(c, 'managed_page.saved', 'managed_page', pageId, { slug: d.slug, status: d.status });
+  return c.json({ data: { id: pageId, slug: d.slug, status: d.status } });
 });
 
-admin.get('/forms/ui', requireRole('admin','super_admin','editor'), c => c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Managed forms</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><h1>Managed forms</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/logout">Sign out</a></nav><p>Define form fields as JSON array, e.g. [{"name":"name","label":"Full name","type":"text","required":true},{"name":"email","label":"Email","type":"email","required":true}]. Submissions are saved in D1; published forms can optionally be associated with a listing using its slug.</p><form id="managed-form-form"><input type="hidden" name="id"><label>Title <input name="title" minlength="3" maxlength="180" required></label><label>Slug <input name="slug" pattern="[a-z0-9-]+" maxlength="100" required></label><label>Description <textarea name="description" maxlength="500"></textarea></label><label>Fields JSON <textarea name="fieldsJson" rows="8" required>[{"name":"name","label":"Full name","type":"text","required":true},{"name":"email","label":"Business email","type":"email","required":true},{"name":"message","label":"How can we help?","type":"textarea","required":true}]</textarea></label><label>Status <select name="status"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label><label><input type="checkbox" name="notificationEnabled" checked> Notify staff by email on submission</label><button>Save form</button></form><p id="form-notice" role="status"></p><ul id="managed-forms"></ul><h2>Recent form submissions</h2><p>Submissions are shown newest first. Contact and listing details are confidential; use them only for the requested business purpose.</p><section id="managed-submissions" aria-live="polite">Loading submissions…</section></main><script src="/static/js/dashboard-forms.js" defer></script></body></html>`));
-admin.get('/forms', requireRole('admin','super_admin','editor'), async c => { const r=await c.env.DB.prepare('SELECT id,slug,title,description,fields_json AS fieldsJson,notification_enabled AS notificationEnabled,status,updated_at AS updatedAt FROM managed_forms ORDER BY updated_at DESC LIMIT 200').all(); return c.json({data:r.results??[]}); });
-admin.get('/form-submissions', requireRole('admin','super_admin','editor','broker','auditor'), async c => { const r=await c.env.DB.prepare('SELECT s.id,s.data_json AS dataJson,s.created_at AS createdAt,f.title AS formTitle,o.title AS opportunityTitle FROM managed_form_submissions s JOIN managed_forms f ON f.id=s.form_id LEFT JOIN opportunities o ON o.id=s.opportunity_id ORDER BY s.created_at DESC LIMIT 100').all(); return c.json({data:(r.results??[]).map((row)=>({...row,data:JSON.parse(String((row as Record<string,unknown>).dataJson??'{}'))}))}); });
-admin.post('/forms', requireRole('admin','super_admin','editor'), async c => {
-  const p=z.object({id:z.string().uuid().optional(),title:z.string().trim().min(3).max(180),slug:z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(100),description:z.string().max(500).default(''),fieldsJson:z.string().max(10000),notificationEnabled:z.boolean().default(true),status:z.enum(['draft','published','archived'])}).safeParse(await c.req.json().catch(()=>null));
-  if(!p.success)return c.json({error:{code:'VALIDATION_ERROR',message:'Check the form fields.'}},422);
-  let fields:unknown; try{fields=JSON.parse(p.data.fieldsJson)}catch{return c.json({error:{code:'INVALID_FIELDS_JSON',message:'Fields must be valid JSON.'}},422)};
-  const fieldSchema=z.array(z.object({name:z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),label:z.string().min(1).max(80),type:z.enum(['text','email','tel','textarea','select']),required:z.boolean().optional(),options:z.array(z.string().max(80)).max(20).optional()})).min(1).max(20);
-  const validFields=fieldSchema.safeParse(fields); if(!validFields.success)return c.json({error:{code:'INVALID_FIELDS',message:'Each field needs a safe name, label, supported type and optional options.'}},422);
-  const d=p.data,staff=c.get('staff'),timestamp=now(),formId=d.id??id();
-  try{await c.env.DB.prepare('INSERT INTO managed_forms (id,slug,title,description,fields_json,notification_enabled,status,created_by,updated_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,title=excluded.title,description=excluded.description,fields_json=excluded.fields_json,notification_enabled=excluded.notification_enabled,status=excluded.status,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(formId,d.slug,d.title,d.description,JSON.stringify(validFields.data),d.notificationEnabled?1:0,d.status,staff.id,staff.id,timestamp,timestamp).run()}catch{return c.json({error:{code:'SLUG_CONFLICT',message:'That slug is already in use.'}},409)}
-  await audit(c,'managed_form.saved','managed_form',formId,{slug:d.slug,status:d.status}); return c.json({data:{id:formId,slug:d.slug,status:d.status,url:`/forms/${d.slug}`}});
+admin.get('/forms/ui', requireRole('admin', 'super_admin', 'editor'), (c) =>
+  c.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Managed forms</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><h1>Managed forms</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/logout">Sign out</a></nav><p>Define form fields as JSON array, e.g. [{"name":"name","label":"Full name","type":"text","required":true},{"name":"email","label":"Email","type":"email","required":true}]. Submissions are saved in D1; published forms can optionally be associated with a listing using its slug.</p><form id="managed-form-form"><input type="hidden" name="id"><label>Title <input name="title" minlength="3" maxlength="180" required></label><label>Slug <input name="slug" pattern="[a-z0-9-]+" maxlength="100" required></label><label>Description <textarea name="description" maxlength="500"></textarea></label><label>Fields JSON <textarea name="fieldsJson" rows="8" required>[{"name":"name","label":"Full name","type":"text","required":true},{"name":"email","label":"Business email","type":"email","required":true},{"name":"message","label":"How can we help?","type":"textarea","required":true}]</textarea></label><label>Status <select name="status"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label><label><input type="checkbox" name="notificationEnabled" checked> Notify staff by email on submission</label><button>Save form</button></form><p id="form-notice" role="status"></p><ul id="managed-forms"></ul><h2>Recent form submissions</h2><p>Submissions are shown newest first. Contact and listing details are confidential; use them only for the requested business purpose.</p><section id="managed-submissions" aria-live="polite">Loading submissions…</section></main><script src="/static/js/dashboard-forms.js" defer></script></body></html>`,
+  ),
+);
+admin.get('/forms', requireRole('admin', 'super_admin', 'editor'), async (c) => {
+  const r = await c.env.DB.prepare(
+    'SELECT id,slug,title,description,fields_json AS fieldsJson,notification_enabled AS notificationEnabled,status,updated_at AS updatedAt FROM managed_forms ORDER BY updated_at DESC LIMIT 200',
+  ).all();
+  return c.json({ data: r.results ?? [] });
+});
+admin.get(
+  '/form-submissions',
+  requireRole('admin', 'super_admin', 'editor', 'broker', 'auditor'),
+  async (c) => {
+    const r = await c.env.DB.prepare(
+      'SELECT s.id,s.data_json AS dataJson,s.created_at AS createdAt,f.title AS formTitle,o.title AS opportunityTitle FROM managed_form_submissions s JOIN managed_forms f ON f.id=s.form_id LEFT JOIN opportunities o ON o.id=s.opportunity_id ORDER BY s.created_at DESC LIMIT 100',
+    ).all();
+    return c.json({
+      data: (r.results ?? []).map((row) => ({
+        ...row,
+        data: JSON.parse(String((row as Record<string, unknown>).dataJson ?? '{}')),
+      })),
+    });
+  },
+);
+admin.post('/forms', requireRole('admin', 'super_admin', 'editor'), async (c) => {
+  const p = z
+    .object({
+      id: z.string().uuid().optional(),
+      title: z.string().trim().min(3).max(180),
+      slug: z
+        .string()
+        .trim()
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+        .max(100),
+      description: z.string().max(500).default(''),
+      fieldsJson: z.string().max(10000),
+      notificationEnabled: z.boolean().default(true),
+      status: z.enum(['draft', 'published', 'archived']),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!p.success)
+    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Check the form fields.' } }, 422);
+  let fields: unknown;
+  try {
+    fields = JSON.parse(p.data.fieldsJson);
+  } catch {
+    return c.json(
+      { error: { code: 'INVALID_FIELDS_JSON', message: 'Fields must be valid JSON.' } },
+      422,
+    );
+  }
+  const fieldSchema = z
+    .array(
+      z.object({
+        name: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
+        label: z.string().min(1).max(80),
+        type: z.enum(['text', 'email', 'tel', 'textarea', 'select']),
+        required: z.boolean().optional(),
+        options: z.array(z.string().max(80)).max(20).optional(),
+      }),
+    )
+    .min(1)
+    .max(20);
+  const validFields = fieldSchema.safeParse(fields);
+  if (!validFields.success)
+    return c.json(
+      {
+        error: {
+          code: 'INVALID_FIELDS',
+          message: 'Each field needs a safe name, label, supported type and optional options.',
+        },
+      },
+      422,
+    );
+  const d = p.data,
+    staff = c.get('staff'),
+    timestamp = now(),
+    formId = d.id ?? id();
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO managed_forms (id,slug,title,description,fields_json,notification_enabled,status,created_by,updated_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,title=excluded.title,description=excluded.description,fields_json=excluded.fields_json,notification_enabled=excluded.notification_enabled,status=excluded.status,updated_by=excluded.updated_by,updated_at=excluded.updated_at',
+    )
+      .bind(
+        formId,
+        d.slug,
+        d.title,
+        d.description,
+        JSON.stringify(validFields.data),
+        d.notificationEnabled ? 1 : 0,
+        d.status,
+        staff.id,
+        staff.id,
+        timestamp,
+        timestamp,
+      )
+      .run();
+  } catch {
+    return c.json(
+      { error: { code: 'SLUG_CONFLICT', message: 'That slug is already in use.' } },
+      409,
+    );
+  }
+  await audit(c, 'managed_form.saved', 'managed_form', formId, { slug: d.slug, status: d.status });
+  return c.json({ data: { id: formId, slug: d.slug, status: d.status, url: `/forms/${d.slug}` } });
 });
 
 /* ---------------------------------------------------------------- staff accounts (super administrators only) */
 const staffRoles = ['super_admin', 'admin', 'editor', 'broker', 'publisher', 'auditor'] as const;
 
 admin.get('/staff/ui', requireRole('super_admin'), async (c) =>
-  c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff accounts · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Staff accounts</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/audit">Audit log</a></nav><p class="muted">Only super administrators can create staff, change roles or suspend access. Leave the temporary password blank to email the person a set-password link.</p><form id="staff-create" class="buyer-provision"><label>Full name <input name="displayName" minlength="2" maxlength="120" required></label><label>Work email <input name="email" type="email" maxlength="254" required></label><label>Role <select name="role"><option value="admin">admin</option><option value="editor">editor</option><option value="broker">broker</option><option value="publisher">publisher</option><option value="auditor">auditor</option><option value="super_admin">super_admin</option></select></label><label>Temporary password (optional, min 12 characters) <input name="temporaryPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200"></label><button type="submit">Create staff account</button></form><p id="notice" role="status"></p><section id="staff-list">Loading staff…</section></main><script src="/static/js/dashboard-staff.js" defer></script></body></html>`),
+  c.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff accounts · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Staff accounts</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/audit">Audit log</a></nav><p class="muted">Only super administrators can create staff, change roles or suspend access. Leave the temporary password blank to email the person a set-password link.</p><form id="staff-create" class="buyer-provision"><label>Full name <input name="displayName" minlength="2" maxlength="120" required></label><label>Work email <input name="email" type="email" maxlength="254" required></label><label>Role <select name="role"><option value="admin">admin</option><option value="editor">editor</option><option value="broker">broker</option><option value="publisher">publisher</option><option value="auditor">auditor</option><option value="super_admin">super_admin</option></select></label><label>Temporary password (optional, min 12 characters) <input name="temporaryPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200"></label><button type="submit">Create staff account</button></form><p id="notice" role="status"></p><section id="staff-list">Loading staff…</section></main><script src="/static/js/dashboard-staff.js" defer></script></body></html>`,
+  ),
 );
 
 admin.get('/staff', requireRole('super_admin'), async (c) => {
   const result = await c.env.DB.prepare(
     "SELECT id, email, display_name AS displayName, role, status, created_at AS createdAt, CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS hasPassword FROM users WHERE user_type = 'staff' ORDER BY created_at LIMIT 300",
   ).all();
-  return c.json({ data: (result.results ?? []).map((r) => ({ ...r, hasPassword: r['hasPassword'] === 1 })) });
+  return c.json({
+    data: (result.results ?? []).map((r) => ({ ...r, hasPassword: r['hasPassword'] === 1 })),
+  });
 });
 
 admin.post('/staff', requireRole('super_admin'), async (c) => {
@@ -1957,49 +2333,116 @@ admin.post('/staff', requireRole('super_admin'), async (c) => {
       temporaryPassword: z.string().max(200).optional(),
     })
     .safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Provide a name, valid email and role.' } }, 422);
+  if (!parsed.success)
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: 'Provide a name, valid email and role.' } },
+      422,
+    );
   const email = parsed.data.email.toLowerCase();
   if (parsed.data.temporaryPassword) {
     const problem = passwordPolicyError(parsed.data.temporaryPassword, email);
     if (problem) return c.json({ error: { code: 'WEAK_PASSWORD', message: problem } }, 422);
   }
-  const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').bind(email).first();
-  if (existing) return c.json({ error: { code: 'ACCOUNT_CONFLICT', message: 'An account with that email already exists.' } }, 409);
+  const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE')
+    .bind(email)
+    .first();
+  if (existing)
+    return c.json(
+      {
+        error: { code: 'ACCOUNT_CONFLICT', message: 'An account with that email already exists.' },
+      },
+      409,
+    );
   const timestamp = now();
   const userId = id();
-  const hash = parsed.data.temporaryPassword ? await hashPassword(parsed.data.temporaryPassword) : null;
+  const hash = parsed.data.temporaryPassword
+    ? await hashPassword(parsed.data.temporaryPassword)
+    : null;
   await c.env.DB.batch([
-    c.env.DB.prepare("INSERT INTO users (id,email,display_name,user_type,role,status,password_hash,password_updated_at,must_change_password,created_at,updated_at) VALUES (?,?,?,'staff',?,'active',?,?,?,?,?)").bind(userId, email, parsed.data.displayName, parsed.data.role, hash, hash ? timestamp : null, hash ? 1 : 0, timestamp, timestamp),
+    c.env.DB.prepare(
+      "INSERT INTO users (id,email,display_name,user_type,role,status,password_hash,password_updated_at,must_change_password,created_at,updated_at) VALUES (?,?,?,'staff',?,'active',?,?,?,?,?)",
+    ).bind(
+      userId,
+      email,
+      parsed.data.displayName,
+      parsed.data.role,
+      hash,
+      hash ? timestamp : null,
+      hash ? 1 : 0,
+      timestamp,
+      timestamp,
+    ),
   ]);
-  await audit(c, 'staff.created', 'user', userId, { role: parsed.data.role, method: hash ? 'temporary_password' : 'invite' });
-  const invited = hash ? false : Boolean(await issueResetToken(c.env, { id: userId, email }, 'invite', 'staff'));
+  await audit(c, 'staff.created', 'user', userId, {
+    role: parsed.data.role,
+    method: hash ? 'temporary_password' : 'invite',
+  });
+  const invited = hash
+    ? false
+    : Boolean(await issueResetToken(c.env, { id: userId, email }, 'invite', 'staff'));
   return c.json({ data: { id: userId, email, role: parsed.data.role, invited } }, 201);
 });
 
 admin.patch('/staff/:id', requireRole('super_admin'), async (c) => {
   const parsed = z
-    .object({ role: z.enum(staffRoles).optional(), status: z.enum(['active', 'suspended']).optional() })
+    .object({
+      role: z.enum(staffRoles).optional(),
+      status: z.enum(['active', 'suspended']).optional(),
+    })
     .refine((v) => v.role || v.status)
     .safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Choose a role or status.' } }, 422);
+  if (!parsed.success)
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: 'Choose a role or status.' } },
+      422,
+    );
   const target = c.req.param('id');
-  if (target === c.get('staff').id) return c.json({ error: { code: 'SELF_CHANGE_BLOCKED', message: 'You cannot change your own role or status.' } }, 409);
-  const user = await c.env.DB.prepare("SELECT id, role, status FROM users WHERE id = ? AND user_type = 'staff'").bind(target).first<{ id: string; role: string; status: string }>();
-  if (!user) return c.json({ error: { code: 'NOT_FOUND', message: 'Staff account not found.' } }, 404);
+  if (target === c.get('staff').id)
+    return c.json(
+      {
+        error: {
+          code: 'SELF_CHANGE_BLOCKED',
+          message: 'You cannot change your own role or status.',
+        },
+      },
+      409,
+    );
+  const user = await c.env.DB.prepare(
+    "SELECT id, role, status FROM users WHERE id = ? AND user_type = 'staff'",
+  )
+    .bind(target)
+    .first<{ id: string; role: string; status: string }>();
+  if (!user)
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Staff account not found.' } }, 404);
   const role = parsed.data.role ?? user.role;
   const status = parsed.data.status ?? user.status;
   const timestamp = now();
   await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE users SET role = ?, status = ?, updated_at = ? WHERE id = ? AND user_type = 'staff'").bind(role, status, timestamp, user.id),
-    c.env.DB.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND (? != ? OR ? != ?)').bind(timestamp, user.id, status, 'active', role, user.role),
+    c.env.DB.prepare(
+      "UPDATE users SET role = ?, status = ?, updated_at = ? WHERE id = ? AND user_type = 'staff'",
+    ).bind(role, status, timestamp, user.id),
+    c.env.DB.prepare(
+      'UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND (? != ? OR ? != ?)',
+    ).bind(timestamp, user.id, status, 'active', role, user.role),
   ]);
-  await audit(c, 'staff.updated', 'user', user.id, { from: { role: user.role, status: user.status }, to: { role, status } });
+  await audit(c, 'staff.updated', 'user', user.id, {
+    from: { role: user.role, status: user.status },
+    to: { role, status },
+  });
   return c.json({ data: { id: user.id, role, status } });
 });
 
 admin.post('/staff/:id/reset-password', requireRole('super_admin'), async (c) => {
-  const user = await c.env.DB.prepare("SELECT id, email FROM users WHERE id = ? AND user_type = 'staff' AND status = 'active'").bind(c.req.param('id')).first<{ id: string; email: string }>();
-  if (!user) return c.json({ error: { code: 'NOT_FOUND', message: 'Active staff account not found.' } }, 404);
+  const user = await c.env.DB.prepare(
+    "SELECT id, email FROM users WHERE id = ? AND user_type = 'staff' AND status = 'active'",
+  )
+    .bind(c.req.param('id'))
+    .first<{ id: string; email: string }>();
+  if (!user)
+    return c.json(
+      { error: { code: 'NOT_FOUND', message: 'Active staff account not found.' } },
+      404,
+    );
   const emailQueued = Boolean(await issueResetToken(c.env, user, 'reset', 'staff'));
   await audit(c, 'staff.password_reset_issued', 'user', user.id, { emailQueued });
   return c.json({ data: { emailQueued } });

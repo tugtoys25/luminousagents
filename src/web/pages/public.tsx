@@ -134,7 +134,10 @@ publicPages.get('/casinos-for-sale', async (c) => {
     conditions.push('country = ?');
     binds.push(country);
   }
-  if (type && ['casino', 'casino-hotel', 'hotel', 'resort', 'gaming-venue', 'other'].includes(type)) {
+  if (
+    type &&
+    ['casino', 'casino-hotel', 'hotel', 'resort', 'gaming-venue', 'other'].includes(type)
+  ) {
     conditions.push('opportunity_type = ?');
     binds.push(type);
   }
@@ -208,10 +211,18 @@ publicPages.get('/casinos-for-sale', async (c) => {
                   <option value="casino-hotel" selected={type === 'casino-hotel'}>
                     Casino & hotel
                   </option>
-                  <option value="hotel" selected={type === 'hotel'}>Hotel</option>
-                  <option value="resort" selected={type === 'resort'}>Resort</option>
-                  <option value="gaming-venue" selected={type === 'gaming-venue'}>Gaming venue</option>
-                  <option value="other" selected={type === 'other'}>Other asset</option>
+                  <option value="hotel" selected={type === 'hotel'}>
+                    Hotel
+                  </option>
+                  <option value="resort" selected={type === 'resort'}>
+                    Resort
+                  </option>
+                  <option value="gaming-venue" selected={type === 'gaming-venue'}>
+                    Gaming venue
+                  </option>
+                  <option value="other" selected={type === 'other'}>
+                    Other asset
+                  </option>
                 </select>
                 <button class="button button-primary filter-submit" type="submit">
                   Apply filters
@@ -235,14 +246,28 @@ publicPages.get('/casinos-for-sale', async (c) => {
                 <div class="opportunity-grid">
                   {opportunities.map((item) => (
                     <article class="opportunity-card">
-                      {item.coverMediaPath && <a class="opportunity-cover" href={`/opportunities/${encodeURIComponent(item.slug)}`} aria-label={`View ${item.title}`}><img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" /></a>}
+                      {item.coverMediaPath && (
+                        <a
+                          class="opportunity-cover"
+                          href={`/opportunities/${encodeURIComponent(item.slug)}`}
+                          aria-label={`View ${item.title}`}
+                        >
+                          <img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" />
+                        </a>
+                      )}
                       <div class="card-topline">
                         <span class="card-type">
-                          {item.type === 'casino-hotel' ? 'CASINO & HOTEL' : item.type.toUpperCase()}
+                          {item.type === 'casino-hotel'
+                            ? 'CASINO & HOTEL'
+                            : item.type.toUpperCase()}
                         </span>
                         <span class="card-country">{item.country ?? 'International'}</span>
                       </div>
-                      <div class="card-labels">{item.labels.map((label) => <span>{label}</span>)}</div>
+                      <div class="card-labels">
+                        {item.labels.map((label) => (
+                          <span>{label}</span>
+                        ))}
+                      </div>
                       <h3>
                         <a href={`/opportunities/${encodeURIComponent(item.slug)}`}>{item.title}</a>
                       </h3>
@@ -368,7 +393,15 @@ publicPages.get('/casinos-for-sale/:country', async (c) => {
             <div class="opportunity-grid">
               {items.map((item) => (
                 <article class="opportunity-card">
-                      {item.coverMediaPath && <a class="opportunity-cover" href={`/opportunities/${encodeURIComponent(item.slug)}`} aria-label={`View ${item.title}`}><img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" /></a>}
+                  {item.coverMediaPath && (
+                    <a
+                      class="opportunity-cover"
+                      href={`/opportunities/${encodeURIComponent(item.slug)}`}
+                      aria-label={`View ${item.title}`}
+                    >
+                      <img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" />
+                    </a>
+                  )}
                   <div class="card-topline">
                     <span class="card-type">
                       {item.type === 'casino-hotel' ? 'CASINO & HOTEL' : item.type.toUpperCase()}
@@ -431,7 +464,15 @@ publicPages.get('/casino-hotels', async (c) => {
             <div class="opportunity-grid">
               {items.map((item) => (
                 <article class="opportunity-card">
-                      {item.coverMediaPath && <a class="opportunity-cover" href={`/opportunities/${encodeURIComponent(item.slug)}`} aria-label={`View ${item.title}`}><img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" /></a>}
+                  {item.coverMediaPath && (
+                    <a
+                      class="opportunity-cover"
+                      href={`/opportunities/${encodeURIComponent(item.slug)}`}
+                      aria-label={`View ${item.title}`}
+                    >
+                      <img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" />
+                    </a>
+                  )}
                   <div class="card-topline">
                     <span class="card-type">CASINO & HOTEL</span>
                     <span class="card-country">{item.country ?? 'International'}</span>
@@ -547,7 +588,14 @@ publicPages.get('/opportunities/:slug', async (c) => {
           <a class="back-link" href="/casinos-for-sale">
             ← All opportunities
           </a>
-          {item.coverMediaPath && <img class="detail-cover" src={item.coverMediaPath} alt={item.coverMediaAlt} loading="eager" />}
+          {item.coverMediaPath && (
+            <img
+              class="detail-cover"
+              src={item.coverMediaPath}
+              alt={item.coverMediaAlt}
+              loading="eager"
+            />
+          )}
           <div class="detail-meta">
             <span class="card-type">
               {item.type === 'casino-hotel' ? 'CASINO & HOTEL' : item.type.toUpperCase()}
@@ -555,7 +603,11 @@ publicPages.get('/opportunities/:slug', async (c) => {
             <span>{item.country ?? 'International market'}</span>
           </div>
           <h1>{item.title}</h1>
-          <div class="card-labels">{item.labels.map((label) => <span>{label}</span>)}</div>
+          <div class="card-labels">
+            {item.labels.map((label) => (
+              <span>{label}</span>
+            ))}
+          </div>
           <p>{item.summary || 'Further information is available to qualified parties.'}</p>
         </div>
       </section>
@@ -760,28 +812,46 @@ for (const [path, title, description, heading, copy] of [
     'The site may use strictly necessary browser technologies to deliver pages, protect forms, maintain authenticated sessions and prevent abuse. If the operator enables Google Analytics 4, the GA4 measurement ID is configured in platform settings and analytics scripts load on public pages. Analytics may use cookies or similar identifiers and may transmit usage data to Google. Do not enable analytics until the operator has configured a lawful consent mechanism for relevant jurisdictions, updated the privacy notice and verified consent-mode behaviour. Staff session cookies are HttpOnly, Secure and SameSite=Lax and are used for authentication, not advertising. Users can manage cookies through browser settings, although disabling necessary technologies may affect functionality. The operator should audit actual cookies and third-party requests and keep this notice accurate.',
   ],
   [
-    '/legal/aml-kyc', 'AML and Buyer Due Diligence', 'Our approach to customer qualification and financial-crime risk.', 'Anti-money laundering and buyer due diligence',
-    'We may assess prospective buyers, sellers, beneficial owners, representatives and transaction counterparties before sharing confidential information or progressing a transaction. Depending on the transaction, jurisdiction and risk profile, checks may include identity and corporate verification, beneficial ownership, source of funds and wealth, politically exposed person screening, sanctions screening, adverse media review, licensing considerations and evidence of authority to act. We may request additional information, pause engagement, restrict data-room access or decline to proceed where checks cannot be completed or risks are unacceptable. Information is handled on a need-to-know basis and retained according to applicable obligations. This summary does not replace the legal obligations of regulated parties.'
+    '/legal/aml-kyc',
+    'AML and Buyer Due Diligence',
+    'Our approach to customer qualification and financial-crime risk.',
+    'Anti-money laundering and buyer due diligence',
+    'We may assess prospective buyers, sellers, beneficial owners, representatives and transaction counterparties before sharing confidential information or progressing a transaction. Depending on the transaction, jurisdiction and risk profile, checks may include identity and corporate verification, beneficial ownership, source of funds and wealth, politically exposed person screening, sanctions screening, adverse media review, licensing considerations and evidence of authority to act. We may request additional information, pause engagement, restrict data-room access or decline to proceed where checks cannot be completed or risks are unacceptable. Information is handled on a need-to-know basis and retained according to applicable obligations. This summary does not replace the legal obligations of regulated parties.',
   ],
   [
-    '/legal/sanctions', 'Sanctions and Restricted Parties', 'Risk-based screening and restricted-party controls.', 'Sanctions and restricted-party policy',
-    'We do not knowingly facilitate transactions that would violate applicable sanctions, export controls or restrictions on dealings with prohibited parties or territories. Depending on the transaction, screening may cover counterparties, beneficial owners, directors, representatives, banks, source of funds and relevant jurisdictions. We may request additional declarations, suspend discussions or refuse service where a sanctions or legal concern arises. Screening results require appropriate review; name matches are not conclusive without assessment. Clients and counterparties remain responsible for their own compliance obligations and independent advice.'
+    '/legal/sanctions',
+    'Sanctions and Restricted Parties',
+    'Risk-based screening and restricted-party controls.',
+    'Sanctions and restricted-party policy',
+    'We do not knowingly facilitate transactions that would violate applicable sanctions, export controls or restrictions on dealings with prohibited parties or territories. Depending on the transaction, screening may cover counterparties, beneficial owners, directors, representatives, banks, source of funds and relevant jurisdictions. We may request additional declarations, suspend discussions or refuse service where a sanctions or legal concern arises. Screening results require appropriate review; name matches are not conclusive without assessment. Clients and counterparties remain responsible for their own compliance obligations and independent advice.',
   ],
   [
-    '/legal/anti-bribery', 'Anti-Bribery and Ethical Conduct', 'Standards for ethical introductions and commercial dealings.', 'Anti-bribery and corruption',
-    'The platform expects staff, representatives and business partners to comply with applicable anti-bribery, anti-corruption, fraud and recordkeeping laws. Bribes, kickbacks, facilitation payments, undisclosed commissions, improper inducements and falsified records are prohibited. Referral fees, commissions, gifts, hospitality and conflicts of interest must be transparent, lawful, authorised and recorded where required. Concerns should be raised through the platform contact channel and reviewed appropriately. The operating entity should maintain training, approval and reporting procedures proportionate to its actual activities.'
+    '/legal/anti-bribery',
+    'Anti-Bribery and Ethical Conduct',
+    'Standards for ethical introductions and commercial dealings.',
+    'Anti-bribery and corruption',
+    'The platform expects staff, representatives and business partners to comply with applicable anti-bribery, anti-corruption, fraud and recordkeeping laws. Bribes, kickbacks, facilitation payments, undisclosed commissions, improper inducements and falsified records are prohibited. Referral fees, commissions, gifts, hospitality and conflicts of interest must be transparent, lawful, authorised and recorded where required. Concerns should be raised through the platform contact channel and reviewed appropriately. The operating entity should maintain training, approval and reporting procedures proportionate to its actual activities.',
   ],
   [
-    '/legal/complaints', 'Complaints and Feedback', 'How to raise a concern about our service or website.', 'Complaints handling',
-    'Please contact our team with the nature of your concern, relevant listing or service, dates involved and preferred method of response. Do not include passwords, identity documents or confidential transaction materials in an ordinary enquiry. We aim to acknowledge complaints promptly, assess them fairly, preserve relevant records and provide a response or explain what further information is needed. Concerns involving privacy, security, suspected fraud, sanctions or staff conduct may be escalated. The operator should publish a monitored complaint contact and internal response targets before launch.'
+    '/legal/complaints',
+    'Complaints and Feedback',
+    'How to raise a concern about our service or website.',
+    'Complaints handling',
+    'Please contact our team with the nature of your concern, relevant listing or service, dates involved and preferred method of response. Do not include passwords, identity documents or confidential transaction materials in an ordinary enquiry. We aim to acknowledge complaints promptly, assess them fairly, preserve relevant records and provide a response or explain what further information is needed. Concerns involving privacy, security, suspected fraud, sanctions or staff conduct may be escalated. The operator should publish a monitored complaint contact and internal response targets before launch.',
   ],
   [
-    '/legal/disclaimer', 'Investment and Listing Disclaimer', 'Important limitations on opportunity and transaction information.', 'Investment and listing disclaimer',
-    'Casino, casino-hotel and hospitality opportunities may be confidential, indicative, incomplete, subject to seller approval or no longer available. Listing information is not an offer, solicitation, investment advice, legal advice, tax advice, valuation, proof of title, proof of funds or a representation that a transaction is lawful in every jurisdiction. Interested parties must verify information independently, assess gaming and hospitality licensing requirements, conduct anti-money laundering and sanctions checks, and obtain independent legal, financial, tax and technical advice. No transaction is complete until definitive agreements are signed and required approvals and conditions are satisfied. Past performance and seller-provided forecasts are not guarantees of future results.'
+    '/legal/disclaimer',
+    'Investment and Listing Disclaimer',
+    'Important limitations on opportunity and transaction information.',
+    'Investment and listing disclaimer',
+    'Casino, casino-hotel and hospitality opportunities may be confidential, indicative, incomplete, subject to seller approval or no longer available. Listing information is not an offer, solicitation, investment advice, legal advice, tax advice, valuation, proof of title, proof of funds or a representation that a transaction is lawful in every jurisdiction. Interested parties must verify information independently, assess gaming and hospitality licensing requirements, conduct anti-money laundering and sanctions checks, and obtain independent legal, financial, tax and technical advice. No transaction is complete until definitive agreements are signed and required approvals and conditions are satisfied. Past performance and seller-provided forecasts are not guarantees of future results.',
   ],
   [
-    '/legal/modern-slavery', 'Human Rights and Modern Slavery', 'Expectations concerning human rights and responsible business conduct.', 'Human rights and modern slavery',
-    'We expect business partners and counterparties to respect applicable human-rights, employment, health and safety and anti-trafficking laws. We do not knowingly support forced labour, human trafficking, child exploitation or coercive employment practices. Where proportionate to a transaction and available information, due diligence may include review of ownership, operating practices, public allegations and contractual assurances. Concerns may be raised through the contact channel. The operator should maintain risk-based supplier and counterparty procedures appropriate to its legal obligations and actual business footprint.'
+    '/legal/modern-slavery',
+    'Human Rights and Modern Slavery',
+    'Expectations concerning human rights and responsible business conduct.',
+    'Human rights and modern slavery',
+    'We expect business partners and counterparties to respect applicable human-rights, employment, health and safety and anti-trafficking laws. We do not knowingly support forced labour, human trafficking, child exploitation or coercive employment practices. Where proportionate to a transaction and available information, due diligence may include review of ownership, operating practices, public allegations and contractual assurances. Concerns may be raised through the contact channel. The operator should maintain risk-based supplier and counterparty procedures appropriate to its legal obligations and actual business footprint.',
   ],
 ] as const) {
   publicPages.get(path, (c) =>
@@ -818,13 +888,19 @@ for (const [path, title, description, heading, copy] of [
 }
 
 publicPages.get('/media/opportunities/:opportunityId/:mediaId', async (c) => {
-  const media = await c.env.DB.prepare("SELECT m.r2_key AS r2Key, m.content_type AS contentType, m.byte_size AS byteSize, m.sha256 AS sha256 FROM opportunity_media m JOIN opportunities o ON o.id = m.opportunity_id WHERE m.id = ? AND m.opportunity_id = ? AND o.lifecycle = 'published' AND o.content_review_status = 'approved' AND o.public_visibility = 1 AND o.classification = 'public' AND m.content_type IN ('image/jpeg','image/png') LIMIT 1").bind(c.req.param('mediaId'), c.req.param('opportunityId')).first<{r2Key:string;contentType:string;byteSize:number;sha256:string}>();
+  const media = await c.env.DB.prepare(
+    "SELECT m.r2_key AS r2Key, m.content_type AS contentType, m.byte_size AS byteSize, m.sha256 AS sha256 FROM opportunity_media m JOIN opportunities o ON o.id = m.opportunity_id WHERE m.id = ? AND m.opportunity_id = ? AND o.lifecycle = 'published' AND o.content_review_status = 'approved' AND o.public_visibility = 1 AND o.classification = 'public' AND m.content_type IN ('image/jpeg','image/png') LIMIT 1",
+  )
+    .bind(c.req.param('mediaId'), c.req.param('opportunityId'))
+    .first<{ r2Key: string; contentType: string; byteSize: number; sha256: string }>();
   if (!media) return c.notFound();
   const file = await c.env.PRIVATE_FILES.get(media.r2Key);
   if (!file || file.size !== media.byteSize || file.size > 8 * 1024 * 1024) return c.notFound();
   const bytes = await file.arrayBuffer();
   const digest = await crypto.subtle.digest('SHA-256', bytes);
-  const actual = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+  const actual = [...new Uint8Array(digest)]
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
   if (!media.sha256 || actual !== media.sha256) return c.notFound();
   c.header('Content-Type', media.contentType);
   c.header('Cache-Control', 'public, max-age=300');
@@ -848,7 +924,9 @@ publicPages.get('/sitemap.xml', async (c) => {
   const countries = await c.env.DB.prepare(
     "SELECT DISTINCT country FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' AND country IS NOT NULL ORDER BY country",
   ).all<{ country: string }>();
-  const managedPages = await c.env.DB.prepare("SELECT slug FROM managed_pages WHERE status = 'published' ORDER BY updated_at DESC LIMIT 500").all<{ slug: string }>();
+  const managedPages = await c.env.DB.prepare(
+    "SELECT slug FROM managed_pages WHERE status = 'published' ORDER BY updated_at DESC LIMIT 500",
+  ).all<{ slug: string }>();
   const countryPaths = countries.results.map(
     (row) => `/casinos-for-sale/${encodeURIComponent(slugify(row.country))}`,
   );

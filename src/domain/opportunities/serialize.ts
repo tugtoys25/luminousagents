@@ -49,7 +49,13 @@ export function serializeOpportunity(
     points = [];
   }
   let labels: string[] = [];
-  try { const parsed: unknown = JSON.parse(row.labels_json ?? '[]'); if (Array.isArray(parsed)) labels = parsed.filter((value): value is string => typeof value === 'string').slice(0, 12); } catch { labels = []; }
+  try {
+    const parsed: unknown = JSON.parse(row.labels_json ?? '[]');
+    if (Array.isArray(parsed))
+      labels = parsed.filter((value): value is string => typeof value === 'string').slice(0, 12);
+  } catch {
+    labels = [];
+  }
   return {
     slug: row.slug,
     title: row.title,
@@ -64,6 +70,8 @@ export function serializeOpportunity(
     labels,
     coverMediaId: row.cover_media_id ?? null,
     coverMediaAlt: row.cover_media_alt ?? row.title,
-    coverMediaPath: row.cover_media_id ? `/media/opportunities/${encodeURIComponent(row.id)}/${encodeURIComponent(row.cover_media_id)}` : null,
+    coverMediaPath: row.cover_media_id
+      ? `/media/opportunities/${encodeURIComponent(row.id)}/${encodeURIComponent(row.cover_media_id)}`
+      : null,
   };
 }

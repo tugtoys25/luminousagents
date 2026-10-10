@@ -115,7 +115,6 @@ Sprint 10 supersedes earlier statements that the opportunity CMS and buyer provi
 
 Sprint 10 is still a staging candidate, not a verified production release. The scanner engine must be deployed/configured, Cloudflare resource IDs and secrets must be set, the pinned pnpm lockfile must be generated, and full CI and staging evidence must be produced. The NDA bootstrap wording is a legal-review draft, all 198 legacy records remain pending/private, and R2 document backups, a restore drill, full role/CSRF/OTP/queue/XSS/Playwright suites, accessibility/load tests and rollback rehearsal remain outstanding.
 
-
 ## Sprint 13 integration (deployed Sprint 11 baseline)
 
 Sprint 13 ports the missing Sprint 12 portal and listing-management features into the existing project while preserving `wrangler.jsonc`, Cloudflare environment/resource bindings, deployment scripts, and `pnpm-lock.yaml`.
@@ -135,14 +134,14 @@ Sprint 16 verification note: all 16 SQL migrations were applied in order to in-m
 
 All sign-in is a form with **email + password**; Cloudflare Access and emailed one-time codes are gone.
 
-| Flow | Buyer | Staff |
-| --- | --- | --- |
-| Sign in | `/account` | `/admin/login` |
-| Register | `/register` (account stays `invited` until approved) | first admin: `/admin/setup`; others created by a super admin |
-| Forgot password | `/forgot-password` | `/admin/forgot-password` |
-| Reset (emailed link) | `/reset-password?token=…` | `/admin/reset-password?token=…` |
-| Change password | `/account/change-password` | `/admin/change-password` |
+| Flow                 | Buyer                                                | Staff                                                        |
+| -------------------- | ---------------------------------------------------- | ------------------------------------------------------------ |
+| Sign in              | `/account`                                           | `/admin/login`                                               |
+| Register             | `/register` (account stays `invited` until approved) | first admin: `/admin/setup`; others created by a super admin |
+| Forgot password      | `/forgot-password`                                   | `/admin/forgot-password`                                     |
+| Reset (emailed link) | `/reset-password?token=…`                            | `/admin/reset-password?token=…`                              |
+| Change password      | `/account/change-password`                           | `/admin/change-password`                                     |
 
 Passwords are hashed with PBKDF2-SHA256 (100,000 iterations, the Workers maximum) and a per-user salt; minimum length 12 with letters and numbers. Five wrong passwords lock the account for 15 minutes; sign-in, reset and registration are also rate limited per IP and email. Reset links are single-use, expire after 60 minutes (invites after 3 days), and a successful reset or password change signs out all other sessions. Responses never reveal whether an email is registered. Apply `migrations/0016_auth_hardening.sql` (builds on 0014 and 0015) before deploying. Hashes from Sprint 14/15 with a different iteration count are accepted and silently upgraded at the next successful login.
 
-**Existing buyers have no password yet; existing staff may not either.** Buyers and staff can use *Forgot password* (needs `RESEND_API_KEY`, `EMAIL_FROM` and `OTP_ENCRYPTION_KEY`). Password-less staff can also use `/admin/setup` with their email and `ADMIN_BOOTSTRAP_TOKEN`. Otherwise generate a hash with `node scripts/hash-password.mjs` and set it with the SQL in `scripts/provision-staff.sql.example`. See `docs/SPRINT_14.md`.
+**Existing buyers have no password yet; existing staff may not either.** Buyers and staff can use _Forgot password_ (needs `RESEND_API_KEY`, `EMAIL_FROM` and `OTP_ENCRYPTION_KEY`). Password-less staff can also use `/admin/setup` with their email and `ADMIN_BOOTSTRAP_TOKEN`. Otherwise generate a hash with `node scripts/hash-password.mjs` and set it with the SQL in `scripts/provision-staff.sql.example`. See `docs/SPRINT_14.md`.

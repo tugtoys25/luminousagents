@@ -1,1 +1,79 @@
-(()=>{const f=document.querySelector('#managed-form-form');if(!f)return;const list=document.querySelector('#managed-forms'),notice=document.querySelector('#form-notice'),submissions=document.querySelector('#managed-submissions');async function load(){try{const r=await fetch('/dashboard/forms');const j=await r.json();list.replaceChildren();for(const item of j.data||[]){const li=document.createElement('li'),a=document.createElement('a');a.href='/forms/'+encodeURIComponent(item.slug);a.target='_blank';a.textContent=`${item.title} (${item.status}) — /forms/${item.slug}`;const b=document.createElement('button');b.type='button';b.textContent='Edit';b.onclick=()=>{f.elements.id.value=item.id;f.elements.title.value=item.title;f.elements.slug.value=item.slug;f.elements.description.value=item.description;f.elements.fieldsJson.value=JSON.stringify(JSON.parse(item.fieldsJson),null,2);f.elements.status.value=item.status;f.elements.notificationEnabled.checked=!!item.notificationEnabled};li.append(a,' ',b);list.append(li)}}catch{list.textContent='Unable to load forms.'}try{const r=await fetch('/dashboard/form-submissions');const j=await r.json();submissions.replaceChildren();for(const item of j.data||[]){const card=document.createElement('article');card.className='managed-submission';const h=document.createElement('h3');h.textContent=item.formTitle+(item.opportunityTitle?' — '+item.opportunityTitle:'');const time=document.createElement('p');time.textContent=new Date(item.createdAt).toLocaleString();const pre=document.createElement('pre');pre.textContent=JSON.stringify(item.data,null,2);card.append(h,time,pre);submissions.append(card)}if(!submissions.childElementCount)submissions.textContent='No submissions yet.'}catch{submissions.textContent='Unable to load submissions.'}}f.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(f));d.notificationEnabled=f.elements.notificationEnabled.checked;notice.textContent='Saving…';try{const r=await fetch('/dashboard/forms',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)});const j=await r.json();if(!r.ok)throw new Error(j.error?.message||'Could not save form');notice.textContent=`Saved. Public URL: ${j.data.url}`;f.elements.id.value=j.data.id;await load()}catch(err){notice.textContent=err.message||'Could not save form'}});load()})();
+(() => {
+  const f = document.querySelector('#managed-form-form');
+  if (!f) return;
+  const list = document.querySelector('#managed-forms'),
+    notice = document.querySelector('#form-notice'),
+    submissions = document.querySelector('#managed-submissions');
+  async function load() {
+    try {
+      const r = await fetch('/dashboard/forms');
+      const j = await r.json();
+      list.replaceChildren();
+      for (const item of j.data || []) {
+        const li = document.createElement('li'),
+          a = document.createElement('a');
+        a.href = '/forms/' + encodeURIComponent(item.slug);
+        a.target = '_blank';
+        a.textContent = `${item.title} (${item.status}) — /forms/${item.slug}`;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = 'Edit';
+        b.onclick = () => {
+          f.elements.id.value = item.id;
+          f.elements.title.value = item.title;
+          f.elements.slug.value = item.slug;
+          f.elements.description.value = item.description;
+          f.elements.fieldsJson.value = JSON.stringify(JSON.parse(item.fieldsJson), null, 2);
+          f.elements.status.value = item.status;
+          f.elements.notificationEnabled.checked = !!item.notificationEnabled;
+        };
+        li.append(a, ' ', b);
+        list.append(li);
+      }
+    } catch {
+      list.textContent = 'Unable to load forms.';
+    }
+    try {
+      const r = await fetch('/dashboard/form-submissions');
+      const j = await r.json();
+      submissions.replaceChildren();
+      for (const item of j.data || []) {
+        const card = document.createElement('article');
+        card.className = 'managed-submission';
+        const h = document.createElement('h3');
+        h.textContent =
+          item.formTitle + (item.opportunityTitle ? ' — ' + item.opportunityTitle : '');
+        const time = document.createElement('p');
+        time.textContent = new Date(item.createdAt).toLocaleString();
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(item.data, null, 2);
+        card.append(h, time, pre);
+        submissions.append(card);
+      }
+      if (!submissions.childElementCount) submissions.textContent = 'No submissions yet.';
+    } catch {
+      submissions.textContent = 'Unable to load submissions.';
+    }
+  }
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(f));
+    d.notificationEnabled = f.elements.notificationEnabled.checked;
+    notice.textContent = 'Saving…';
+    try {
+      const r = await fetch('/dashboard/forms', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(d),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error?.message || 'Could not save form');
+      notice.textContent = `Saved. Public URL: ${j.data.url}`;
+      f.elements.id.value = j.data.id;
+      await load();
+    } catch (err) {
+      notice.textContent = err.message || 'Could not save form';
+    }
+  });
+  load();
+})();

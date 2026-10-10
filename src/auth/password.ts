@@ -13,9 +13,13 @@ export const toHex = (bytes: ArrayBuffer | Uint8Array) =>
   Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, '0')).join('');
 
 async function derive(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey('raw', enc.encode(password.normalize('NFKC')), 'PBKDF2', false, [
-    'deriveBits',
-  ]);
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password.normalize('NFKC')),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
   const bits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', hash: 'SHA-256', salt, iterations },
     key,
@@ -30,7 +34,10 @@ export async function hashPassword(password: string): Promise<string> {
   return `pbkdf2-sha256$${ITERATIONS}$${toB64(salt)}$${toB64(hash)}`;
 }
 
-export async function verifyPassword(password: string, stored: string | null | undefined): Promise<boolean> {
+export async function verifyPassword(
+  password: string,
+  stored: string | null | undefined,
+): Promise<boolean> {
   const parts = (stored ?? '').split('$');
   if (parts.length !== 4 || parts[0] !== 'pbkdf2-sha256') return false;
   const iterations = Number.parseInt(parts[1]!, 10);
@@ -54,7 +61,15 @@ export async function dummyVerify(password: string): Promise<void> {
   await derive(password, new Uint8Array(16), ITERATIONS);
 }
 
-const COMMON = new Set(['password1234', 'password12345', 'qwerty123456', '123456789012', 'letmein12345', 'welcome12345', 'mayfair12345']);
+const COMMON = new Set([
+  'password1234',
+  'password12345',
+  'qwerty123456',
+  '123456789012',
+  'letmein12345',
+  'welcome12345',
+  'mayfair12345',
+]);
 
 /** Returns an error message, or null when the password is acceptable. */
 export function passwordPolicyError(password: string, email = ''): string | null {
@@ -63,8 +78,10 @@ export function passwordPolicyError(password: string, email = ''): string | null
   if (COMMON.has(password.toLowerCase())) return 'That password is too common.';
   if (/^(.)\1+$/.test(password)) return 'Choose a less repetitive password.';
   const local = email.split('@')[0]?.toLowerCase() ?? '';
-  if (local.length >= 4 && password.toLowerCase().includes(local)) return 'Do not include your email name in your password.';
-  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) return 'Include both letters and numbers.';
+  if (local.length >= 4 && password.toLowerCase().includes(local))
+    return 'Do not include your email name in your password.';
+  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password))
+    return 'Include both letters and numbers.';
   return null;
 }
 
@@ -92,7 +109,12 @@ export function readCookie(header: string | undefined, name: string): string | n
   return null;
 }
 
-export function sessionCookie(name: string, token: string, maxAgeSeconds: number, path = '/'): string {
+export function sessionCookie(
+  name: string,
+  token: string,
+  maxAgeSeconds: number,
+  path = '/',
+): string {
   return `${name}=${token}; Path=${path}; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
 }
 
@@ -108,7 +130,12 @@ export async function encryptPayload(value: string, secret: string): Promise<str
   const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(value));
-  return JSON.stringify({ encrypted: true, algorithm: 'AES-GCM', iv: toB64(iv), ciphertext: toB64(new Uint8Array(ciphertext)) });
+  return JSON.stringify({
+    encrypted: true,
+    algorithm: 'AES-GCM',
+    iv: toB64(iv),
+    ciphertext: toB64(new Uint8Array(ciphertext)),
+  });
 }
 
 export type AuthEnv = Pick<Env, 'DB' | 'CACHE' | 'NOTIFICATIONS_QUEUE' | 'OTP_ENCRYPTION_KEY'>;
@@ -129,8 +156,12 @@ export async function issueResetToken(
   const jobId = crypto.randomUUID();
   const minutes = purpose === 'invite' ? 60 * 24 * 3 : RESET_TOKEN_MINUTES;
   await env.DB.batch([
-    env.DB.prepare('UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL').bind(timestamp, user.id),
-    env.DB.prepare('INSERT INTO password_reset_tokens (id, user_id, token_hash, purpose, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(
+    env.DB.prepare(
+      'UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+    ).bind(timestamp, user.id),
+    env.DB.prepare(
+      'INSERT INTO password_reset_tokens (id, user_id, token_hash, purpose, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).bind(
       crypto.randomUUID(),
       user.id,
       await sha256Hex(token),
@@ -138,9 +169,14 @@ export async function issueResetToken(
       new Date(Date.now() + minutes * 60_000).toISOString(),
       timestamp,
     ),
-    env.DB.prepare("INSERT INTO notification_jobs (id, job_type, payload_json, status, attempts, available_at, created_at, updated_at) VALUES (?, 'auth.password_reset', ?, 'queued', 0, ?, ?, ?)").bind(
+    env.DB.prepare(
+      "INSERT INTO notification_jobs (id, job_type, payload_json, status, attempts, available_at, created_at, updated_at) VALUES (?, 'auth.password_reset', ?, 'queued', 0, ?, ?, ?)",
+    ).bind(
       jobId,
-      await encryptPayload(JSON.stringify({ email: user.email, token, purpose, kind, expiresInMinutes: minutes }), env.OTP_ENCRYPTION_KEY),
+      await encryptPayload(
+        JSON.stringify({ email: user.email, token, purpose, kind, expiresInMinutes: minutes }),
+        env.OTP_ENCRYPTION_KEY,
+      ),
       timestamp,
       timestamp,
       timestamp,

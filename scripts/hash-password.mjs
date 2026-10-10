@@ -6,7 +6,9 @@ import { createInterface } from 'node:readline';
 
 const ITERATIONS = 100_000;
 const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
-rl._writeToOutput = (text) => { if (text.includes('Password')) process.stderr.write(text); };
+rl._writeToOutput = (text) => {
+  if (text.includes('Password')) process.stderr.write(text);
+};
 rl.question('Password (min 12 chars, letters + numbers): ', (password) => {
   rl.close();
   process.stderr.write('\n');
