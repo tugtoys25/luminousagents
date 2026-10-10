@@ -8,14 +8,14 @@ export const STATIC_PAGES = [
     'Our Services',
     SITE_DESCRIPTION,
     'Specialist brokerage services',
-    'We support conversations around casino and hospitality asset sales, acquisitions, hotel opportunities, management and related advisory requirements. Scope and availability are confirmed individually.',
+    'Casino sales, casino hotels, management, consulting, international brokerage and casino personnel, supported by a team with a combined 180 years of casino-industry experience. Scope and availability are confirmed individually.',
   ],
   [
     '/about',
     'About Us',
     SITE_DESCRIPTION,
     'A personal approach to specialist brokerage',
-    'Casinos of Mayfair is positioned as an international brokerage focused on casino and casino-hotel investment opportunities. Our approach prioritises careful qualification, clear communication and appropriate handling of confidential information.',
+    'Casinos of Mayfair International Ltd opened its first London office in 1994 and now serves buyers and sellers of casino and casino-hotel assets worldwide. Our approach prioritises careful qualification, clear communication and appropriate handling of confidential information.',
   ],
   [
     '/faq',

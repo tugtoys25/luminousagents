@@ -2028,6 +2028,10 @@ const platformSettingKeys = [
   'ga4_id',
   'whatsapp_number',
   'whatsapp_message',
+  'contact_phone_mobile',
+  'contact_phone_office',
+  'contact_email',
+  'contact_email_chairman',
   'primary_color',
   'accent_color',
   'background_color',
@@ -2076,7 +2080,16 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
     [
       'Contact and analytics',
       'Where enquiries go and how traffic is measured.',
-      ['notification_email', 'whatsapp_number', 'whatsapp_message', 'ga4_id'],
+      [
+        'notification_email',
+        'contact_phone_mobile',
+        'contact_phone_office',
+        'contact_email',
+        'contact_email_chairman',
+        'whatsapp_number',
+        'whatsapp_message',
+        'ga4_id',
+      ],
     ],
     [
       'Colours and typography',
@@ -2188,6 +2201,24 @@ admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
             message: 'Notification email must be a valid email address.',
           },
         },
+        422,
+      );
+    if (
+      ['contact_email', 'contact_email_chairman'].includes(key) &&
+      value &&
+      (typeof value !== 'string' || !z.string().email().safeParse(value).success)
+    )
+      return c.json(
+        { error: { code: 'INVALID_CONTACT_EMAIL', message: `${key} must be a valid email address.` } },
+        422,
+      );
+    if (
+      ['contact_phone_mobile', 'contact_phone_office'].includes(key) &&
+      value &&
+      (typeof value !== 'string' || !/^[0-9+()\s-]{6,30}$/.test(value))
+    )
+      return c.json(
+        { error: { code: 'INVALID_PHONE', message: `${key} must be a phone number.` } },
         422,
       );
     if (

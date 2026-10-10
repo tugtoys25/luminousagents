@@ -4,14 +4,57 @@ import { serializeOpportunity, type OpportunityRow } from '../../domain/opportun
 import { slugify } from '../../domain/opportunities/slug';
 import { BaseLayout } from '../layouts/base';
 import { SITE_DESCRIPTION, STATIC_PAGES, staticPageSlug } from '../static-pages';
+import { OPPORTUNITY_CARD_SELECT, OpportunityCard } from '../components/opportunity-card';
+import {
+  ChairmanSection,
+  ContactBand,
+  ContactLines,
+  FaqList,
+  FaqSection,
+  ServicesGrid,
+  ServicesSection,
+  StatsBand,
+  WorldwideSection,
+} from '../components/sections';
+import { OFFICES } from '../content/site-content';
+import { loadContact, type ContactSettings } from '../site-settings';
 
-const publicPages = new Hono<{ Bindings: Env; Variables: { requestId: string } }>();
+const publicPages = new Hono<{
+  Bindings: Env;
+  Variables: { requestId: string; contact: ContactSettings };
+}>();
 const SITE_URL = 'https://casinosofmayfair.com';
 
-publicPages.get('/', (c) =>
-  c.html(
+/** Load contact settings only for HTML page requests (this app is mounted at "/"). */
+publicPages.use('*', async (c, next) => {
+  const path = c.req.path;
+  const isPage =
+    c.req.method === 'GET' &&
+    !path.startsWith('/api/') &&
+    !path.startsWith('/dashboard') &&
+    !path.startsWith('/account') &&
+    !path.startsWith('/media/') &&
+    path !== '/robots.txt' &&
+    path !== '/sitemap.xml';
+  if (isPage) c.set('contact', await loadContact(c.env));
+  await next();
+});
+
+publicPages.get('/', async (c) => {
+  const contact = c.get('contact');
+  let latest: ReturnType<typeof serializeOpportunity>[] = [];
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT ${OPPORTUNITY_CARD_SELECT} FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY published_at DESC, title ASC LIMIT 3`,
+    ).all<OpportunityRow>();
+    latest = rows.results.map((row) => serializeOpportunity(row, 1));
+  } catch {
+    latest = [];
+  }
+  return c.html(
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
       title="Casinos of Mayfair | Casino & Hospitality Brokerage"
       description={SITE_DESCRIPTION}
     >
@@ -78,6 +121,39 @@ publicPages.get('/', (c) =>
           </div>
         </div>
       </section>
+      <StatsBand />
+      <section class="section" id="latest">
+        <div class="container">
+          <div class="section-head section-head-row">
+            <div>
+              <span class="eyebrow">LATEST OPPORTUNITIES</span>
+              <h2>Recently published listings.</h2>
+            </div>
+            <a class="text-link" href="/casinos-for-sale">
+              View all opportunities <span aria-hidden="true">→</span>
+            </a>
+          </div>
+          {latest.length ? (
+            <div class="opportunity-grid opportunity-grid-wide">
+              {latest.map((item) => (
+                <OpportunityCard item={item} />
+              ))}
+            </div>
+          ) : (
+            <div class="empty-state">
+              <span class="empty-icon">✦</span>
+              <h3>New opportunities are being reviewed</h3>
+              <p>
+                Listings are published once they have been verified and approved. Contact our team
+                to discuss your investment criteria in confidence.
+              </p>
+              <a class="button button-dark" href="/contact">
+                Contact our team
+              </a>
+            </div>
+          )}
+        </div>
+      </section>
       <section class="section section-muted">
         <div class="container split-section">
           <div>
@@ -99,6 +175,10 @@ publicPages.get('/', (c) =>
           </div>
         </div>
       </section>
+      <ServicesSection />
+      <ChairmanSection contact={contact} />
+      <WorldwideSection />
+      <FaqSection />
       <section class="section">
         <div class="container callout">
           <div>
@@ -113,9 +193,10 @@ publicPages.get('/', (c) =>
           </a>
         </div>
       </section>
+      <ContactBand contact={contact} />
     </BaseLayout>,
-  ),
-);
+  );
+});
 
 publicPages.get('/casinos-for-sale', async (c) => {
   const country = (c.req.query('country') ?? '').trim().slice(0, 80);
@@ -164,6 +245,7 @@ publicPages.get('/casinos-for-sale', async (c) => {
     return c.html(
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
         title="Casino & Hotel Opportunities | Casinos of Mayfair"
         description="Browse published casino and casino-hotel investment opportunities."
         canonicalPath="/casinos-for-sale"
@@ -244,43 +326,7 @@ publicPages.get('/casinos-for-sale', async (c) => {
               {opportunities.length ? (
                 <div class="opportunity-grid">
                   {opportunities.map((item) => (
-                    <article class="opportunity-card">
-                      {item.coverMediaPath && (
-                        <a
-                          class="opportunity-cover"
-                          href={`/opportunities/${encodeURIComponent(item.slug)}`}
-                          aria-label={`View ${item.title}`}
-                        >
-                          <img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" />
-                        </a>
-                      )}
-                      <div class="card-topline">
-                        <span class="card-type">
-                          {item.type === 'casino-hotel'
-                            ? 'CASINO & HOTEL'
-                            : item.type.toUpperCase()}
-                        </span>
-                        <span class="card-country">{item.country ?? 'International'}</span>
-                      </div>
-                      <div class="card-labels">
-                        {item.labels.map((label) => (
-                          <span>{label}</span>
-                        ))}
-                      </div>
-                      <h3>
-                        <a href={`/opportunities/${encodeURIComponent(item.slug)}`}>{item.title}</a>
-                      </h3>
-                      <p>{item.summary || 'Further details available to qualified parties.'}</p>
-                      <div class="card-bottom">
-                        <span>{item.price ? item.price : 'Price on request'}</span>
-                        <a
-                          href={`/opportunities/${encodeURIComponent(item.slug)}`}
-                          aria-label={`View ${item.title}`}
-                        >
-                          View details <span aria-hidden="true">→</span>
-                        </a>
-                      </div>
-                    </article>
+                    <OpportunityCard item={item} />
                   ))}
                 </div>
               ) : (
@@ -331,6 +377,7 @@ publicPages.get('/casinos-for-sale', async (c) => {
     return c.html(
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
         title="Opportunities | Casinos of Mayfair"
         description="Explore casino and hospitality investment opportunities."
       >
@@ -363,6 +410,7 @@ publicPages.get('/casinos-for-sale/:country', async (c) => {
   return c.html(
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
       title={`Casino Opportunities in ${countryName} | Casinos of Mayfair`}
       description={`Explore verified public casino and hospitality opportunities in ${countryName}.`}
       canonicalPath={`/casinos-for-sale/${encodeURIComponent(countrySlug)}`}
@@ -389,33 +437,9 @@ publicPages.get('/casinos-for-sale/:country', async (c) => {
             </span>
           </div>
           {items.length ? (
-            <div class="opportunity-grid">
+            <div class="opportunity-grid opportunity-grid-wide">
               {items.map((item) => (
-                <article class="opportunity-card">
-                  {item.coverMediaPath && (
-                    <a
-                      class="opportunity-cover"
-                      href={`/opportunities/${encodeURIComponent(item.slug)}`}
-                      aria-label={`View ${item.title}`}
-                    >
-                      <img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" />
-                    </a>
-                  )}
-                  <div class="card-topline">
-                    <span class="card-type">
-                      {item.type === 'casino-hotel' ? 'CASINO & HOTEL' : item.type.toUpperCase()}
-                    </span>
-                    <span class="card-country">{item.country ?? countryName}</span>
-                  </div>
-                  <h3>
-                    <a href={`/opportunities/${encodeURIComponent(item.slug)}`}>{item.title}</a>
-                  </h3>
-                  <p>{item.summary || 'Further details available to qualified parties.'}</p>
-                  <div class="card-bottom">
-                    <span>{item.price ?? 'Price on request'}</span>
-                    <a href={`/opportunities/${encodeURIComponent(item.slug)}`}>View details →</a>
-                  </div>
-                </article>
+                <OpportunityCard item={item} />
               ))}
             </div>
           ) : (
@@ -444,6 +468,7 @@ publicPages.get('/casino-hotels', async (c) => {
   return c.html(
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
       title="Casino Hotels for Sale | Casinos of Mayfair"
       description="Explore publicly approved casino-hotel investment opportunities."
       canonicalPath="/casino-hotels"
@@ -460,31 +485,9 @@ publicPages.get('/casino-hotels', async (c) => {
       <section class="section">
         <div class="container">
           {items.length ? (
-            <div class="opportunity-grid">
+            <div class="opportunity-grid opportunity-grid-wide">
               {items.map((item) => (
-                <article class="opportunity-card">
-                  {item.coverMediaPath && (
-                    <a
-                      class="opportunity-cover"
-                      href={`/opportunities/${encodeURIComponent(item.slug)}`}
-                      aria-label={`View ${item.title}`}
-                    >
-                      <img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" />
-                    </a>
-                  )}
-                  <div class="card-topline">
-                    <span class="card-type">CASINO & HOTEL</span>
-                    <span class="card-country">{item.country ?? 'International'}</span>
-                  </div>
-                  <h3>
-                    <a href={`/opportunities/${encodeURIComponent(item.slug)}`}>{item.title}</a>
-                  </h3>
-                  <p>{item.summary || 'Further details available to qualified parties.'}</p>
-                  <div class="card-bottom">
-                    <span>{item.price ?? 'Price on request'}</span>
-                    <a href={`/opportunities/${encodeURIComponent(item.slug)}`}>View details →</a>
-                  </div>
-                </article>
+                <OpportunityCard item={item} />
               ))}
             </div>
           ) : (
@@ -510,6 +513,7 @@ publicPages.get('/archive', async (c) => {
   return c.html(
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
       title="Past Opportunities | Casinos of Mayfair"
       description="Selected past opportunities, where approved for public display."
       canonicalPath="/archive"
@@ -524,16 +528,9 @@ publicPages.get('/archive', async (c) => {
       <section class="section">
         <div class="container">
           {items.length ? (
-            <div class="opportunity-grid">
+            <div class="opportunity-grid opportunity-grid-wide">
               {items.map((item) => (
-                <article class="opportunity-card">
-                  <div class="card-topline">
-                    <span class="card-type">PAST OPPORTUNITY</span>
-                    <span class="card-country">{item.country ?? 'International'}</span>
-                  </div>
-                  <h3>{item.title}</h3>
-                  <p>{item.summary}</p>
-                </article>
+                <OpportunityCard item={item} variant="archive" />
               ))}
             </div>
           ) : (
@@ -559,6 +556,7 @@ publicPages.get('/opportunities/:slug', async (c) => {
     return c.html(
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
         title="Opportunity not found | Casinos of Mayfair"
         description="This opportunity may no longer be available."
       >
@@ -578,6 +576,7 @@ publicPages.get('/opportunities/:slug', async (c) => {
   return c.html(
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
       title={`${item.seoTitle} | Casinos of Mayfair`}
       description={item.seoDescription}
       canonicalPath={`/opportunities/${encodeURIComponent(item.slug)}`}
@@ -680,6 +679,7 @@ publicPages.get('/contact', (c) => {
   return c.html(
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
       title="Contact Our Team | Casinos of Mayfair"
       description="Contact the Casinos of Mayfair team about casino and hospitality investment opportunities."
       canonicalPath="/contact"
@@ -689,13 +689,14 @@ publicPages.get('/contact', (c) => {
           <span class="eyebrow">CASINOS OF MAYFAIR</span>
           <h1>Start a conversation</h1>
           <p>
-            Share your contact details and a brief description of your enquiry. Please do not
-            include passwords, identity documents or confidential deal materials.
+            Call, email or message us directly, or send an enquiry below. Please do not include
+            passwords, identity documents or confidential deal materials.
           </p>
         </div>
       </section>
       <section class="section">
-        <div class="container content-narrow">
+        <div class="container contact-layout">
+          <div class="contact-main">
           {notice}
           <form class="contact-form" method="post" action="/api/enquiries">
             <label for="contact-name">Full name *</label>
@@ -762,11 +763,89 @@ publicPages.get('/contact', (c) => {
             )}
             <script src="/static/js/contact-form.js" defer></script>
           </form>
+          </div>
+          <aside class="contact-aside" aria-label="Direct contact details">
+            <span class="eyebrow">DIRECT CONTACT</span>
+            <h2>Speak with the Chairman</h2>
+            <p>
+              For any casino for sale, casino hotel, management or consulting requirement. Enquiries
+              are treated in strict confidence.
+            </p>
+            <ContactLines contact={c.get('contact')} />
+            {c.get('contact').whatsapp.replace(/[^0-9]/g, '').length >= 8 && (
+              <a
+                class="button button-whatsapp"
+                href={`https://wa.me/${c.get('contact').whatsapp.replace(/[^0-9]/g, '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Chat on WhatsApp <span aria-hidden="true">↗</span>
+              </a>
+            )}
+            <div class="contact-offices">
+              <strong>Offices</strong>
+              <ul>
+                {OFFICES.map(([name]) => (
+                  <li>{name}</li>
+                ))}
+              </ul>
+            </div>
+            <p class="contact-note">
+              Please do not send passwords, identity documents or confidential deal materials
+              through the form or by email.
+            </p>
+          </aside>
         </div>
       </section>
     </BaseLayout>,
   );
 });
+
+publicPages.get('/staff-access', (c) =>
+  c.html(
+    <BaseLayout
+      siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
+      title="Staff access | Casinos of Mayfair"
+      description="How Casinos of Mayfair staff accounts are created."
+      canonicalPath="/staff-access"
+      noindex
+    >
+      <section class="page-hero">
+        <div class="container">
+          <span class="eyebrow">STAFF ACCESS</span>
+          <h1>Staff accounts are invitation-only</h1>
+          <p>
+            Brokers, editors and administrators are set up by a Casinos of Mayfair administrator.
+            There is no public staff sign-up.
+          </p>
+        </div>
+      </section>
+      <section class="section">
+        <div class="container content-narrow">
+          <h2>Already invited?</h2>
+          <p>Sign in with your staff email and password.</p>
+          <a class="button button-primary" href="/admin/login">
+            Staff sign in
+          </a>
+          <h2>Need an account?</h2>
+          <p>
+            Ask an administrator to provision your account, or send us a message and we will pass
+            your request on. If you are a buyer or investor, register a buyer account instead.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-dark" href="/contact">
+              Contact our team
+            </a>
+            <a class="text-link" href="/register">
+              Register as a buyer <span aria-hidden="true">→</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    </BaseLayout>,
+  ),
+);
 
 for (const [path, title, description, heading, copy] of STATIC_PAGES) {
   publicPages.get(path, async (c) => {
@@ -789,6 +868,7 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
       return c.html(
         <BaseLayout
           siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
           title={`${override.seoTitle || override.title} | Casinos of Mayfair`}
           description={override.seoDescription || override.description || description}
           canonicalPath={path}
@@ -816,6 +896,7 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
     return c.html(
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
+      contact={c.get('contact')}
         title={`${title} | Casinos of Mayfair`}
         description={description}
         canonicalPath={path}
@@ -827,14 +908,39 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
             <p>{copy}</p>
           </div>
         </section>
+        {path === '/services' && (
+          <section class="section">
+            <div class="container">
+              <ServicesGrid />
+            </div>
+          </section>
+        )}
+        {path === '/about' && (
+          <>
+            <StatsBand />
+            <ChairmanSection contact={c.get('contact')} />
+            <WorldwideSection />
+          </>
+        )}
+        {path === '/faq' && (
+          <section class="section">
+            <div class="container content-narrow-wide">
+              <FaqList />
+            </div>
+          </section>
+        )}
         <section class="section">
           <div class="container content-narrow">
-            <h2>How we work</h2>
-            <p>
-              We aim to provide a professional and considered introduction process. No information
-              on this website should be treated as an offer, recommendation or guarantee of
-              investment outcome.
-            </p>
+            {path !== '/faq' && (
+              <>
+                <h2>How we work</h2>
+                <p>
+                  We aim to provide a professional and considered introduction process. No
+                  information on this website should be treated as an offer, recommendation or
+                  guarantee of investment outcome.
+                </p>
+              </>
+            )}
             <a class="button button-dark" href="/contact">
               Contact our team
             </a>

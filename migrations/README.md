@@ -26,3 +26,4 @@ The SQL seed is idempotent by `legacy_id`; it is not a substitute for the team's
 - `0015_platform_management.sql`: platform settings, managed pages/forms/submissions and `password_reset_tokens`.
 - `0016_auth_hardening.sql`: Sprint 16 unified email + password auth. Adds `password_updated_at`, `failed_login_count`, `locked_until`, `must_change_password` to `users`, `session_type` to `sessions` (existing staff sessions are backfilled as `staff`), and `purpose` to `password_reset_tokens`. `buyer_login_codes` is no longer used but kept (forward-only).
 - `0017_forms_nda_workflow.sql`: managed-form submission triage columns and an active-grant index. Apply before deploying Sprint 19 code.
+- `0018_seed_contact_settings.sql`: seeds public contact settings (phones, emails, WhatsApp) with INSERT OR IGNORE so dashboard edits are never overwritten. Apply before deploying Sprint 21 UI changes.
