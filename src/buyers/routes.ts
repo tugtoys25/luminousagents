@@ -279,9 +279,9 @@ buyers.post('/api/buyer/opportunities/:slug/nda-requests', requireBuyer, async (
   const clientIp = c.req.header('cf-connecting-ip') ?? 'unknown';
   const acceptedIpHash = await digest(`${c.env.IP_HASH_SECRET}:${clientIp}`);
   const previous = await c.env.DB.prepare(
-    "SELECT id FROM nda_requests WHERE user_id = ? AND opportunity_id = ? AND status IN ('pending','approved') LIMIT 1",
+    "SELECT n.id FROM nda_requests n WHERE n.user_id = ? AND n.opportunity_id = ? AND (n.status = 'pending' OR (n.status = 'approved' AND EXISTS (SELECT 1 FROM access_grants g WHERE g.nda_request_id = n.id AND g.revoked_at IS NULL AND g.expires_at > ?))) LIMIT 1",
   )
-    .bind(c.get('buyer').id, opportunity.id)
+    .bind(c.get('buyer').id, opportunity.id, now())
     .first();
   if (previous)
     return jsonError(

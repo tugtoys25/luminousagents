@@ -119,8 +119,8 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
       env,
       row.brokerEmail,
       'New enquiry assigned to you · Casinos of Mayfair',
-      `<p>A new website enquiry has been assigned to you.</p><p><strong>Enquiry reference:</strong> ${escapeHtml(row.id)}</p><p><strong>Contact:</strong> ${escapeHtml(row.name)} (${escapeHtml(row.email)})</p><p><strong>Company:</strong> ${escapeHtml(row.company || 'Not provided')}</p><p><strong>Opportunity:</strong> ${escapeHtml(row.opportunityTitle || 'General enquiry')}</p><p><a href="${base}/dashboard/enquiries">Open enquiry CRM</a></p>`,
-      `New enquiry ${row.id} assigned to you. Contact: ${row.name} (${row.email}). Company: ${row.company || 'Not provided'}. Opportunity: ${row.opportunityTitle || 'General enquiry'}. Open CRM: ${base}/dashboard/enquiries`,
+      `<p>A new website enquiry has been assigned to you.</p><p><strong>Enquiry reference:</strong> ${escapeHtml(row.id)}</p><p><strong>Contact:</strong> ${escapeHtml(row.name)} (${escapeHtml(row.email)})</p><p><strong>Company:</strong> ${escapeHtml(row.company || 'Not provided')}</p><p><strong>Opportunity:</strong> ${escapeHtml(row.opportunityTitle || 'General enquiry')}</p><p><a href="${base}/dashboard/enquiries/ui">Open enquiry inbox</a></p>`,
+      `New enquiry ${row.id} assigned to you. Contact: ${row.name} (${row.email}). Company: ${row.company || 'Not provided'}. Opportunity: ${row.opportunityTitle || 'General enquiry'}. Open inbox: ${base}/dashboard/enquiries/ui`,
     );
     return;
   }
@@ -176,8 +176,8 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
       env,
       opsEmail,
       'New website enquiry · Casinos of Mayfair',
-      `<h2>New website enquiry</h2><p><strong>Name:</strong> ${escapeHtml(enquiry.name)}</p><p><strong>Email:</strong> ${escapeHtml(enquiry.email)}</p><p><strong>Company:</strong> ${escapeHtml(enquiry.company || 'Not provided')}</p><p><strong>Message:</strong></p><p>${escapeHtml(enquiry.message).replace(/\n/g, '<br>')}</p><p><a href="${base}/dashboard/enquiries">Open enquiry CRM</a></p>`,
-      `New website enquiry from ${enquiry.name} (${enquiry.email}). Company: ${enquiry.company || 'Not provided'}. Message: ${enquiry.message}. Open CRM: ${base}/dashboard/enquiries`,
+      `<h2>New website enquiry</h2><p><strong>Name:</strong> ${escapeHtml(enquiry.name)}</p><p><strong>Email:</strong> ${escapeHtml(enquiry.email)}</p><p><strong>Company:</strong> ${escapeHtml(enquiry.company || 'Not provided')}</p><p><strong>Message:</strong></p><p>${escapeHtml(enquiry.message).replace(/\n/g, '<br>')}</p><p><a href="${base}/dashboard/enquiries/ui">Open enquiry inbox</a></p>`,
+      `New website enquiry from ${enquiry.name} (${enquiry.email}). Company: ${enquiry.company || 'Not provided'}. Message: ${enquiry.message}. Open inbox: ${base}/dashboard/enquiries/ui`,
     );
     return;
   }
@@ -197,6 +197,43 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
       'NDA review requested · Casinos of Mayfair',
       `<p>A buyer has requested access to an opportunity data room.</p><p><strong>Opportunity:</strong> ${escapeHtml(request.title)}</p><p><strong>Buyer:</strong> ${escapeHtml(request.email)}</p><p><a href="${base}/dashboard/nda-requests">Review NDA requests</a></p>`,
       `NDA review requested for ${request.title} by ${request.email}. Review: ${base}/dashboard/nda-requests`,
+    );
+    return;
+  }
+  if (job.job_type === 'nda.decision') {
+    const requestId = String(payload['ndaRequestId'] ?? '');
+    if (!requestId) throw new Error('Invalid NDA decision payload');
+    const request = await env.DB.prepare(
+      'SELECT n.id, n.status, n.review_reason AS reason, u.email, u.display_name AS name, o.title, (SELECT g.expires_at FROM access_grants g WHERE g.nda_request_id = n.id AND g.revoked_at IS NULL ORDER BY g.granted_at DESC LIMIT 1) AS expiresAt FROM nda_requests n JOIN users u ON u.id = n.user_id JOIN opportunities o ON o.id = n.opportunity_id WHERE n.id = ?',
+    )
+      .bind(requestId)
+      .first<{
+        id: string;
+        status: string;
+        reason: string;
+        email: string;
+        name: string | null;
+        title: string;
+        expiresAt: string | null;
+      }>();
+    if (!request) throw new Error('NDA request not found');
+    if (request.status !== 'approved' && request.status !== 'rejected') return;
+    const base = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
+    const greeting = escapeHtml(request.name || 'there');
+    const approved = request.status === 'approved';
+    const until = request.expiresAt ? new Date(request.expiresAt).toUTCString() : '';
+    await sendEmail(
+      env,
+      request.email,
+      approved
+        ? 'Your data room access has been approved · Casinos of Mayfair'
+        : 'Update on your NDA request · Casinos of Mayfair',
+      approved
+        ? `<p>Dear ${greeting},</p><p>Your NDA request for <strong>${escapeHtml(request.title)}</strong> has been approved.${until ? ` Access is available until ${escapeHtml(until)}.` : ''}</p><p><a href="${base}/account">Sign in to your account</a> to view the documents. All materials remain confidential under the NDA you acknowledged.</p>`
+        : `<p>Dear ${greeting},</p><p>We are unable to approve your NDA request for <strong>${escapeHtml(request.title)}</strong> at this time.${request.reason ? ` Note from the team: ${escapeHtml(request.reason)}` : ''}</p><p>If you have questions, please reply to this email or contact the team through the website.</p>`,
+      approved
+        ? `Your NDA request for ${request.title} has been approved.${until ? ` Access runs until ${until}.` : ''} Sign in at ${base}/account to view the documents.`
+        : `We are unable to approve your NDA request for ${request.title} at this time.${request.reason ? ` Note from the team: ${request.reason}` : ''}`,
     );
     return;
   }

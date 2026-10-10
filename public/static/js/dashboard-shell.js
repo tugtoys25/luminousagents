@@ -92,7 +92,7 @@
         },
         {
           label: 'Enquiries',
-          href: '/dashboard/enquiries',
+          href: '/dashboard/enquiries/ui',
           icon: 'mail',
           match: ['/dashboard/enquiries'],
           kw: 'contact leads messages',

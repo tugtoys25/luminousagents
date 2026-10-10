@@ -183,7 +183,7 @@ admin.get('/', async (c) => {
     })
     .join('');
   return c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff dashboard · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform dashboard</h1><p class="muted">Signed in as ${escape(staff.displayName || staff.email)} · ${escape(staff.role)}</p><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries">Enquiries</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/nda-templates/ui">NDA templates</a><a href="/dashboard/audit">Audit log</a>${staff.role === 'super_admin' ? '<a href="/dashboard/staff/ui">Staff accounts</a>' : ''}<a href="/dashboard/settings/ui">Platform settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/change-password">Change password</a><a href="/">View public site</a><a href="/admin/logout">Sign out</a></nav><section class="metric-grid" aria-label="Key numbers"><a class="metric" href="/dashboard/opportunities/ui"><span class="muted">Total records</span><strong>${counts?.total ?? 0}</strong><small>Opportunities you can access</small></a><a class="metric" href="/dashboard/opportunities/ui" data-tone="${(counts?.pending ?? 0) > 0 ? 'warn' : 'ok'}"><span class="muted">Awaiting review</span><strong>${counts?.pending ?? 0}</strong><small>${(counts?.pending ?? 0) > 0 ? 'Content waiting for a decision' : 'Nothing waiting'}</small></a><a class="metric" href="/dashboard/opportunities/ui" data-tone="ok"><span class="muted">Published &amp; approved</span><strong>${counts?.published ?? 0}</strong><small>Visible on the public site</small></a></section><h2>Quick actions</h2><section class="quick-grid" aria-label="Quick actions"><a class="quick-card" href="/dashboard/opportunities/ui"><strong>Opportunity CMS</strong><span>Create, edit, review and publish listings.</span></a><a class="quick-card" href="/dashboard/nda-requests/ui"><strong>NDA requests</strong><span>Review requests and grant time-limited access.</span></a><a class="quick-card" href="/dashboard/buyers/ui"><strong>Buyer access</strong><span>Approve registrations and manage accounts.</span></a><a class="quick-card" href="/dashboard/tasks/ui"><strong>Tasks</strong><span>Assign and track operational follow-ups.</span></a><a class="quick-card" href="/dashboard/pages/ui"><strong>Pages</strong><span>Write and publish SEO-friendly content pages.</span></a><a class="quick-card" href="/dashboard/settings/ui"><strong>Platform settings</strong><span>Branding, contact channels and navigation.</span></a></section><div class="dash-cols"><section class="ws-card"><h2>Needs content review</h2>${pendingRows ? `<ul class="review-list">${pendingRows}</ul>` : '<p class="empty-state">No records awaiting review.</p>'}</section><section><h2>Recently updated opportunities</h2><div class="overflow-x-auto"><table><thead><tr><th>Title</th><th>Country</th><th>Lifecycle</th><th>Review</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No records yet.</td></tr>'}</tbody></table></div></section></div></main></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff dashboard · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform dashboard</h1><p class="muted">Signed in as ${escape(staff.displayName || staff.email)} · ${escape(staff.role)}</p><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries/ui">Enquiries</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/nda-templates/ui">NDA templates</a><a href="/dashboard/audit">Audit log</a>${staff.role === 'super_admin' ? '<a href="/dashboard/staff/ui">Staff accounts</a>' : ''}<a href="/dashboard/settings/ui">Platform settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/change-password">Change password</a><a href="/">View public site</a><a href="/admin/logout">Sign out</a></nav><section class="metric-grid" aria-label="Key numbers"><a class="metric" href="/dashboard/opportunities/ui"><span class="muted">Total records</span><strong>${counts?.total ?? 0}</strong><small>Opportunities you can access</small></a><a class="metric" href="/dashboard/opportunities/ui" data-tone="${(counts?.pending ?? 0) > 0 ? 'warn' : 'ok'}"><span class="muted">Awaiting review</span><strong>${counts?.pending ?? 0}</strong><small>${(counts?.pending ?? 0) > 0 ? 'Content waiting for a decision' : 'Nothing waiting'}</small></a><a class="metric" href="/dashboard/opportunities/ui" data-tone="ok"><span class="muted">Published &amp; approved</span><strong>${counts?.published ?? 0}</strong><small>Visible on the public site</small></a></section><h2>Quick actions</h2><section class="quick-grid" aria-label="Quick actions"><a class="quick-card" href="/dashboard/opportunities/ui"><strong>Opportunity CMS</strong><span>Create, edit, review and publish listings.</span></a><a class="quick-card" href="/dashboard/nda-requests/ui"><strong>NDA requests</strong><span>Review requests and grant time-limited access.</span></a><a class="quick-card" href="/dashboard/buyers/ui"><strong>Buyer access</strong><span>Approve registrations and manage accounts.</span></a><a class="quick-card" href="/dashboard/tasks/ui"><strong>Tasks</strong><span>Assign and track operational follow-ups.</span></a><a class="quick-card" href="/dashboard/pages/ui"><strong>Pages</strong><span>Write and publish SEO-friendly content pages.</span></a><a class="quick-card" href="/dashboard/settings/ui"><strong>Platform settings</strong><span>Branding, contact channels and navigation.</span></a></section><div class="dash-cols"><section class="ws-card"><h2>Needs content review</h2>${pendingRows ? `<ul class="review-list">${pendingRows}</ul>` : '<p class="empty-state">No records awaiting review.</p>'}</section><section><h2>Recently updated opportunities</h2><div class="overflow-x-auto"><table><thead><tr><th>Title</th><th>Country</th><th>Lifecycle</th><th>Review</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No records yet.</td></tr>'}</tbody></table></div></section></div></main></body></html>`,
   );
 });
 
@@ -575,6 +575,20 @@ admin.post('/opportunities/:id/review', requireRole(...publisherRoles), async (c
 });
 
 const enquiryStatuses = ['new', 'assigned', 'in_progress', 'waiting', 'closed', 'spam'] as const;
+admin.get(
+  '/enquiries/ui',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'auditor', 'super_admin'),
+  (c) =>
+    c.html(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Enquiries · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Enquiries</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/enquiries/ui">Enquiries</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/forms/ui">Forms</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Website contact enquiries and listing requests. Contact details are confidential; use them only to respond to the request.</p><div class="enq-bar"><label>Status <select id="enq-status"><option value="">All</option><option value="new">New</option><option value="assigned">Assigned</option><option value="in_progress">In progress</option><option value="waiting">Waiting</option><option value="closed">Closed</option><option value="spam">Spam</option></select></label><label>Search <input id="enq-q" type="search" maxlength="100" placeholder="Name, email or company" autocomplete="off"></label></div><p id="enq-notice" role="status"></p><div class="enq-layout"><section id="enq-list" aria-live="polite">Loading enquiries…</section><aside id="enq-detail" aria-live="polite"><p class="muted">Select an enquiry to see the full message, notes and actions.</p></aside></div></main><script src="/static/js/dashboard-enquiries.js" defer></script></body></html>`,
+    ),
+);
+admin.get('/assignees', requireRole('admin', 'editor', 'super_admin'), async (c) => {
+  const result = await c.env.DB.prepare(
+    "SELECT id, display_name AS displayName, email, role FROM users WHERE user_type = 'staff' AND status = 'active' AND role IN ('admin','editor','broker','publisher','super_admin') ORDER BY display_name COLLATE NOCASE LIMIT 200",
+  ).all();
+  return c.json({ data: result.results ?? [] });
+});
 admin.get(
   '/enquiries',
   requireRole('admin', 'editor', 'broker', 'publisher', 'auditor', 'super_admin'),
@@ -1149,7 +1163,24 @@ admin.patch(
         timestamp,
       ),
     );
+    const decisionJobId = id();
+    statements.push(
+      c.env.DB.prepare(
+        "INSERT INTO notification_jobs (id, job_type, payload_json, status, attempts, available_at, created_at, updated_at) VALUES (?, 'nda.decision', ?, 'queued', 0, ?, ?, ?)",
+      ).bind(
+        decisionJobId,
+        JSON.stringify({ ndaRequestId: request.id }),
+        timestamp,
+        timestamp,
+        timestamp,
+      ),
+    );
     await c.env.DB.batch(statements);
+    try {
+      await c.env.NOTIFICATIONS_QUEUE.send({ type: 'nda.decision', jobId: decisionJobId });
+    } catch {
+      /* The durable job row is picked up by scheduled recovery. */
+    }
     return c.json({
       data: {
         id: request.id,
@@ -1691,7 +1722,7 @@ admin.get(
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) => {
     return c.html(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff tasks · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Task management</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries">Enquiries</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/audit">Audit log</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Create and assign operational follow-ups. Avoid putting sensitive buyer or deal information in task descriptions.</p><form id="task-create" class="task-form"><label>Task title<input name="title" minlength="3" maxlength="180" required></label><label>Priority<select name="priority"><option value="normal">Normal</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><label>Due date<input name="dueAt" type="datetime-local"></label><label>Assignee user ID (optional)<input name="assignedTo" placeholder="Staff user UUID"></label><label class="full-row">Description<textarea name="description" maxlength="4000"></textarea></label><button type="submit">Create task</button></form><p id="task-notice" class="notice" role="status"></p><section id="task-list" class="task-list" aria-live="polite"><p>Loading tasks…</p></section></main><script src="/static/js/dashboard-tasks.js" defer></script></body></html>`,
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff tasks · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Task management</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries/ui">Enquiries</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/audit">Audit log</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Create and assign operational follow-ups. Avoid putting sensitive buyer or deal information in task descriptions.</p><form id="task-create" class="task-form"><label>Task title<input name="title" minlength="3" maxlength="180" required></label><label>Priority<select name="priority"><option value="normal">Normal</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><label>Due date<input name="dueAt" type="datetime-local"></label><label>Assignee user ID (optional)<input name="assignedTo" placeholder="Staff user UUID"></label><label class="full-row">Description<textarea name="description" maxlength="4000"></textarea></label><button type="submit">Create task</button></form><p id="task-notice" class="notice" role="status"></p><section id="task-list" class="task-list" aria-live="polite"><p>Loading tasks…</p></section></main><script src="/static/js/dashboard-tasks.js" defer></script></body></html>`,
     );
   },
 );
@@ -2263,7 +2294,7 @@ admin.post('/pages', requireRole('admin', 'super_admin', 'editor'), async (c) =>
 
 admin.get('/forms/ui', requireRole('admin', 'super_admin', 'editor'), (c) =>
   c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Managed forms</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><h1>Managed forms</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/logout">Sign out</a></nav><p>Define form fields as JSON array, e.g. [{"name":"name","label":"Full name","type":"text","required":true},{"name":"email","label":"Email","type":"email","required":true}]. Submissions are saved in D1; published forms can optionally be associated with a listing using its slug.</p><form id="managed-form-form" class="flow" data-flow><input type="hidden" name="id"><label>Title <input name="title" minlength="3" maxlength="180" required></label><label>Slug <input name="slug" pattern="[a-z0-9-]+" maxlength="100" required></label><label>Description <textarea name="description" maxlength="500"></textarea></label><label>Fields JSON <textarea name="fieldsJson" rows="8" required>[{"name":"name","label":"Full name","type":"text","required":true},{"name":"email","label":"Business email","type":"email","required":true},{"name":"message","label":"How can we help?","type":"textarea","required":true}]</textarea></label><label>Status <select name="status"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label><label><input type="checkbox" name="notificationEnabled" checked> Notify staff by email on submission</label><button>Save form</button></form><p id="form-notice" role="status"></p><ul id="managed-forms"></ul><h2>Recent form submissions</h2><p>Submissions are shown newest first. Contact and listing details are confidential; use them only for the requested business purpose.</p><section id="managed-submissions" aria-live="polite">Loading submissions…</section></main><script src="/static/js/dashboard-forms.js" defer></script></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Managed forms</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><h1>Managed forms</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/logout">Sign out</a></nav><p>Define form fields as JSON array, e.g. [{"name":"name","label":"Full name","type":"text","required":true},{"name":"email","label":"Email","type":"email","required":true}]. Submissions are saved in D1; published forms can optionally be associated with a listing using its slug.</p><form id="managed-form-form" class="flow" data-flow><input type="hidden" name="id"><label>Title <input name="title" minlength="3" maxlength="180" required></label><label>Slug <input name="slug" pattern="[a-z0-9-]+" maxlength="100" required></label><label>Description <textarea name="description" maxlength="500"></textarea></label><label>Fields JSON <textarea name="fieldsJson" rows="8" required>[{"name":"name","label":"Full name","type":"text","required":true},{"name":"email","label":"Business email","type":"email","required":true},{"name":"message","label":"How can we help?","type":"textarea","required":true}]</textarea></label><label>Status <select name="status"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label><label><input type="checkbox" name="notificationEnabled" checked> Notify staff by email on submission</label><button>Save form</button></form><p id="form-notice" role="status"></p><ul id="managed-forms"></ul><h2>Form submissions</h2><p>Submissions are shown newest first. Contact and listing details are confidential; use them only for the requested business purpose.</p><div class="enq-bar"><label>Status <select id="sub-status"><option value="">All</option><option value="new">New</option><option value="in_progress">In progress</option><option value="closed">Closed</option><option value="spam">Spam</option></select></label><label>Search <input id="sub-q" type="search" maxlength="100" placeholder="Search submitted details" autocomplete="off"></label><a id="sub-export" class="button secondary" href="/dashboard/form-submissions/export.csv" download>Export CSV</a></div><section id="managed-submissions" aria-live="polite">Loading submissions…</section></main><script src="/static/js/dashboard-forms.js" defer></script></body></html>`,
   ),
 );
 admin.get('/forms', requireRole('admin', 'super_admin', 'editor'), async (c) => {
@@ -2272,18 +2303,142 @@ admin.get('/forms', requireRole('admin', 'super_admin', 'editor'), async (c) => 
   ).all();
   return c.json({ data: r.results ?? [] });
 });
+const submissionStatuses = ['new', 'in_progress', 'closed', 'spam'] as const;
+const submissionSelect =
+  's.id, s.data_json AS dataJson, s.status, s.internal_note AS internalNote, s.created_at AS createdAt, s.updated_at AS updatedAt, f.title AS formTitle, f.slug AS formSlug, o.title AS opportunityTitle';
+const submissionFrom =
+  'FROM managed_form_submissions s JOIN managed_forms f ON f.id = s.form_id LEFT JOIN opportunities o ON o.id = s.opportunity_id';
+const submissionFilter =
+  "WHERE (? = '' OR s.status = ?) AND (? = '' OR f.slug = ?) AND (? = '' OR s.data_json LIKE ? ESCAPE '\\')";
+function submissionFilters(c: {
+  req: { query(key: string): string | undefined };
+}): [string, string, string, string, string, string] {
+  const status = c.req.query('status') ?? '';
+  const safeStatus = (submissionStatuses as readonly string[]).includes(status) ? status : '';
+  const form = (c.req.query('form') ?? '').slice(0, 100);
+  const q = (c.req.query('q') ?? '').trim().slice(0, 100);
+  const like = `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+  return [safeStatus, safeStatus, form, form, q, like];
+}
+const csvCell = (value: unknown): string => {
+  let text = String(value ?? '');
+  // Neutralise spreadsheet formula injection from public input.
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+};
 admin.get(
   '/form-submissions',
   requireRole('admin', 'super_admin', 'editor', 'broker', 'auditor'),
   async (c) => {
     const r = await c.env.DB.prepare(
-      'SELECT s.id,s.data_json AS dataJson,s.created_at AS createdAt,f.title AS formTitle,o.title AS opportunityTitle FROM managed_form_submissions s JOIN managed_forms f ON f.id=s.form_id LEFT JOIN opportunities o ON o.id=s.opportunity_id ORDER BY s.created_at DESC LIMIT 100',
-    ).all();
+      `SELECT ${submissionSelect} ${submissionFrom} ${submissionFilter} ORDER BY s.created_at DESC LIMIT 200`,
+    )
+      .bind(...submissionFilters(c))
+      .all();
     return c.json({
-      data: (r.results ?? []).map((row) => ({
-        ...row,
-        data: JSON.parse(String((row as Record<string, unknown>).dataJson ?? '{}')),
-      })),
+      data: (r.results ?? []).map((row) => {
+        let data: unknown = {};
+        try {
+          data = JSON.parse(String((row as Record<string, unknown>).dataJson ?? '{}'));
+        } catch {
+          /* keep empty object for a corrupt row */
+        }
+        const { dataJson: _raw, ...rest } = row as Record<string, unknown>;
+        return { ...rest, data };
+      }),
+    });
+  },
+);
+admin.get('/form-submissions/export.csv', requireRole('admin', 'super_admin'), async (c) => {
+  const r = await c.env.DB.prepare(
+    `SELECT ${submissionSelect} ${submissionFrom} ${submissionFilter} ORDER BY s.created_at DESC LIMIT 5000`,
+  )
+    .bind(...submissionFilters(c))
+    .all<Record<string, unknown>>();
+  const rows = (r.results ?? []).map((row) => {
+    let data: Record<string, unknown> = {};
+    try {
+      data = JSON.parse(String(row.dataJson ?? '{}')) as Record<string, unknown>;
+    } catch {
+      /* corrupt row exports with empty fields */
+    }
+    return { row, data };
+  });
+  const keys = [...new Set(rows.flatMap((x) => Object.keys(x.data)))].sort();
+  const head = ['id', 'received_at', 'form', 'listing', 'status', 'internal_note', ...keys];
+  const lines = [head.map(csvCell).join(',')];
+  for (const { row, data } of rows)
+    lines.push(
+      [
+        row.id,
+        row.createdAt,
+        row.formTitle,
+        row.opportunityTitle ?? '',
+        row.status,
+        row.internalNote,
+        ...keys.map((k) => data[k] ?? ''),
+      ]
+        .map(csvCell)
+        .join(','),
+    );
+  await audit(c, 'managed_form.submissions_exported', 'managed_form_submission', 'export', {
+    count: rows.length,
+  });
+  return new Response(`﻿${lines.join('\r\n')}\r\n`, {
+    headers: {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="form-submissions-${now().slice(0, 10)}.csv"`,
+      'cache-control': 'no-store',
+    },
+  });
+});
+admin.patch(
+  '/form-submissions/:id',
+  requireRole('admin', 'super_admin', 'editor', 'broker'),
+  async (c) => {
+    const parsed = z
+      .object({
+        status: z.enum(submissionStatuses).optional(),
+        internalNote: z.string().trim().max(3000).optional(),
+      })
+      .refine((v) => Object.keys(v).length > 0)
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'Provide a valid status or note.' } },
+        422,
+      );
+    const existing = await c.env.DB.prepare(
+      'SELECT id, status FROM managed_form_submissions WHERE id = ?',
+    )
+      .bind(c.req.param('id'))
+      .first<{ id: string; status: string }>();
+    if (!existing)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Submission not found.' } }, 404);
+    const sets = ['updated_at = ?'];
+    const values: string[] = [now()];
+    if (parsed.data.status) {
+      sets.push('status = ?');
+      values.push(parsed.data.status);
+    }
+    if (parsed.data.internalNote !== undefined) {
+      sets.push('internal_note = ?');
+      values.push(parsed.data.internalNote);
+    }
+    await c.env.DB.prepare(`UPDATE managed_form_submissions SET ${sets.join(', ')} WHERE id = ?`)
+      .bind(...values, existing.id)
+      .run();
+    await audit(c, 'managed_form.submission_updated', 'managed_form_submission', existing.id, {
+      from: existing.status,
+      status: parsed.data.status,
+      noteChanged: parsed.data.internalNote !== undefined,
+    });
+    return c.json({
+      data: {
+        id: existing.id,
+        status: parsed.data.status ?? existing.status,
+        updatedAt: values[0],
+      },
     });
   },
 );

@@ -51,6 +51,28 @@ managed.get('/forms/:slug', async (c) => {
     .bind(slug)
     .first<{ id: string; title: string; description: string; fieldsJson: string }>();
   if (!form) return c.notFound();
+  {
+    const clientIp = c.req.header('cf-connecting-ip');
+    const rateKey = clientIp
+      ? Array.from(
+          new Uint8Array(
+            await crypto.subtle.digest(
+              'SHA-256',
+              new TextEncoder().encode(`${c.env.IP_HASH_SECRET ?? ''}:${clientIp}`),
+            ),
+          ),
+          (b) => b.toString(16).padStart(2, '0'),
+        ).join('')
+      : 'unknown';
+    const key = `form-rate:${slug}:${rateKey}`;
+    const count = Number.parseInt((await c.env.CACHE.get(key)) ?? '0', 10) || 0;
+    if (count >= 8)
+      return c.json(
+        { error: { code: 'RATE_LIMITED', message: 'Please wait before sending another request.' } },
+        429,
+      );
+    await c.env.CACHE.put(key, String(count + 1), { expirationTtl: 600 });
+  }
   let fields: Array<{
     name: string;
     label: string;

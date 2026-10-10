@@ -33,9 +33,27 @@
     } catch {
       list.textContent = 'Unable to load forms.';
     }
+    await loadSubmissions();
+  }
+  const STATUSES = ['new', 'in_progress', 'closed', 'spam'];
+  const label = (v) => String(v).replace(/_/g, ' ');
+  const fStatus = document.querySelector('#sub-status'),
+    fQuery = document.querySelector('#sub-q'),
+    exportLink = document.querySelector('#sub-export');
+  const role = document.querySelector('meta[name="mayfair-staff"]')?.getAttribute('content') || '';
+  const canEdit = ['admin', 'super_admin', 'editor', 'broker'].includes(role);
+  const filterQuery = () => {
+    const p = new URLSearchParams();
+    if (fStatus?.value) p.set('status', fStatus.value);
+    if (fQuery?.value.trim()) p.set('q', fQuery.value.trim());
+    return p.toString();
+  };
+  async function loadSubmissions() {
+    if (exportLink) exportLink.href = '/dashboard/form-submissions/export.csv?' + filterQuery();
     try {
-      const r = await fetch('/dashboard/form-submissions');
+      const r = await fetch('/dashboard/form-submissions?' + filterQuery());
       const j = await r.json();
+      if (!r.ok) throw new Error(j.error?.message || 'Unable to load submissions.');
       submissions.replaceChildren();
       for (const item of j.data || []) {
         const card = document.createElement('article');
@@ -43,18 +61,72 @@
         const h = document.createElement('h3');
         h.textContent =
           item.formTitle + (item.opportunityTitle ? ' — ' + item.opportunityTitle : '');
+        const badge = document.createElement('span');
+        badge.className = 'ws-badge ws-badge--' + item.status;
+        badge.textContent = label(item.status);
+        h.append(' ', badge);
         const time = document.createElement('p');
-        time.textContent = new Date(item.createdAt).toLocaleString();
-        const pre = document.createElement('pre');
-        pre.textContent = JSON.stringify(item.data, null, 2);
-        card.append(h, time, pre);
+        time.className = 'muted';
+        time.textContent = new Date(item.createdAt).toLocaleString() + ' · ' + item.id;
+        const dl = document.createElement('dl');
+        for (const [k, v] of Object.entries(item.data || {})) {
+          const dt = document.createElement('dt'),
+            dd = document.createElement('dd');
+          dt.textContent = k.replace(/_/g, ' ');
+          dd.textContent = String(v);
+          dl.append(dt, dd);
+        }
+        const sel = document.createElement('select');
+        for (const s of STATUSES) {
+          const o = document.createElement('option');
+          o.value = s;
+          o.textContent = label(s);
+          o.selected = s === item.status;
+          sel.append(o);
+        }
+        const note = document.createElement('textarea');
+        note.rows = 2;
+        note.maxLength = 3000;
+        note.placeholder = 'Internal note';
+        note.value = item.internalNote || '';
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.textContent = 'Save';
+        sel.disabled = note.disabled = save.disabled = !canEdit;
+        save.onclick = async () => {
+          save.disabled = true;
+          try {
+            const res = await fetch('/dashboard/form-submissions/' + encodeURIComponent(item.id), {
+              method: 'PATCH',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ status: sel.value, internalNote: note.value }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(body.error?.message || 'Could not save.');
+            notice.textContent = 'Submission updated.';
+            await loadSubmissions();
+          } catch (err) {
+            notice.textContent = err.message;
+            save.disabled = false;
+          }
+        };
+        const row = document.createElement('div');
+        row.className = 'sub-actions';
+        row.append(sel, note, save);
+        card.append(h, time, dl, row);
         submissions.append(card);
       }
-      if (!submissions.childElementCount) submissions.textContent = 'No submissions yet.';
-    } catch {
-      submissions.textContent = 'Unable to load submissions.';
+      if (!submissions.childElementCount) submissions.textContent = 'No submissions match.';
+    } catch (err) {
+      submissions.textContent = err.message || 'Unable to load submissions.';
     }
   }
+  let filterTimer;
+  fStatus?.addEventListener('change', loadSubmissions);
+  fQuery?.addEventListener('input', () => {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(loadSubmissions, 250);
+  });
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
     const d = Object.fromEntries(new FormData(f));

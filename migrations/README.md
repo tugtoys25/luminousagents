@@ -25,3 +25,4 @@ The SQL seed is idempotent by `legacy_id`; it is not a substitute for the team's
 - `0014_custom_staff_auth.sql`: adds nullable staff password hashes for native email/password login; existing staff rows are preserved and can be provisioned through the one-time setup route.
 - `0015_platform_management.sql`: platform settings, managed pages/forms/submissions and `password_reset_tokens`.
 - `0016_auth_hardening.sql`: Sprint 16 unified email + password auth. Adds `password_updated_at`, `failed_login_count`, `locked_until`, `must_change_password` to `users`, `session_type` to `sessions` (existing staff sessions are backfilled as `staff`), and `purpose` to `password_reset_tokens`. `buyer_login_codes` is no longer used but kept (forward-only).
+- `0017_forms_nda_workflow.sql`: managed-form submission triage columns and an active-grant index. Apply before deploying Sprint 19 code.
