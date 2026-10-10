@@ -251,6 +251,13 @@ publicPages.get('/casinos-for-sale', async (c) => {
         description="Browse published casino and casino-hotel investment opportunities."
         canonicalPath="/casinos-for-sale"
         jsonLd={[
+          webPageLd(
+            (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''),
+            '/casinos-for-sale',
+            'Casino & Hotel Opportunities',
+            'Browse published casino and casino-hotel investment opportunities.',
+            'CollectionPage',
+          ),
           itemListLd(
             (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''),
             'Casino and hotel opportunities',
@@ -599,6 +606,8 @@ publicPages.get('/opportunities/:slug', async (c) => {
       contact={c.get('contact')}
       title={`${item.seoTitle} | Casinos of Mayfair`}
       description={item.seoDescription}
+      image={item.coverMediaPath}
+      imageAlt={item.coverMediaAlt}
       canonicalPath={`/opportunities/${encodeURIComponent(item.slug)}`}
       crumbs={[{ name: 'Opportunities', path: '/casinos-for-sale' }, { name: item.title }]}
       jsonLd={[
@@ -712,6 +721,15 @@ publicPages.get('/contact', (c) => {
       title="Contact Our Team | Casinos of Mayfair"
       description="Contact the Casinos of Mayfair team about casino and hospitality investment opportunities."
       canonicalPath="/contact"
+      jsonLd={[
+        webPageLd(
+          (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''),
+          '/contact',
+          'Contact Casinos of Mayfair',
+          'Contact the Casinos of Mayfair team about casino and hospitality investment opportunities.',
+          'ContactPage',
+        ),
+      ]}
     >
       <section class="page-hero">
         <div class="container">
@@ -929,11 +947,18 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
         title={`${title} | Casinos of Mayfair`}
         description={description}
         canonicalPath={path}
-        jsonLd={
-          path === '/services'
+        jsonLd={[
+          webPageLd(
+            (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''),
+            path,
+            title,
+            description,
+            path === '/about' ? 'AboutPage' : 'WebPage',
+          ),
+          ...(path === '/services'
             ? [servicesLd((c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''), SERVICES)]
-            : []
-        }
+            : []),
+        ]}
       >
         <section class="page-hero">
           <div class="container">

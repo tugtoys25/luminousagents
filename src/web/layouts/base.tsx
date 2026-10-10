@@ -2,6 +2,7 @@ import type { Child } from 'hono/jsx';
 import { FAQS } from '../content/site-content';
 import { DEFAULT_CONTACT, telHref, type ContactSettings } from '../site-settings';
 import {
+  DEFAULT_SHARE_IMAGE,
   breadcrumbLd,
   crumbsFromPath,
   ldJson,
@@ -17,6 +18,10 @@ interface BaseProps {
   siteUrl?: string;
   contact?: ContactSettings;
   noindex?: boolean;
+  /** Absolute or site-relative share image (Open Graph / Twitter). */
+  image?: string | null;
+  imageAlt?: string;
+  ogType?: 'website' | 'article';
   /** Breadcrumb trail after Home; derived from canonicalPath when omitted. */
   crumbs?: Crumb[];
   /** Extra schema.org objects for this page. */
@@ -33,12 +38,22 @@ export function BaseLayout({
   siteUrl = SITE_URL,
   contact = DEFAULT_CONTACT,
   noindex = false,
+  image = null,
+  imageAlt = '',
+  ogType = 'website',
   crumbs,
   jsonLd = [],
   children,
 }: BaseProps) {
   const baseUrl = siteUrl.replace(/\/$/, '');
   const canonical = `${baseUrl}${canonicalPath}`;
+  const shareImage = (() => {
+    const source = image || DEFAULT_SHARE_IMAGE;
+    return /^https?:\/\//i.test(source)
+      ? source
+      : `${baseUrl}${source.startsWith('/') ? '' : '/'}${source}`;
+  })();
+  const shareAlt = imageAlt || (image ? title : 'Casino roulette wheel - Casinos of Mayfair');
   const trail = crumbs ?? crumbsFromPath(canonicalPath);
   const breadcrumbSchema = breadcrumbLd(baseUrl, trail);
   return (
@@ -47,10 +62,20 @@ export function BaseLayout({
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#fffdf9" />
-        {noindex && <meta name="robots" content="noindex, nofollow" />}
         <meta name="color-scheme" content="light" />
         <title>{title}</title>
         <meta name="description" content={description} />
+        <meta
+          name="robots"
+          content={
+            noindex
+              ? 'noindex, nofollow'
+              : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'
+          }
+        />
+        <meta name="author" content="Casinos of Mayfair International Ltd" />
+        <meta name="publisher" content="Casinos of Mayfair International Ltd" />
+        <link rel="alternate" hreflang="en" href={canonical} />
         <link rel="canonical" href={canonical} />
         <link rel="manifest" href="/site.webmanifest" />
         <script
@@ -86,11 +111,19 @@ export function BaseLayout({
             }}
           />
         )}
-        <meta property="og:type" content="website" />
+        <meta property="og:type" content={ogType} />
+        <meta property="og:locale" content="en_GB" />
         <meta property="og:site_name" content="Casinos of Mayfair" />
         <meta property="og:title" content={title} />
         <meta property="og:description" content={description} />
         <meta property="og:url" content={canonical} />
+        <meta property="og:image" content={shareImage} />
+        <meta property="og:image:alt" content={shareAlt} />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={description} />
+        <meta name="twitter:image" content={shareImage} />
+        <meta name="twitter:image:alt" content={shareAlt} />
         <link rel="stylesheet" href="/static/css/site.css" />
         <script src="/static/js/site-nav.js"></script>
       </head>

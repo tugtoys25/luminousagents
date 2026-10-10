@@ -6,6 +6,9 @@ export interface Crumb {
   path?: string;
 }
 
+/** Social-sharing image used when a page has no image of its own. */
+export const DEFAULT_SHARE_IMAGE = '/static/img/roulette.jpg';
+
 const LABELS: Record<string, string> = {
   'casinos-for-sale': 'Opportunities',
   'casino-hotels': 'Casino hotels',
@@ -74,6 +77,7 @@ export function organizationLd(baseUrl: string, contact: ContactSettings) {
     url: baseUrl,
     description:
       'International brokerage for casino and casino-hotel investment opportunities, with casino management and consulting services.',
+    image: `${baseUrl}${DEFAULT_SHARE_IMAGE}`,
     foundingDate: '1994',
     email: contact.email,
     telephone: phone(contact.phoneOffice),
@@ -146,10 +150,19 @@ export function servicesLd(baseUrl: string, services: readonly (readonly [string
   };
 }
 
-export function webPageLd(baseUrl: string, path: string, name: string, description: string) {
+export type PageType = 'WebPage' | 'AboutPage' | 'ContactPage' | 'CollectionPage' | 'FAQPage';
+
+export function webPageLd(
+  baseUrl: string,
+  path: string,
+  name: string,
+  description: string,
+  type: PageType = 'WebPage',
+) {
   return {
     '@context': 'https://schema.org',
-    '@type': 'WebPage',
+    '@type': type,
+    inLanguage: 'en',
     name,
     description,
     url: `${baseUrl}${path}`,
