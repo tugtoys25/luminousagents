@@ -22,6 +22,35 @@ const parseLabels = (value) => {
     return [];
   }
 };
+const badgeTone = (value) => {
+  const v = String(value || '').toLowerCase();
+  if (v === 'approved' || v === 'published') return 'ok';
+  if (v === 'pending' || v === 'draft' || v === 'under_offer' || v === 'on_hold') return 'warn';
+  if (v === 'rejected' || v === 'sold' || v === 'archived') return 'danger';
+  return '';
+};
+const badge = (value) => {
+  const span = document.createElement('span');
+  const tone = badgeTone(value);
+  span.className = `ws-badge${tone ? ` ws-badge--${tone}` : ''}`;
+  span.textContent = String(value || '—').replace(/_/g, ' ');
+  return span;
+};
+const showBadges = (item) => {
+  const host = document.querySelector('#cms-flow-badges');
+  if (!host) return;
+  host.replaceChildren();
+  if (item)
+    host.append(
+      badge(item.content_review_status || item.reviewStatus),
+      badge(item.lifecycle),
+      badge(item.classification),
+    );
+};
+const markSelected = () => {
+  for (const b of list.querySelectorAll('button[data-id]'))
+    b.toggleAttribute('aria-current', Boolean(selected && b.dataset.id === selected.id));
+};
 async function api(url, options = {}) {
   const response = await fetch(url, {
     credentials: 'same-origin',
@@ -68,7 +97,19 @@ async function loadList() {
       const li = document.createElement('li');
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = `${item.title} · ${item.reviewStatus} · ${item.lifecycle}`;
+      button.dataset.id = item.id;
+      if (selected && selected.id === item.id) button.setAttribute('aria-current', 'true');
+      const title = document.createElement('span');
+      title.className = 'row-title';
+      title.textContent = item.title;
+      const meta = document.createElement('span');
+      meta.className = 'row-meta';
+      meta.append(
+        badge(item.reviewStatus),
+        badge(item.lifecycle),
+        ...(item.country ? [document.createTextNode(item.country)] : []),
+      );
+      button.append(title, meta);
       button.addEventListener('click', () => loadItem(item.id));
       li.append(button);
       list.append(li);
@@ -133,6 +174,9 @@ async function loadItem(id) {
       set(name, key === 'labels_json' ? parseLabels(item[key]).join(', ') : item[key]);
     set('id', item.id);
     document.querySelector('#cms-form-title').textContent = `Edit: ${item.title}`;
+    showBadges(item);
+    markSelected();
+    form.dataset.serpPath = `/opportunities/${item.slug || 'your-listing'}`;
     reviewActions.hidden = false;
     mediaPanel.hidden = false;
     document.querySelector('#cms-reason').value = '';
@@ -150,6 +194,9 @@ function newItem() {
   mediaPanel.hidden = true;
   mediaList.replaceChildren();
   document.querySelector('#cms-form-title').textContent = 'Create opportunity';
+  showBadges(null);
+  markSelected();
+  form.dataset.serpPath = '/opportunities/your-listing';
   say('New opportunity starts private and pending review.');
 }
 form.addEventListener('submit', async (event) => {
@@ -215,6 +262,11 @@ mediaForm?.addEventListener('submit', async (event) => {
 document.querySelector('#cms-new').addEventListener('click', newItem);
 document.querySelector('#cms-refresh').addEventListener('click', loadList);
 document.querySelector('#cms-search').addEventListener('change', loadList);
+let searchTimer;
+document.querySelector('#cms-search').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadList, 300);
+});
 document.querySelector('#cms-review').addEventListener('change', loadList);
 async function review(decision) {
   if (!selected) return say('Select an opportunity first.');

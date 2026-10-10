@@ -761,6 +761,7 @@ publicPages.get('/contact', (c) => {
                 defer
               ></script>
             )}
+            <script src="/static/js/contact-form.js" defer></script>
           </form>
         </div>
       </section>

@@ -1,0 +1,12 @@
+SPRINT 18 FINAL HANDOFF
+
+Base: stable Sprint 18 = Sprint 17 + dev-team Sprint 18 additions (see docs/SPRINT_18_STABLE_MERGE.md in the stable zip).
+Delivered: staff workspace redesign (shell, menu, command palette, three themes, redesigned Overview, Opportunity CMS, Pages,
+Platform settings, shared form helpers, list filters). Details: docs/SPRINT_18_FINAL.md.
+
+Changed files: src/index.ts, src/admin/routes.ts (markup only for overview, CMS, pages, settings, managed forms),
+public/static/css/dashboard.css, public/static/js/dashboard-shell.js, dashboard-opportunities.js, dashboard-pages.js,
+test/unit/sprint18-security-invariants.test.ts, docs/SPRINT_18_FINAL.md. No migrations.
+
+Before deploy: pnpm install && pnpm check && pnpm preflight:final; pnpm format; manual pass per staff role and on a phone.
+Also still open from Sprint 18: replace the privacy-notice placeholders and set Turnstile, IP_HASH_SECRET and notification secrets.

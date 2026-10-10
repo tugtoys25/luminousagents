@@ -21,6 +21,40 @@ app.use('*', publicCacheMiddleware);
 app.use('/api/buyer/*', sameOriginMutationMiddleware);
 app.use('/api/admin/*', sameOriginMutationMiddleware);
 app.use('/dashboard/*', sameOriginMutationMiddleware);
+const escapeAttr = (value: unknown): string =>
+  String(value ?? '').replace(
+    /[&<>"']/g,
+    (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!,
+  );
+
+// Staff workspace shell (Sprint 18 final): every successful dashboard HTML page gets the
+// shared workspace script plus a small identity meta tag, so the navigation can be role-aware
+// on every page. Authorization stays server-side; the meta tag is presentation only.
+app.use('/dashboard*', async (c, next) => {
+  await next();
+  const contentType = c.res.headers.get('content-type') ?? '';
+  if (!contentType.includes('text/html') || c.res.status >= 400) return;
+  let html = await c.res.text();
+  if (!html.includes('/static/js/dashboard-shell.js')) {
+    const staff = (c as unknown as { get(key: string): unknown }).get('staff') as
+      { displayName?: string | null; email?: string | null; role?: string | null } | undefined;
+    const identity = staff
+      ? `<meta name="mayfair-staff" content="${escapeAttr(staff.role)}" data-name="${escapeAttr(staff.displayName || staff.email)}" data-email="${escapeAttr(staff.email)}">`
+      : '';
+    html = html.replace('</head>', () => `${identity}</head>`);
+    html = html.replace(
+      '</body>',
+      () => '<script src="/static/js/dashboard-shell.js" defer></script></body>',
+    );
+    const headers = new Headers(c.res.headers);
+    headers.delete('content-length');
+    c.res = new Response(html, {
+      status: c.res.status,
+      statusText: c.res.statusText,
+      headers,
+    });
+  }
+});
 
 app.get('/healthz', (c) => {
   return c.json({ status: 'ok', service: 'mayfair-platform' }, 200);

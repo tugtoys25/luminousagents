@@ -1,0 +1,18 @@
+SPRINT 18 HANDOFF
+
+Base: Casinos of Mayfair platform Sprint 17
+Reference: Lummet tenant dashboard shell patterns, adapted to the Mayfair palette and existing Hono-rendered staff pages.
+
+Implemented:
+- Searchable, grouped staff navigation with current-page indication.
+- Responsive sidebar/drawer and accessible keyboard interactions.
+- Refined dashboard cards, tables, forms, spacing, palette and focus states.
+- Contact form live message count, native validation, duplicate-click prevention and polished responsive styling.
+- Sprint 18 production-readiness notes and acceptance checklist in docs/SPRINT_18.md.
+
+Validation performed:
+- `node --check public/static/js/dashboard-shell.js` passed.
+- `node --check public/static/js/contact-form.js` passed.
+- Full typecheck/test suite could not run in this packaging environment: pnpm was unavailable and bundled node_modules links were incomplete. Run `pnpm check` and `pnpm preflight:final` in CI before deploying.
+
+Before production: complete operator-specific privacy notice placeholders and ensure Turnstile, IP_HASH_SECRET, DB, queues and notification delivery configuration are set.
