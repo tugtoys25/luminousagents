@@ -2154,7 +2154,8 @@ body.has-footer > .site-footer {
 }
 .cookie-links {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 6px 16px;
 }
 .cookie-links a {
   color: var(--red);

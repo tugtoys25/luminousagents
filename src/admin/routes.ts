@@ -2035,6 +2035,7 @@ const platformSettingKeys = [
   'cookie_consent_days',
   'cookie_privacy_url',
   'cookie_policy_url',
+  'cookie_terms_url',
   'whatsapp_number',
   'whatsapp_message',
   'contact_phone_mobile',
@@ -2113,6 +2114,7 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
         'cookie_consent_days',
         'cookie_privacy_url',
         'cookie_policy_url',
+        'cookie_terms_url',
       ],
     ],
     [
@@ -2157,6 +2159,7 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
     cookie_consent_days: '180',
     cookie_privacy_url: '/legal/privacy',
     cookie_policy_url: '/legal/cookies',
+    cookie_terms_url: '/legal/terms',
   };
   const renderField = (key: string) => {
     const structured = structuredKeys.includes(key);
@@ -2294,7 +2297,7 @@ admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
         422,
       );
     if (
-      ['cookie_privacy_url', 'cookie_policy_url'].includes(key) &&
+      ['cookie_privacy_url', 'cookie_policy_url', 'cookie_terms_url'].includes(key) &&
       value &&
       (typeof value !== 'string' ||
         !((value.startsWith('/') && !value.startsWith('//')) || /^https:\/\//i.test(value)))

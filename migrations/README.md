@@ -28,3 +28,4 @@ The SQL seed is idempotent by `legacy_id`; it is not a substitute for the team's
 - `0017_forms_nda_workflow.sql`: managed-form submission triage columns and an active-grant index. Apply before deploying Sprint 19 code.
 - `0018_seed_contact_settings.sql`: seeds public contact settings (phones, emails, WhatsApp) with INSERT OR IGNORE so dashboard edits are never overwritten. Apply before deploying Sprint 21 UI changes.
 - `0019_seed_cookie_banner.sql`: seeds the cookie/privacy banner settings (INSERT OR IGNORE). Apply before deploying the configurable banner.
+- `0020_seed_cookie_terms_url.sql`: seeds the Terms of use link for the cookie banner (INSERT OR IGNORE).
