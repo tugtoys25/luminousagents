@@ -99,7 +99,7 @@ export function BaseLayout({
         <link rel="stylesheet" href="/static/css/site.css" />
         <script src="/static/js/site-nav.js"></script>
       </head>
-      <body>
+      <body class="has-footer">
         <a class="skip-link" href="#main">
           Skip to content
         </a>

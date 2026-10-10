@@ -2054,3 +2054,18 @@ html:not(.js) .auth-menu:focus-within .auth-pop {
     transform: none;
   }
 }
+
+/* Sticky footer: short pages keep the footer at the very bottom of the viewport. */
+body.has-footer {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+body.has-footer > main {
+  flex: 1 0 auto;
+}
+body.has-footer > .site-header,
+body.has-footer > .site-footer {
+  flex-shrink: 0;
+}

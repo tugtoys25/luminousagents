@@ -76,8 +76,8 @@ export function ChairmanSection({ contact }: { contact: ContactSettings }) {
           </p>
           <p>
             If you wish to discuss any casino for sale or casino hotel personally, please contact me
-            directly. Every enquiry is treated in strict confidence, and opportunities are advertised
-            in a way that protects the identity and location of the property.
+            directly. Every enquiry is treated in strict confidence, and opportunities are
+            advertised in a way that protects the identity and location of the property.
           </p>
           <div class="chairman-actions">
             <a class="button button-primary" href={telHref(contact.phoneMobile)}>

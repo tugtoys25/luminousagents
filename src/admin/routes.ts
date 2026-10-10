@@ -2209,7 +2209,12 @@ admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
       (typeof value !== 'string' || !z.string().email().safeParse(value).success)
     )
       return c.json(
-        { error: { code: 'INVALID_CONTACT_EMAIL', message: `${key} must be a valid email address.` } },
+        {
+          error: {
+            code: 'INVALID_CONTACT_EMAIL',
+            message: `${key} must be a valid email address.`,
+          },
+        },
         422,
       );
     if (

@@ -40,10 +40,7 @@ export const OFFICES = [
     'Original London office opened in 1994. The company is UK-based and serves international buyers and sellers.',
   ],
   ['Spain', 'International office presence supporting casino and hospitality opportunities.'],
-  [
-    'Las Vegas',
-    'Representation in Las Vegas through Casinos of Mayfair International Inc.',
-  ],
+  ['Las Vegas', 'Representation in Las Vegas through Casinos of Mayfair International Inc.'],
 ] as const;
 
 export const MARKETS = [

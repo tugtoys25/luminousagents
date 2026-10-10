@@ -29,7 +29,9 @@ export async function loadContact(env: Env): Promise<ContactSettings> {
   const contact = { ...DEFAULT_CONTACT };
   try {
     const rows = await env.DB.prepare(
-      `SELECT setting_key AS key, value_json AS value FROM platform_settings WHERE setting_key IN (${Object.keys(KEYS)
+      `SELECT setting_key AS key, value_json AS value FROM platform_settings WHERE setting_key IN (${Object.keys(
+        KEYS,
+      )
         .map(() => '?')
         .join(',')})`,
     )

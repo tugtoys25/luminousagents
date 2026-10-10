@@ -245,7 +245,7 @@ publicPages.get('/casinos-for-sale', async (c) => {
     return c.html(
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
-      contact={c.get('contact')}
+        contact={c.get('contact')}
         title="Casino & Hotel Opportunities | Casinos of Mayfair"
         description="Browse published casino and casino-hotel investment opportunities."
         canonicalPath="/casinos-for-sale"
@@ -377,7 +377,7 @@ publicPages.get('/casinos-for-sale', async (c) => {
     return c.html(
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
-      contact={c.get('contact')}
+        contact={c.get('contact')}
         title="Opportunities | Casinos of Mayfair"
         description="Explore casino and hospitality investment opportunities."
       >
@@ -556,7 +556,7 @@ publicPages.get('/opportunities/:slug', async (c) => {
     return c.html(
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
-      contact={c.get('contact')}
+        contact={c.get('contact')}
         title="Opportunity not found | Casinos of Mayfair"
         description="This opportunity may no longer be available."
       >
@@ -697,72 +697,72 @@ publicPages.get('/contact', (c) => {
       <section class="section">
         <div class="container contact-layout">
           <div class="contact-main">
-          {notice}
-          <form class="contact-form" method="post" action="/api/enquiries">
-            <label for="contact-name">Full name *</label>
-            <input
-              id="contact-name"
-              name="name"
-              required
-              minLength={2}
-              maxLength={120}
-              autoComplete="name"
-            />
-            <label for="contact-email">Business email *</label>
-            <input
-              id="contact-email"
-              name="email"
-              type="email"
-              required
-              maxLength={254}
-              autoComplete="email"
-            />
-            <label for="contact-company">Company</label>
-            <input
-              id="contact-company"
-              name="company"
-              maxLength={160}
-              autoComplete="organization"
-            />
-            <label for="contact-message">How can we help? *</label>
-            <textarea
-              id="contact-message"
-              name="message"
-              required
-              minLength={10}
-              maxLength={5000}
-              rows={6}
-            ></textarea>
-            <input type="hidden" name="opportunity" value={opportunity} />
-            <div class="honeypot" aria-hidden="true">
-              <label for="contact-website">Leave this field empty</label>
-              <input id="contact-website" name="website" tabIndex={-1} autoComplete="off" />
-            </div>
-            {c.env.TURNSTILE_SITE_KEY && (
-              <div class="turnstile-widget">
-                <div class="cf-turnstile" data-sitekey={c.env.TURNSTILE_SITE_KEY}></div>
+            {notice}
+            <form class="contact-form" method="post" action="/api/enquiries">
+              <label for="contact-name">Full name *</label>
+              <input
+                id="contact-name"
+                name="name"
+                required
+                minLength={2}
+                maxLength={120}
+                autoComplete="name"
+              />
+              <label for="contact-email">Business email *</label>
+              <input
+                id="contact-email"
+                name="email"
+                type="email"
+                required
+                maxLength={254}
+                autoComplete="email"
+              />
+              <label for="contact-company">Company</label>
+              <input
+                id="contact-company"
+                name="company"
+                maxLength={160}
+                autoComplete="organization"
+              />
+              <label for="contact-message">How can we help? *</label>
+              <textarea
+                id="contact-message"
+                name="message"
+                required
+                minLength={10}
+                maxLength={5000}
+                rows={6}
+              ></textarea>
+              <input type="hidden" name="opportunity" value={opportunity} />
+              <div class="honeypot" aria-hidden="true">
+                <label for="contact-website">Leave this field empty</label>
+                <input id="contact-website" name="website" tabIndex={-1} autoComplete="off" />
               </div>
-            )}
-            <label class="consent-label">
-              <input type="checkbox" name="consent" required /> I agree that Casinos of Mayfair may
-              use these details to respond to my enquiry. *
-            </label>
-            <p class="form-privacy">
-              Please read our <a href="/legal/privacy">privacy notice</a>. This form is for initial
-              contact only and is not a secure document-transfer channel.
-            </p>
-            <button class="button button-primary" type="submit">
-              Send enquiry <span aria-hidden="true">→</span>
-            </button>
-            {c.env.TURNSTILE_SITE_KEY && (
-              <script
-                src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-                async
-                defer
-              ></script>
-            )}
-            <script src="/static/js/contact-form.js" defer></script>
-          </form>
+              {c.env.TURNSTILE_SITE_KEY && (
+                <div class="turnstile-widget">
+                  <div class="cf-turnstile" data-sitekey={c.env.TURNSTILE_SITE_KEY}></div>
+                </div>
+              )}
+              <label class="consent-label">
+                <input type="checkbox" name="consent" required /> I agree that Casinos of Mayfair
+                may use these details to respond to my enquiry. *
+              </label>
+              <p class="form-privacy">
+                Please read our <a href="/legal/privacy">privacy notice</a>. This form is for
+                initial contact only and is not a secure document-transfer channel.
+              </p>
+              <button class="button button-primary" type="submit">
+                Send enquiry <span aria-hidden="true">→</span>
+              </button>
+              {c.env.TURNSTILE_SITE_KEY && (
+                <script
+                  src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+                  async
+                  defer
+                ></script>
+              )}
+              <script src="/static/js/contact-form.js" defer></script>
+            </form>
           </div>
           <aside class="contact-aside" aria-label="Direct contact details">
             <span class="eyebrow">DIRECT CONTACT</span>
@@ -868,7 +868,7 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
       return c.html(
         <BaseLayout
           siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
-      contact={c.get('contact')}
+          contact={c.get('contact')}
           title={`${override.seoTitle || override.title} | Casinos of Mayfair`}
           description={override.seoDescription || override.description || description}
           canonicalPath={path}
@@ -896,7 +896,7 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
     return c.html(
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
-      contact={c.get('contact')}
+        contact={c.get('contact')}
         title={`${title} | Casinos of Mayfair`}
         description={description}
         canonicalPath={path}
