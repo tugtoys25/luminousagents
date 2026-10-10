@@ -4,7 +4,9 @@
 - Public HTML and static assets may be cached only when no buyer, staff, session, or confidential data can enter the response.
 - Validate request bodies and query parameters; use prepared D1 statements.
 - Mutating routes require same-origin validation and CSRF protection appropriate to the authentication mechanism.
-- Staff APIs require verified Cloudflare Access identity plus route role and item-level authorization.
+- Staff APIs require a signed-in staff session (`POST /api/admin/auth/login`) plus route role and item-level authorization.
+- Auth endpoints (both prefixes `/api/admin/auth` and `/api/buyer/auth`): `login`, `logout`, `forgot-password`, `reset-password`, `change-password`. `POST /api/admin/bootstrap` creates the first super administrator; `POST /api/buyer/register` creates an `invited` buyer.
+- Super admins only: `GET/POST /dashboard/staff`, `PATCH /dashboard/staff/:id`, `POST /dashboard/staff/:id/reset-password`.
 - Buyer APIs require active sessions and re-check grant, expiry, publication, NDA, tier and scan status on every protected request.
 - Return generic errors to clients; do not disclose whether a protected object exists when doing so would leak confidential data.
 - Audit authorization changes, publication changes, NDA decisions, document release/rejection and downloads without recording secrets or document contents.

@@ -1,0 +1,20 @@
+Casinos of Mayfair Platform — Sprint 15 handoff
+
+Base: Sprint 14 custom-auth archive. Cloudflare deployment configuration and bindings were preserved.
+
+Main changes:
+- Change-password and Resend-backed forgot/reset password flows.
+- D1 platform settings for branding, favicon URLs, GA4, WhatsApp, colors, fonts, navigation, homepage/geo sections, and staff notification email.
+- Consent-gated GA4 loader and floating WhatsApp widget.
+- Managed content pages and custom forms, with D1 submission tracking and durable queued staff email notifications.
+- Configurable staff notification destination for contact enquiries, buyer registration and other queue-backed notices.
+- Additional substantive compliance information pages.
+
+Migration: migrations/0015_platform_management.sql
+Dashboard: /dashboard/settings/ui, /dashboard/pages/ui, /dashboard/forms/ui
+Password tools: /admin/change-password, /admin/forgot-password
+Public content: /pages/:slug, /forms/:slug
+
+Before staging deploy: run pnpm typecheck, pnpm test, pnpm lint in a network-enabled environment; apply migration 0015 to staging; confirm Resend sender credentials; deploy with npx wrangler deploy --env staging; run the acceptance checks in docs/SPRINT_15_PLATFORM_MANAGEMENT.md.
+
+No live Cloudflare deployment or remote migration was performed by this build step.

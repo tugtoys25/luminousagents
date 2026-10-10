@@ -25,6 +25,7 @@
     "node_modules",
     "dist",
     "test/unit/sprint7-security-invariants.test.ts",
-    "test/unit/sprint10-security-invariants.test.ts"
+    "test/unit/sprint10-security-invariants.test.ts",
+    "test/unit/sprint16-security-invariants.test.ts"
   ]
 }

@@ -3,7 +3,6 @@
   const notice = $('#account-notice');
   const signIn = $('#sign-in');
   const content = $('#buyer-content');
-  let email = '';
   let requestedOpportunityId = new URLSearchParams(window.location.search).get('opportunity') || '';
   let activeNdaTemplateId = '';
   const esc = (value) =>
@@ -27,7 +26,6 @@
   async function loadAccount() {
     try {
       const buyer = await api('/api/buyer/me');
-      email = buyer.email;
       signIn.hidden = true;
       content.hidden = false;
       $('#buyer-identity').textContent = `Signed in as ${buyer.displayName || buyer.email}`;
@@ -116,37 +114,6 @@
       content.hidden = true;
     }
   }
-  $('#request-code').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    email = String(form.get('email') || '').trim();
-    try {
-      await api('/api/buyer/auth/request-code', {
-        method: 'POST',
-        body: JSON.stringify({ email }),
-      });
-      $('#verify-code').hidden = false;
-      notice.textContent =
-        'If this email belongs to an eligible buyer account, a sign-in code will be sent.';
-    } catch (error) {
-      notice.textContent = error.message;
-    }
-  });
-  $('#verify-code').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const code = String(form.get('code') || '').trim();
-    try {
-      await api('/api/buyer/auth/verify-code', {
-        method: 'POST',
-        body: JSON.stringify({ email, code }),
-      });
-      notice.textContent = 'Signed in.';
-      await loadAccount();
-    } catch (error) {
-      notice.textContent = error.message;
-    }
-  });
   $('#sign-out').addEventListener('click', async () => {
     try {
       await api('/api/buyer/auth/logout', { method: 'POST', body: JSON.stringify({}) });

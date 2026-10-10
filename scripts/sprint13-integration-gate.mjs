@@ -11,8 +11,7 @@ const requireMatch = (file, label, pattern) => {
 for (const file of [
   'src/auth/portal-routes.ts',
   'public/static/css/portal.css',
-  'public/static/js/portal-bootstrap.js',
-  'public/static/js/portal-register.js',
+  'public/static/js/auth-forms.js',
   'public/static/js/dashboard-buyers.js',
   'public/static/js/dashboard-access-grants.js',
   'migrations/0013_sprint12_port.sql',
@@ -24,7 +23,7 @@ for (const file of [
 ]) requireFile(file);
 requireMatch('src/auth/portal-routes.ts', 'one-time bootstrap token guard', /ADMIN_BOOTSTRAP_TOKEN[\s\S]*?user_type = 'staff'/);
 requireMatch('src/auth/portal-routes.ts', 'buyer registration requires consent', /consent:\s*z\.literal\(true\)/);
-requireMatch('src/auth/portal-routes.ts', 'registration stays invited', /'buyer', 'buyer', 'invited'/);
+requireMatch('src/auth/portal-routes.ts', 'registration stays invited', /'buyer',\s*'buyer',\s*'invited'/);
 requireMatch('src/admin/routes.ts', 'listing classification and labels', /classification:[\s\S]*?labels:/);
 requireMatch('src/admin/routes.ts', 'image upload validates signatures and digest', /INVALID_FILE_SIGNATURE[\s\S]*?SHA-256/);
 requireMatch('src/admin/routes.ts', 'public listing publication requires public classification', /existing\.classification !== 'public'/);

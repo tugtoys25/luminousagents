@@ -1,0 +1,18 @@
+Casinos of Mayfair Platform — Sprint 16 handoff
+
+Base: Sprint 15 platform-management archive, merged with the unified email + password authentication build.
+
+Main changes:
+- Staff AND buyers sign in with email + password. Buyer registration collects a password; accounts stay "invited" until approved.
+- Forgot / reset / change password for both audiences; first-admin setup also provisions password-less existing staff.
+- Super administrators manage staff at /dashboard/staff/ui (create, role, suspend, send reset link).
+- Lockout, rate limits, password policy, session revocation, uniform responses, audit events.
+- PBKDF2 cost is 100,000 (Workers cap); older hashes are accepted and upgraded at next login.
+- Sprint 15 platform features (settings, GA4, WhatsApp, pages, forms) preserved.
+- Test infrastructure removed in Sprint 15 (D1 migration setup, node invariant config) is restored.
+
+Migration: migrations/0016_auth_hardening.sql (0014 and 0015 untouched).
+Required secrets for password emails: OTP_ENCRYPTION_KEY, RESEND_API_KEY, EMAIL_FROM.
+Details, rollout and breaking changes: docs/SPRINT_16_UNIFIED_AUTH.md
+
+Not done: pnpm typecheck / lint / test and any live Cloudflare deployment (no network in the build environment).

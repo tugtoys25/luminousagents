@@ -16,8 +16,7 @@ approval-controlled confidential document access. Sprint 0 establishes only the 
 - KV is for cache/configuration/rate-limit support, not authoritative business data.
 - Queues are for asynchronous notifications and audit fan-out; consumers and dead-letter handling are
   introduced when those workflows are implemented.
-- Cloudflare Access SSO/MFA plus a server-side role check protects staff routes. Buyer/seller login is
-  planned around one-time email codes and hashed session tokens, not passwords.
+- Email + password sessions (HttpOnly cookie, hashed token in D1) plus a server-side role check protect staff routes. Buyers use the same password flow with a separate cookie and session type.
 - Zod is the boundary validation library for request bodies, environment configuration, imports, and
   queue payloads as those features are added.
 
@@ -38,7 +37,7 @@ safe or deployable until each resource has been provisioned and the real IDs/nam
 
 1. Foundation and runtime health.
 2. Data model, legacy import verification, public pages, SEO and design tokens.
-3. Staff Access, roles, opportunity CMS and audit log.
+3. Staff sign-in, roles, opportunity CMS and audit log.
 4. Enquiries and CRM-lite.
 5. Buyer accounts, NDA workflow, compliance grants and secure data room.
 6. Hardening, legal review, backups/restore, load/security checks and controlled launch.

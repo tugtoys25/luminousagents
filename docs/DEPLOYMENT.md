@@ -38,13 +38,14 @@ Configure only for the environments where the corresponding feature is enabled:
 - `OTP_ENCRYPTION_KEY` (base64 of 32 random bytes), rotated independently per environment.
 - `PUBLIC_BASE_URL` for links in outgoing notifications.
 - Session HMAC/secret material with a documented rotation plan.
-- Cloudflare Access team domain and expected application audience.
+- `ADMIN_BOOTSTRAP_TOKEN` (32+ random characters) only for first super-admin setup or for giving an existing password-less staff account its first password; delete it immediately afterwards. No Cloudflare Access configuration is needed.
+- `OTP_ENCRYPTION_KEY` is now **required** for password-reset and set-password emails (links are encrypted at rest in the notification queue). Together with `RESEND_API_KEY` and `EMAIL_FROM` it enables forgot-password for staff and buyers.
 
 Use Wrangler secrets for local/remote Worker secret values and GitHub environment secrets for deploy
 credentials. Keep `.dev.vars` local and untracked. Use separate secret values per environment.
 
 ## Domains and legal launch gates
 
-Domain/DNS/TLS, email sender verification, staff identity/access policies, company notices, privacy,
+Domain/DNS/TLS, email sender verification, custom staff credential provisioning, company notices, privacy,
 terms, cookie handling and legal approval are deployment/launch requirements. No domain cut-over should
 occur until old URLs and redirects have been tested and the legal/content review is complete.

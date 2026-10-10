@@ -5,19 +5,15 @@
 # IP_HASH_SECRET=
 # RESEND_API_KEY=
 # SESSION_HMAC_SECRET=
-# CLOUDFLARE_ACCESS_TEAM_DOMAIN=
-# CLOUDFLARE_ACCESS_AUD=
 
-# Cloudflare Access JWT validation for staff routes
-ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
-ACCESS_AUD=replace-with-access-application-audience-tag
+# Staff and buyers sign in with email + password; no identity-provider settings are needed.
 
 # Non-secret public key for the Turnstile widget (configure in Wrangler vars).
 # TURNSTILE_SITE_KEY=
 
 # Sprint 5 notification delivery. Use test credentials in development only.
 # RESEND_API_KEY=re_...
-# OTP_ENCRYPTION_KEY=base64-encoded-32-random-bytes
+# OTP_ENCRYPTION_KEY=base64-encoded-32-random-bytes   (encrypts password-reset links in the notification queue)
 # EMAIL_FROM=Casinos of Mayfair <notifications@example.com>
 # OPS_EMAIL=operations@example.com
 # PUBLIC_BASE_URL=https://casinosofmayfair.com
@@ -30,5 +26,5 @@ ACCESS_AUD=replace-with-access-application-audience-tag
 # CLOUDFLARE_ZONE_ID=
 # CLOUDFLARE_CACHE_PURGE_TOKEN=zone-scoped-cache-purge-token
 
-# Sprint 12: set only for the one-time initial administrator setup; use a random secret of at least 32 characters.
+# Sprint 12/14: set only for the one-time first super-administrator setup (/admin/setup); use a random secret of at least 32 characters.
 # ADMIN_BOOTSTRAP_TOKEN=replace-with-a-long-random-one-time-token

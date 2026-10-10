@@ -28,7 +28,7 @@ Not yet completed or verified:
 
 - Node.js 22+
 - pnpm 10.18.3 (Corepack may install it when the package registry is reachable)
-- A Cloudflare account with Workers, D1, R2, KV, Queues, and Access permissions for deployment stages
+- A Cloudflare account with Workers, D1, R2, KV and Queues permissions for deployment stages
 
 ## Local development
 
@@ -59,7 +59,7 @@ it has passed the data and content review described in the Blueprint.
 
 Implemented in the current workspace:
 
-- Eight numbered D1 migrations covering core identity/sessions, opportunities and versions, enquiries/CRM, buyer profiles/NDA/data room, audit/notifications, reference data, buyer auth security, and staff tasks.
+- Fourteen numbered D1 migrations covering core identity/sessions, opportunities and versions, enquiries/CRM, buyer profiles/NDA/data room, audit/notifications, reference data, buyer auth security, staff tasks, document integrity, legacy listings, broker assignment, Sprint 12 fields and custom staff authentication.
 - An idempotent legacy SQL generator and verifier for the 198 supplied listings.
 - Public SSR pages for home, directory search/filter/pagination, opportunity detail, country market pages, casino-hotel listings, archive, services, about, FAQ, contact, legal placeholders, `robots.txt`, and `sitemap.xml`.
 - Responsive red/gold site styling and the legacy image assets copied into `public/static/img/`.
@@ -73,7 +73,7 @@ At Sprint 1, contact capture and runtime checks were still pending; contact capt
 
 Implemented in the current workspace:
 
-- Cloudflare Access JWT signature and claim verification on `/dashboard/*`, followed by active staff-user lookup in D1. Identity claims alone never auto-create staff access.
+- Email + password sign-in for staff on `/dashboard/*` (PBKDF2-SHA256 hashes, hashed server-side session tokens in an HttpOnly cookie, lockout after repeated failures), followed by an active staff-user lookup in D1 on every request. Staff accounts are only created by the first-administrator setup or by a super administrator.
 - Role-gated opportunity creation, editing, review, publication-state changes, and audit-log read endpoints.
 - SSR dashboard overview, opportunity search/filter API, version snapshots, and audit events.
 - Opportunity edits return the record to pending review and force public visibility off; publication requires approved content and a verification timestamp.
@@ -86,11 +86,11 @@ See [`docs/SPRINT_3.md`](docs/SPRINT_3.md) for the public enquiry form, CRM API,
 
 ## Sprint 4 — Buyer access and private data room
 
-See [`docs/SPRINT_4.md`](docs/SPRINT_4.md) for buyer email OTP/session APIs, NDA request/review, access grants, and private R2 document access. Sprint 5 added notification delivery source code; live provider setup, `OTP_ENCRYPTION_KEY`, buyer provisioning, malware scanning, NDA review UI, and a full browser-facing buyer portal remain launch blockers.
+See [`docs/SPRINT_4.md`](docs/SPRINT_4.md) for buyer password/session APIs (Sprint 16 replaced email OTP with email + password), NDA request/review, access grants, and private R2 document access. Sprint 5 added notification delivery source code; live provider setup, `OTP_ENCRYPTION_KEY`, buyer provisioning, malware scanning, NDA review UI, and a full browser-facing buyer portal remain launch blockers.
 
 ## Sprint 5 — operational delivery and staff follow-ups
 
-- Notification Queue consumer supports buyer sign-in codes, new enquiry alerts, and NDA review alerts through Resend. Set `RESEND_API_KEY`, `EMAIL_FROM`, and `OPS_EMAIL` as Worker secrets/vars as appropriate; verify the sender domain with your email provider first. `OTP_ENCRYPTION_KEY` must be a base64-encoded 32-byte key for encrypted OTP payloads. Never place real secrets in `wrangler.jsonc` or commit them.
+- Notification Queue consumer supports password reset / set-password emails, new enquiry alerts, and NDA review alerts through Resend. Set `RESEND_API_KEY`, `EMAIL_FROM`, and `OPS_EMAIL` as Worker secrets/vars as appropriate; verify the sender domain with your email provider first. `OTP_ENCRYPTION_KEY` must be a base64-encoded 32-byte key for encrypted OTP payloads. Never place real secrets in `wrangler.jsonc` or commit them.
 - A five-minute scheduled recovery pass re-enqueues due notification jobs and resets jobs stuck in `processing` for over ten minutes. Delivery attempts are capped at five before a job becomes `dead`; administrators can retry eligible jobs from `/dashboard/notifications/ui`. Queue delivery is at-least-once, so notification templates and operational workflows must tolerate rare duplicate sends.
 - Staff task API and interface: `/dashboard/tasks/ui`. Create, assign, prioritize, set due dates, and update task status. Assignee must be an active staff user ID.
 - Staff can revoke an access grant with `POST /dashboard/access-grants/:id/revoke` and a required reason. The change is audited.
@@ -99,7 +99,7 @@ See [`docs/SPRINT_4.md`](docs/SPRINT_4.md) for buyer email OTP/session APIs, NDA
 
 ### Sprint 5 configuration and validation
 
-Create the Cloudflare Queues named for the selected environment before deployment and verify each queue consumer binding. Configure the cron trigger, sender domain, email secrets, `OTP_ENCRYPTION_KEY`, Cloudflare Access and resource IDs independently for staging and production. This repository has not been deployed to Cloudflare. TypeScript typechecking, lint, integration tests, queue provider delivery, and live D1/R2/Access checks remain required before launch.
+Create the Cloudflare Queues named for the selected environment before deployment and verify each queue consumer binding. Configure the cron trigger, sender domain, email secrets, `OTP_ENCRYPTION_KEY` (also encrypts password-reset links at rest) and resource IDs independently for staging and production. This repository has not been deployed to Cloudflare. TypeScript typechecking, lint, integration tests, queue provider delivery, and live D1/R2/Access checks remain required before launch.
 
 ## Sprint 6 additions
 
@@ -120,13 +120,29 @@ Sprint 10 is still a staging candidate, not a verified production release. The s
 
 Sprint 13 ports the missing Sprint 12 portal and listing-management features into the existing project while preserving `wrangler.jsonc`, Cloudflare environment/resource bindings, deployment scripts, and `pnpm-lock.yaml`.
 
-- Staff entry: `/admin/login`; the staff workspace remains authenticated by the configured Cloudflare Access identity and an active provisioned staff row.
-- One-time first administrator setup: `/admin/setup`; configure `ADMIN_BOOTSTRAP_TOKEN` as a Worker secret with at least 32 random characters. The route closes once any staff user exists. The new administrator must still be included in the Cloudflare Access policy and use the same email identity.
+- Staff entry: `/admin/login` (email + password). Forgot password: `/admin/forgot-password`. Change password: `/admin/change-password`. Super administrators manage staff at `/dashboard/staff/ui`.
+- One-time first administrator setup: `/admin/setup`; configure `ADMIN_BOOTSTRAP_TOKEN` as a Worker secret with at least 32 random characters. The form collects name, email and password and creates the **super administrator**; it closes once any staff user exists, unless an existing active staff account still has no password — that account's email plus the same token sets its first password (credential migration). No external identity provider is required.
 - Buyer registration: `/register`; new accounts remain invited until staff approve them at `/dashboard/buyers/ui`. Registration requires privacy consent and is rate-limited.
 - Listing studio: `/dashboard/opportunities/ui`; supports classification, up to 12 labels, and private R2 JPEG/PNG images with signature and SHA-256 checks. Images are delivered only while their listing is published, approved, public-visible, and classified public.
 - Access grants: `/dashboard/access-grants/ui`; revocation remains audited and immediately applies on the next authorization check.
-- Apply migration `0013_sprint12_port.sql` before using the new fields. It preserves previously public/approved/published listings by classifying them public; imported legacy records remain private and confidential.
+- Apply migrations `0013_sprint12_port.sql` and `0014_custom_staff_auth.sql` before using the new fields and custom staff login. It preserves previously public/approved/published listings by classifying them public; imported legacy records remain private and confidential.
 
 The source integration is not a substitute for running the deployed project's full checks. After merging, run `pnpm check`, `pnpm preflight:final`, `pnpm preflight:sprint10`, and verify the complete workflows in staging before deployment. Do not change the existing deployment resource identifiers or bindings as part of this feature port.
 
-Sprint 13 verification note: the merged code passed static TypeScript transpilation and JavaScript syntax checks, and all 13 SQL migrations ran against in-memory SQLite. Full typecheck/Vitest was not rerun here because dependencies could not be installed in this environment. Preserve the deployed baseline configuration, but verify the archive's existing D1/KV IDs against the live deployment before any redeploy; the repository release-readiness script flags placeholder IDs in the archive.
+Sprint 16 verification note: all 16 SQL migrations were applied in order to in-memory SQLite and the new TypeScript/JavaScript passed syntax transpilation. Full typecheck, lint and Vitest were not run because dependencies could not be installed in the authoring environment; run `pnpm check` and `pnpm test` before staging.
+
+## Authentication (Sprint 16: unified email + password)
+
+All sign-in is a form with **email + password**; Cloudflare Access and emailed one-time codes are gone.
+
+| Flow | Buyer | Staff |
+| --- | --- | --- |
+| Sign in | `/account` | `/admin/login` |
+| Register | `/register` (account stays `invited` until approved) | first admin: `/admin/setup`; others created by a super admin |
+| Forgot password | `/forgot-password` | `/admin/forgot-password` |
+| Reset (emailed link) | `/reset-password?token=…` | `/admin/reset-password?token=…` |
+| Change password | `/account/change-password` | `/admin/change-password` |
+
+Passwords are hashed with PBKDF2-SHA256 (100,000 iterations, the Workers maximum) and a per-user salt; minimum length 12 with letters and numbers. Five wrong passwords lock the account for 15 minutes; sign-in, reset and registration are also rate limited per IP and email. Reset links are single-use, expire after 60 minutes (invites after 3 days), and a successful reset or password change signs out all other sessions. Responses never reveal whether an email is registered. Apply `migrations/0016_auth_hardening.sql` (builds on 0014 and 0015) before deploying. Hashes from Sprint 14/15 with a different iteration count are accepted and silently upgraded at the next successful login.
+
+**Existing buyers have no password yet; existing staff may not either.** Buyers and staff can use *Forgot password* (needs `RESEND_API_KEY`, `EMAIL_FROM` and `OTP_ENCRYPTION_KEY`). Password-less staff can also use `/admin/setup` with their email and `ADMIN_BOOTSTRAP_TOKEN`. Otherwise generate a hash with `node scripts/hash-password.mjs` and set it with the SQL in `scripts/provision-staff.sql.example`. See `docs/SPRINT_14.md`.

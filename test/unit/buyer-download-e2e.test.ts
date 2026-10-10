@@ -1,4 +1,5 @@
 import { SELF, env } from 'cloudflare:test';
+import { hashPassword } from '../../src/auth/password';
 import { describe, expect, it } from 'vitest';
 
 async function sha256(value: string | Uint8Array): Promise<string> {
@@ -10,23 +11,22 @@ async function sha256(value: string | Uint8Array): Promise<string> {
 describe('buyer sign-in through authorised document download', () => {
   it('requires an active session and an active grant for a clean private document', async () => {
     const id = () => crypto.randomUUID();
-    const userId = id(); const opportunityId = id(); const ndaRequestId = id(); const grantId = id(); const documentId = id(); const loginCodeId = id();
-    const email = `workflow-${id()}@example.test`; const code = '417205'; const timestamp = new Date().toISOString();
+    const userId = id(); const opportunityId = id(); const ndaRequestId = id(); const grantId = id(); const documentId = id();
+    const email = `workflow-${id()}@example.test`; const password = 'Correct-horse-battery-7'; const timestamp = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
     const bytes = new TextEncoder().encode('%PDF-1.4\nMayfair staging-only test file\n%%EOF');
     const objectKey = `test-fixtures/${documentId}.pdf`;
     const fileHash = await sha256(bytes);
-    await env.DB.prepare("INSERT INTO users (id,email,display_name,user_type,role,status,created_at,updated_at) VALUES (?,?,'Workflow Buyer','buyer','buyer','active',?,?)").bind(userId,email,timestamp,timestamp).run();
+    await env.DB.prepare("INSERT INTO users (id,email,display_name,user_type,role,status,password_hash,created_at,updated_at) VALUES (?,?,'Workflow Buyer','buyer','buyer','active',?,?,?)").bind(userId,email,await hashPassword(password),timestamp,timestamp).run();
     try {
       await env.DB.prepare("INSERT INTO opportunities (id,slug,title,lifecycle,content_review_status,public_visibility,last_verified_at,published_at,created_at,updated_at,classification) VALUES (?,?,?,'published','approved',1,?,?,?,?,'public')").bind(opportunityId,`workflow-${opportunityId}`,'Staging-only workflow listing',timestamp,timestamp,timestamp,timestamp).run();
       await env.DB.prepare("INSERT INTO nda_requests (id,user_id,opportunity_id,status,created_at,updated_at) VALUES (?,?,?,'approved',?,?)").bind(ndaRequestId,userId,opportunityId,timestamp,timestamp).run();
       await env.DB.prepare('INSERT INTO access_grants (id,user_id,opportunity_id,nda_request_id,tier,granted_at,expires_at) VALUES (?,?,?,?,2,?,?)').bind(grantId,userId,opportunityId,ndaRequestId,timestamp,expiresAt).run();
       await env.PRIVATE_FILES.put(objectKey, bytes, { httpMetadata: { contentType: 'application/pdf', cacheControl: 'private, no-store' } });
       await env.DB.prepare("INSERT INTO documents (id,opportunity_id,r2_key,filename,content_type,byte_size,tier,created_at,sha256,scan_status) VALUES (?,?,?,?,?,?,2,?,?,'clean')").bind(documentId,opportunityId,objectKey,'staging-test.pdf','application/pdf',bytes.length,timestamp,fileHash).run();
-      await env.DB.prepare('INSERT INTO buyer_login_codes (id,email,code_hash,attempts,expires_at,created_at) VALUES (?,?,?,0,?,?)').bind(loginCodeId,email,await sha256(`${loginCodeId}:${code}`),new Date(Date.now()+10*60_000).toISOString(),timestamp).run();
 
-      const signIn = await SELF.fetch('https://mayfair.test/api/buyer/auth/verify-code', {
-        method: 'POST', headers: { origin: 'https://mayfair.test', 'content-type': 'application/json' }, body: JSON.stringify({ email, code }),
+      const signIn = await SELF.fetch('https://mayfair.test/api/buyer/auth/login', {
+        method: 'POST', headers: { origin: 'https://mayfair.test', 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
       });
       expect(signIn.status).toBe(200);
       const setCookie = signIn.headers.get('set-cookie') ?? '';
@@ -50,7 +50,6 @@ describe('buyer sign-in through authorised document download', () => {
       await env.DB.prepare('DELETE FROM documents WHERE id=?').bind(documentId).run();
       await env.DB.prepare('DELETE FROM access_grants WHERE id=?').bind(grantId).run();
       await env.DB.prepare('DELETE FROM nda_requests WHERE id=?').bind(ndaRequestId).run();
-      await env.DB.prepare('DELETE FROM buyer_login_codes WHERE email=?').bind(email).run();
       await env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId).run();
       await env.DB.prepare('DELETE FROM opportunities WHERE id=?').bind(opportunityId).run();
       await env.DB.prepare('DELETE FROM users WHERE id=?').bind(userId).run();

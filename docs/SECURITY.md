@@ -15,9 +15,9 @@
 ## Required before handling real user or confidential data
 
 - Validate every request with Zod and enforce size/type limits.
-- Validate Cloudflare Access JWT signature, issuer, audience and expiry; then enforce in-app roles on
+- Staff authenticate with email + password and a hashed, expiring server-side session cookie; re-check the active staff row on every request, then enforce in-app roles on
   every staff route. Never trust a UI-only permission check.
-- Use cryptographically secure one-time codes, hashed session tokens, expiry, rotation/revocation,
+- Use salted PBKDF2-SHA256 password hashes, single-use hashed reset tokens, hashed session tokens, expiry, rotation/revocation,
   HttpOnly + Secure + SameSite cookies, CSRF protection on state-changing browser requests, and
   rate limits for OTP and public forms.
 - Verify Turnstile server-side on each applicable public form.

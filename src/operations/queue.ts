@@ -58,16 +58,23 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
   const payload = JSON.parse(
     await decryptPayload(job.payload_json, env.OTP_ENCRYPTION_KEY ?? ''),
   ) as Record<string, unknown>;
-  if (job.job_type === 'buyer.login_code') {
+  if (job.job_type === 'auth.password_reset') {
     const email = String(payload['email'] ?? '');
-    const code = String(payload['code'] ?? '');
-    if (!email || !/^\d{6}$/.test(code)) throw new Error('Invalid login-code payload');
+    const token = String(payload['token'] ?? '');
+    const kind = payload['kind'] === 'staff' ? 'staff' : 'buyer';
+    const invite = payload['purpose'] === 'invite';
+    const minutes = Number(payload['expiresInMinutes'] ?? 60);
+    if (!email || !/^[a-f0-9]{64}$/.test(token)) throw new Error('Invalid password-reset payload');
+    const base = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
+    const link = `${base}${kind === 'staff' ? '/admin/reset-password' : '/reset-password'}?token=${token}`;
+    const hours = Math.round(minutes / 60);
+    const lifetime = hours >= 2 ? `${hours} hours` : `${minutes} minutes`;
     await sendEmail(
       env,
       email,
-      'Your Casinos of Mayfair sign-in code',
-      `<p>Your sign-in code is <strong style="font-size:24px;letter-spacing:4px">${escapeHtml(code)}</strong>.</p><p>It expires in 10 minutes. If you did not request this code, you can ignore this email.</p>`,
-      `Your Casinos of Mayfair sign-in code is ${code}. It expires in 10 minutes. If you did not request it, ignore this email.`,
+      invite ? 'Set your password · Casinos of Mayfair' : 'Reset your password · Casinos of Mayfair',
+      `<p>${invite ? 'An account has been created for you. Use the link below to choose your password.' : 'We received a request to reset your password.'}</p><p><a href="${escapeHtml(link)}">${invite ? 'Set your password' : 'Reset your password'}</a></p><p>This link can be used once and expires in ${lifetime}. If you did not expect this email, you can ignore it — your password will not change.</p>`,
+      `${invite ? 'An account has been created for you. Set your password' : 'Reset your password'}: ${link}\nThis link can be used once and expires in ${lifetime}. If you did not expect this email, ignore it.`,
     );
     return;
   }
@@ -115,7 +122,9 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
     );
     return;
   }
-  const opsEmail = env.OPS_EMAIL;
+  let configuredNotificationEmail = '';
+  try { const setting = await env.DB.prepare("SELECT value_json AS value FROM platform_settings WHERE setting_key = 'notification_email'").first<{value:string}>(); const parsed = setting ? JSON.parse(setting.value) : ''; if (typeof parsed === 'string') configuredNotificationEmail = parsed; } catch { /* migration not applied yet */ }
+  const opsEmail = configuredNotificationEmail || env.OPS_EMAIL;
   if (!opsEmail) throw new Error('Operations email is not configured');
   if (job.job_type === 'buyer.registration_review') {
     const userId = String(payload['userId'] ?? '');
@@ -165,6 +174,17 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
       `<p>A buyer has requested access to an opportunity data room.</p><p><strong>Opportunity:</strong> ${escapeHtml(request.title)}</p><p><strong>Buyer:</strong> ${escapeHtml(request.email)}</p><p><a href="${base}/dashboard/nda-requests">Review NDA requests</a></p>`,
       `NDA review requested for ${request.title} by ${request.email}. Review: ${base}/dashboard/nda-requests`,
     );
+    return;
+  }
+  if (job.job_type === 'managed_form.submitted') {
+    const submissionId = String(payload['submissionId'] ?? '');
+    if (!submissionId) throw new Error('Invalid managed-form submission payload');
+    const submission = await env.DB.prepare('SELECT s.id,s.data_json AS dataJson,f.title AS formTitle,o.title AS opportunityTitle FROM managed_form_submissions s JOIN managed_forms f ON f.id=s.form_id LEFT JOIN opportunities o ON o.id=s.opportunity_id WHERE s.id=? LIMIT 1').bind(submissionId).first<{id:string;dataJson:string;formTitle:string;opportunityTitle:string|null}>();
+    if (!submission) throw new Error('Managed form submission not found');
+    const data = JSON.parse(submission.dataJson) as Record<string, unknown>;
+    const base = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
+    const fields = Object.entries(data).map(([key,value]) => `<p><strong>${escapeHtml(key)}:</strong> ${escapeHtml(value)}</p>`).join('');
+    await sendEmail(env, opsEmail, `New form submission: ${submission.formTitle} · Casinos of Mayfair`, `<h2>${escapeHtml(submission.formTitle)}</h2><p><strong>Reference:</strong> ${escapeHtml(submission.id)}</p>${submission.opportunityTitle ? `<p><strong>Listing:</strong> ${escapeHtml(submission.opportunityTitle)}</p>` : ''}${fields}<p><a href="${base}/dashboard">Open staff dashboard</a></p>`, `New form submission ${submission.id}: ${submission.formTitle}. ${submission.opportunityTitle ? `Listing: ${submission.opportunityTitle}. ` : ''}${Object.entries(data).map(([key,value])=>`${key}: ${String(value)}`).join('; ')}. Dashboard: ${base}/dashboard`);
     return;
   }
   throw new Error(`Unsupported notification job type: ${job.job_type}`);

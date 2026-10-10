@@ -151,8 +151,8 @@ describe('Buyer and staff confidentiality workflows (Worker E2E)', () => {
     expect(download.status).toBe(404);
   });
 
-  it('does not expose staff NDA review without a verified Cloudflare Access identity', async () => {
+  it('does not expose staff NDA review without a signed-in staff session', async () => {
     const response = await SELF.fetch('https://mayfair.test/dashboard/nda-requests');
-    expect([401, 503]).toContain(response.status);
+    expect(response.status).toBe(401);
   });
 });

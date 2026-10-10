@@ -27,7 +27,8 @@
     "test:e2e:buyer-staff": "vitest run test/buyer-staff-workflows.e2e.test.ts",
     "preflight:sprint9": "node scripts/sprint9-workflow-gate.mjs",
     "preflight:final": "node scripts/release-readiness.mjs",
-    "preflight:sprint10": "node scripts/sprint10-readiness.mjs"
+    "preflight:sprint10": "node scripts/sprint10-readiness.mjs",
+    "preflight:sprint16": "node scripts/sprint16-auth-gate.mjs"
   },
   "dependencies": {
     "hono": "^4.9.8",

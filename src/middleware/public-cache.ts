@@ -12,6 +12,8 @@ export const publicCacheMiddleware: MiddlewareHandler<{ Bindings: Env }> = async
     path.startsWith('/account') ||
     path.startsWith('/admin/') ||
     path === '/register' ||
+    path === '/forgot-password' ||
+    path === '/reset-password' ||
     path === '/healthz';
   if (
     method === 'GET' &&

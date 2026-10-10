@@ -21,10 +21,9 @@ configuration and rate-limit support.
 
 ## ADR-0004 — Staff identity and buyer identity are separate
 
-**Decision:** Staff use Cloudflare Access SSO/MFA plus in-app roles; buyer/seller accounts use one-time
-email codes and server-managed sessions.
+**Decision (revised Sprint 16):** Staff and buyers both sign in with email + password and server-managed sessions (separate cookies and session types); staff additionally have in-app roles. Cloudflare Access and emailed one-time codes are no longer used. MFA is not yet implemented and is a recommended follow-up for staff.
 
-**Reason:** Staff and external users have different identity, assurance and authorization needs.
+**Reason:** The platform requires an owned sign-in experience while maintaining server-side staff authorization and revocable sessions.
 
 ## ADR-0005 — Legacy backend and NDA PDF are unavailable
 

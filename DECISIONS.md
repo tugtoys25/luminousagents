@@ -2,7 +2,7 @@
 
 ## Buyer registration
 
-Public self-registration is disabled. A staff member with `admin` or `super_admin` role provisions a buyer from the dashboard. Provisioned buyers sign in using the existing email one-time-code flow; access remains dependent on email delivery and account status. Staff must verify business identity and authority outside the platform before provisioning.
+Buyers can self-register at `/register` with an email and password, but the account stays `invited` and cannot sign in until a staff member with `admin` or `super_admin` role approves it from the dashboard. Staff can also provision a buyer directly; that buyer receives a set-password email. Approval does not grant data-room access (NDA and grants are separate). Staff must verify business identity and authority outside the platform before approving.
 
 ## Malware scanning
 

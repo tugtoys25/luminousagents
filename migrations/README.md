@@ -21,3 +21,7 @@ The legacy import is generated separately by `pnpm import:legacy` and checked wi
 The SQL seed is idempotent by `legacy_id`; it is not a substitute for the team's `verify:import` run against the configured D1 environment. Confirm row counts and status distribution after applying migrations in staging.
 
 - `0013_sprint12_port.sql`: adds listing classifications/labels, media integrity metadata, and buyer privacy-consent versioning. Previously public, approved records retain public classification; all other records default confidential.
+
+- `0014_custom_staff_auth.sql`: adds nullable staff password hashes for native email/password login; existing staff rows are preserved and can be provisioned through the one-time setup route.
+- `0015_platform_management.sql`: platform settings, managed pages/forms/submissions and `password_reset_tokens`.
+- `0016_auth_hardening.sql`: Sprint 16 unified email + password auth. Adds `password_updated_at`, `failed_login_count`, `locked_until`, `must_change_password` to `users`, `session_type` to `sessions` (existing staff sessions are backfilled as `staff`), and `purpose` to `password_reset_tokens`. `buyer_login_codes` is no longer used but kept (forward-only).

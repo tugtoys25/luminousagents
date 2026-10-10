@@ -19,6 +19,6 @@ done
 cat <<'MSG'
 Resources created only if the commands succeeded. Update each D1 and KV ID in wrangler.jsonc,
 then set secrets with `pnpm exec wrangler secret put NAME --env staging` and `--env production`.
-Create Cloudflare Access applications, bind the right hostnames, and verify queues/DLQs before deploy.
+Bind the right hostnames and verify queues/DLQs before deploy. Staff sign in with email + password; no Access application is needed.
 Do not enable public access on private document or backup buckets.
 MSG

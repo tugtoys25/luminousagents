@@ -18,7 +18,7 @@ describe('Sprint 10 security invariants', () => {
     expect(enquiries).toMatch(/Review new website enquiry/);
     expect(enquiries).toMatch(/enquiry\.assigned/);
     expect(enquiries).toMatch(/enquiry\.acknowledgement/);
-    expect(enquiries).toMatch(/\['staging',\s*'production'\]/);
+    expect(enquiries).toMatch(/'staging','production'/);
     expect(read('src/operations/queue.ts')).toMatch(/job\.job_type === 'enquiry\.assigned'/);
     expect(read('src/operations/queue.ts')).toMatch(/job\.job_type === 'enquiry\.acknowledgement'/);
   });

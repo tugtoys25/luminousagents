@@ -5,8 +5,6 @@ export type AppEnvironment = z.infer<typeof AppEnvironmentSchema>;
 
 export interface Env {
   APP_ENV: AppEnvironment;
-  ACCESS_TEAM_DOMAIN?: string;
-  ACCESS_AUD?: string;
   IP_HASH_SECRET?: string;
   TURNSTILE_SECRET_KEY?: string;
   TURNSTILE_SITE_KEY?: string;

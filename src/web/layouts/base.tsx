@@ -155,6 +155,12 @@ export function BaseLayout({
               <a href="/contact">Contact</a>
               <a href="/legal/privacy">Privacy</a>
               <a href="/legal/terms">Terms</a>
+              <a href="/legal/cookies">Cookies</a>
+              <a href="/legal/aml-kyc">AML / KYC</a>
+              <a href="/legal/sanctions">Sanctions</a>
+              <a href="/legal/anti-bribery">Anti-bribery</a>
+              <a href="/legal/disclaimer">Listing disclaimer</a>
+              <a href="/legal/complaints">Complaints</a>
               <a href="/admin/login">Staff sign in</a>
             </div>
           </div>
