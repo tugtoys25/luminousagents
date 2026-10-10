@@ -306,3 +306,15 @@
   border-radius: 8px;
   font: inherit;
 }
+
+/* Sprint 13 buyer and data-room access panels */
+.buyer,.grant{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.65fr);gap:1rem;align-items:center;padding:1rem;margin:.75rem 0;border:1px solid var(--line,#e4ddd1);border-radius:12px;background:#fff;box-shadow:0 8px 28px #211f1c08}
+.buyer p,.grant p{margin:.25rem 0;color:var(--muted,#6b665e);font-size:13px;overflow-wrap:anywhere}
+.buyer form,.grant form{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.buyer select,.grant textarea{min-width:0;max-width:100%;font:inherit;padding:.7rem;border:1px solid #d8d0c4;border-radius:6px;background:#fff}
+.buyer button,.grant button{font:inherit;padding:.7rem 1rem;border:0;border-radius:6px;background:#8c1d28;color:#fff;cursor:pointer}
+.grant textarea{width:100%;min-height:76px}
+.grant .state{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#725c35}
+#cms-media-list{display:grid;gap:.5rem;padding-left:1.2rem}
+#cms-media-list li{padding:.45rem 0;overflow-wrap:anywhere}
+@media(max-width:720px){.buyer,.grant{grid-template-columns:1fr}.buyer form,.grant form{align-items:stretch}.buyer select,.buyer button,.grant button{width:100%}}

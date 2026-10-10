@@ -19,3 +19,5 @@ The legacy import is generated separately by `pnpm import:legacy` and checked wi
 - `0012_broker_assignment.sql`: broker ownership for opportunities and scoped staff workflows.
 
 The SQL seed is idempotent by `legacy_id`; it is not a substitute for the team's `verify:import` run against the configured D1 environment. Confirm row counts and status distribution after applying migrations in staging.
+
+- `0013_sprint12_port.sql`: adds listing classifications/labels, media integrity metadata, and buyer privacy-consent versioning. Previously public, approved records retain public classification; all other records default confidential.

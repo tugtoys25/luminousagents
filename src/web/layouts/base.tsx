@@ -123,6 +123,7 @@ export function BaseLayout({
               <a href="/services">Services</a>
               <a href="/about">About</a>
               <a href="/account">Buyer account</a>
+              <a href="/register">Register</a>
               <a class="nav-cta" href="/contact">
                 Contact our team
               </a>
@@ -154,6 +155,7 @@ export function BaseLayout({
               <a href="/contact">Contact</a>
               <a href="/legal/privacy">Privacy</a>
               <a href="/legal/terms">Terms</a>
+              <a href="/admin/login">Staff sign in</a>
             </div>
           </div>
           <div class="container footer-bottom">

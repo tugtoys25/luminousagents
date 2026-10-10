@@ -29,3 +29,6 @@ ACCESS_AUD=replace-with-access-application-audience-tag
 # IP_HASH_SECRET=generate-a-separate-random-secret
 # CLOUDFLARE_ZONE_ID=
 # CLOUDFLARE_CACHE_PURGE_TOKEN=zone-scoped-cache-purge-token
+
+# Sprint 12: set only for the one-time initial administrator setup; use a random secret of at least 32 characters.
+# ADMIN_BOOTSTRAP_TOKEN=replace-with-a-long-random-one-time-token

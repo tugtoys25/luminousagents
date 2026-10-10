@@ -11,6 +11,7 @@ export interface Env {
   TURNSTILE_SECRET_KEY?: string;
   TURNSTILE_SITE_KEY?: string;
   OTP_ENCRYPTION_KEY?: string;
+  ADMIN_BOOTSTRAP_TOKEN?: string;
   RESEND_API_KEY?: string;
   MALWARE_SCANNER_API_URL?: string;
   MALWARE_SCANNER_API_TOKEN?: string;

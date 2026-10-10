@@ -34,6 +34,10 @@ describe('serializeOpportunity', () => {
       points: ['First point', 'Second point'],
       seoTitle: 'Sample Opportunity',
       seoDescription: 'A sample summary.',
+      labels: [],
+      coverMediaId: null,
+      coverMediaAlt: 'Sample Opportunity',
+      coverMediaPath: null,
     });
     expect(result).not.toHaveProperty('id');
     expect(result).not.toHaveProperty('body_html');

@@ -114,3 +114,19 @@ See `docs/SPRINT_7.md` for the security-invariant checks, malware scanner integr
 Sprint 10 supersedes earlier statements that the opportunity CMS and buyer provisioning are absent. The package now includes `/dashboard/opportunities/ui`, `/dashboard/buyers/ui`, `/dashboard/nda-templates/ui`, a signed-result scanner adapter, broker ownership/scoping, public enquiry task and broker-notification routing, CSP-safe dashboard CSS, configurable SEO metadata, short public cache policy and encrypted D1 backup workflow. See [`docs/SPRINT_10.md`](docs/SPRINT_10.md), [`docs/BACKUPS_AND_RESTORE.md`](docs/BACKUPS_AND_RESTORE.md), and [`DECISIONS.md`](DECISIONS.md).
 
 Sprint 10 is still a staging candidate, not a verified production release. The scanner engine must be deployed/configured, Cloudflare resource IDs and secrets must be set, the pinned pnpm lockfile must be generated, and full CI and staging evidence must be produced. The NDA bootstrap wording is a legal-review draft, all 198 legacy records remain pending/private, and R2 document backups, a restore drill, full role/CSRF/OTP/queue/XSS/Playwright suites, accessibility/load tests and rollback rehearsal remain outstanding.
+
+
+## Sprint 13 integration (deployed Sprint 11 baseline)
+
+Sprint 13 ports the missing Sprint 12 portal and listing-management features into the existing project while preserving `wrangler.jsonc`, Cloudflare environment/resource bindings, deployment scripts, and `pnpm-lock.yaml`.
+
+- Staff entry: `/admin/login`; the staff workspace remains authenticated by the configured Cloudflare Access identity and an active provisioned staff row.
+- One-time first administrator setup: `/admin/setup`; configure `ADMIN_BOOTSTRAP_TOKEN` as a Worker secret with at least 32 random characters. The route closes once any staff user exists. The new administrator must still be included in the Cloudflare Access policy and use the same email identity.
+- Buyer registration: `/register`; new accounts remain invited until staff approve them at `/dashboard/buyers/ui`. Registration requires privacy consent and is rate-limited.
+- Listing studio: `/dashboard/opportunities/ui`; supports classification, up to 12 labels, and private R2 JPEG/PNG images with signature and SHA-256 checks. Images are delivered only while their listing is published, approved, public-visible, and classified public.
+- Access grants: `/dashboard/access-grants/ui`; revocation remains audited and immediately applies on the next authorization check.
+- Apply migration `0013_sprint12_port.sql` before using the new fields. It preserves previously public/approved/published listings by classifying them public; imported legacy records remain private and confidential.
+
+The source integration is not a substitute for running the deployed project's full checks. After merging, run `pnpm check`, `pnpm preflight:final`, `pnpm preflight:sprint10`, and verify the complete workflows in staging before deployment. Do not change the existing deployment resource identifiers or bindings as part of this feature port.
+
+Sprint 13 verification note: the merged code passed static TypeScript transpilation and JavaScript syntax checks, and all 13 SQL migrations ran against in-memory SQLite. Full typecheck/Vitest was not rerun here because dependencies could not be installed in this environment. Preserve the deployed baseline configuration, but verify the archive's existing D1/KV IDs against the live deployment before any redeploy; the repository release-readiness script flags placeholder IDs in the archive.

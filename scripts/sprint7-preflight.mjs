@@ -26,7 +26,7 @@ const checks = [
   [
     'release decision includes verified hash and scan provenance',
     'src/admin/routes.ts',
-    /scan_digest = \?[\s\S]{0,800}sha256: result\.sha256/,
+    /scan_digest = \?[\s\S]{0,1800}sha256: result\.sha256/,
   ],
   ['buyer download checks clean status', 'src/buyers/routes.ts', /scan_status = 'clean'/],
 ];

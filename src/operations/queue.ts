@@ -117,6 +117,18 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
   }
   const opsEmail = env.OPS_EMAIL;
   if (!opsEmail) throw new Error('Operations email is not configured');
+  if (job.job_type === 'buyer.registration_review') {
+    const userId = String(payload['userId'] ?? '');
+    if (!userId) throw new Error('Invalid buyer-registration payload');
+    const buyer = await env.DB.prepare("SELECT u.id, u.display_name AS displayName, u.email, p.company_name AS companyName, p.role_title AS roleTitle, p.experience_notes AS experienceNotes FROM users u LEFT JOIN buyer_profiles p ON p.user_id = u.id WHERE u.id = ? AND u.user_type = 'buyer' AND u.status = 'invited'")
+      .bind(userId).first<{id:string;displayName:string;email:string;companyName:string|null;roleTitle:string|null;experienceNotes:string|null}>();
+    if (!buyer) throw new Error('Pending buyer registration not found');
+    const base = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
+    await sendEmail(env, opsEmail, 'Buyer registration requires review · Casinos of Mayfair',
+      `<p>A buyer has submitted a registration for review.</p><p><strong>Name:</strong> ${escapeHtml(buyer.displayName)}</p><p><strong>Email:</strong> ${escapeHtml(buyer.email)}</p><p><strong>Company:</strong> ${escapeHtml(buyer.companyName || 'Not provided')}</p><p><strong>Role:</strong> ${escapeHtml(buyer.roleTitle || 'Not provided')}</p><p><a href="${base}/dashboard/buyers/ui">Review buyer registrations</a></p>`,
+      `Buyer registration requires review: ${buyer.displayName} (${buyer.email}), company: ${buyer.companyName || 'not provided'}. Review: ${base}/dashboard/buyers/ui`);
+    return;
+  }
   if (job.job_type === 'enquiry.received') {
     const enquiryId = String(payload['enquiryId'] ?? '');
     if (!enquiryId) throw new Error('Invalid enquiry notification payload');

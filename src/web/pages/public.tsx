@@ -127,13 +127,14 @@ publicPages.get('/casinos-for-sale', async (c) => {
     "lifecycle = 'published'",
     "content_review_status = 'approved'",
     'public_visibility = 1',
+    "classification = 'public'",
   ];
   const binds: (string | number)[] = [];
   if (country) {
     conditions.push('country = ?');
     binds.push(country);
   }
-  if (type && ['casino', 'casino-hotel'].includes(type)) {
+  if (type && ['casino', 'casino-hotel', 'hotel', 'resort', 'gaming-venue', 'other'].includes(type)) {
     conditions.push('opportunity_type = ?');
     binds.push(type);
   }
@@ -150,13 +151,13 @@ publicPages.get('/casinos-for-sale', async (c) => {
       .first<{ total: number }>();
     const total = countResult?.total ?? 0;
     const rows = await c.env.DB.prepare(
-      `SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at FROM opportunities WHERE ${where} ORDER BY published_at DESC, title ASC LIMIT 12 OFFSET ?`,
+      `SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE ${where} ORDER BY published_at DESC, title ASC LIMIT 12 OFFSET ?`,
     )
       .bind(...binds, (page - 1) * 12)
       .all<OpportunityRow>();
     const opportunities = rows.results.map((row) => serializeOpportunity(row, 1));
     const countriesResult = await c.env.DB.prepare(
-      "SELECT DISTINCT country FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND country IS NOT NULL ORDER BY country",
+      "SELECT DISTINCT country FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' AND country IS NOT NULL ORDER BY country",
     ).all<{ country: string }>();
     return c.html(
       <BaseLayout
@@ -207,6 +208,10 @@ publicPages.get('/casinos-for-sale', async (c) => {
                   <option value="casino-hotel" selected={type === 'casino-hotel'}>
                     Casino & hotel
                   </option>
+                  <option value="hotel" selected={type === 'hotel'}>Hotel</option>
+                  <option value="resort" selected={type === 'resort'}>Resort</option>
+                  <option value="gaming-venue" selected={type === 'gaming-venue'}>Gaming venue</option>
+                  <option value="other" selected={type === 'other'}>Other asset</option>
                 </select>
                 <button class="button button-primary filter-submit" type="submit">
                   Apply filters
@@ -230,12 +235,14 @@ publicPages.get('/casinos-for-sale', async (c) => {
                 <div class="opportunity-grid">
                   {opportunities.map((item) => (
                     <article class="opportunity-card">
+                      {item.coverMediaPath && <a class="opportunity-cover" href={`/opportunities/${encodeURIComponent(item.slug)}`} aria-label={`View ${item.title}`}><img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" /></a>}
                       <div class="card-topline">
                         <span class="card-type">
-                          {item.type === 'casino-hotel' ? 'CASINO & HOTEL' : 'CASINO'}
+                          {item.type === 'casino-hotel' ? 'CASINO & HOTEL' : item.type.toUpperCase()}
                         </span>
                         <span class="card-country">{item.country ?? 'International'}</span>
                       </div>
+                      <div class="card-labels">{item.labels.map((label) => <span>{label}</span>)}</div>
                       <h3>
                         <a href={`/opportunities/${encodeURIComponent(item.slug)}`}>{item.title}</a>
                       </h3>
@@ -324,7 +331,7 @@ publicPages.get('/casinos-for-sale/:country', async (c) => {
     .replace(/-/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
   const rows = await c.env.DB.prepare(
-    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at FROM opportunities WHERE lower(country) = lower(?) AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 ORDER BY published_at DESC, title ASC LIMIT 100",
+    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE lower(country) = lower(?) AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY published_at DESC, title ASC LIMIT 100",
   )
     .bind(countryName)
     .all<OpportunityRow>();
@@ -361,9 +368,10 @@ publicPages.get('/casinos-for-sale/:country', async (c) => {
             <div class="opportunity-grid">
               {items.map((item) => (
                 <article class="opportunity-card">
+                      {item.coverMediaPath && <a class="opportunity-cover" href={`/opportunities/${encodeURIComponent(item.slug)}`} aria-label={`View ${item.title}`}><img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" /></a>}
                   <div class="card-topline">
                     <span class="card-type">
-                      {item.type === 'casino-hotel' ? 'CASINO & HOTEL' : 'CASINO'}
+                      {item.type === 'casino-hotel' ? 'CASINO & HOTEL' : item.type.toUpperCase()}
                     </span>
                     <span class="card-country">{item.country ?? countryName}</span>
                   </div>
@@ -398,7 +406,7 @@ publicPages.get('/casinos-for-sale/:country', async (c) => {
 
 publicPages.get('/casino-hotels', async (c) => {
   const rows = await c.env.DB.prepare(
-    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at FROM opportunities WHERE opportunity_type = 'casino-hotel' AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 ORDER BY published_at DESC, title ASC LIMIT 100",
+    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE opportunity_type = 'casino-hotel' AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY published_at DESC, title ASC LIMIT 100",
   ).all<OpportunityRow>();
   const items = rows.results.map((row) => serializeOpportunity(row, 1));
   return c.html(
@@ -423,6 +431,7 @@ publicPages.get('/casino-hotels', async (c) => {
             <div class="opportunity-grid">
               {items.map((item) => (
                 <article class="opportunity-card">
+                      {item.coverMediaPath && <a class="opportunity-cover" href={`/opportunities/${encodeURIComponent(item.slug)}`} aria-label={`View ${item.title}`}><img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" /></a>}
                   <div class="card-topline">
                     <span class="card-type">CASINO & HOTEL</span>
                     <span class="card-country">{item.country ?? 'International'}</span>
@@ -455,7 +464,7 @@ publicPages.get('/casino-hotels', async (c) => {
 
 publicPages.get('/archive', async (c) => {
   const rows = await c.env.DB.prepare(
-    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at FROM opportunities WHERE lifecycle IN ('sold','off_market') AND content_review_status = 'approved' AND public_visibility = 1 ORDER BY updated_at DESC LIMIT 100",
+    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE lifecycle IN ('sold','off_market') AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY updated_at DESC LIMIT 100",
   ).all<OpportunityRow>();
   const items = rows.results.map((row) => serializeOpportunity(row, 1));
   return c.html(
@@ -502,7 +511,7 @@ publicPages.get('/archive', async (c) => {
 publicPages.get('/opportunities/:slug', async (c) => {
   const slug = c.req.param('slug').slice(0, 110);
   const row = await c.env.DB.prepare(
-    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at FROM opportunities WHERE slug = ? AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 LIMIT 1",
+    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE slug = ? AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' LIMIT 1",
   )
     .bind(slug)
     .first<OpportunityRow>();
@@ -538,13 +547,15 @@ publicPages.get('/opportunities/:slug', async (c) => {
           <a class="back-link" href="/casinos-for-sale">
             ← All opportunities
           </a>
+          {item.coverMediaPath && <img class="detail-cover" src={item.coverMediaPath} alt={item.coverMediaAlt} loading="eager" />}
           <div class="detail-meta">
             <span class="card-type">
-              {item.type === 'casino-hotel' ? 'CASINO & HOTEL' : 'CASINO'}
+              {item.type === 'casino-hotel' ? 'CASINO & HOTEL' : item.type.toUpperCase()}
             </span>
             <span>{item.country ?? 'International market'}</span>
           </div>
           <h1>{item.title}</h1>
+          <div class="card-labels">{item.labels.map((label) => <span>{label}</span>)}</div>
           <p>{item.summary || 'Further information is available to qualified parties.'}</p>
         </div>
       </section>
@@ -782,20 +793,36 @@ for (const [path, title, description, heading, copy] of [
   );
 }
 
+publicPages.get('/media/opportunities/:opportunityId/:mediaId', async (c) => {
+  const media = await c.env.DB.prepare("SELECT m.r2_key AS r2Key, m.content_type AS contentType, m.byte_size AS byteSize, m.sha256 AS sha256 FROM opportunity_media m JOIN opportunities o ON o.id = m.opportunity_id WHERE m.id = ? AND m.opportunity_id = ? AND o.lifecycle = 'published' AND o.content_review_status = 'approved' AND o.public_visibility = 1 AND o.classification = 'public' AND m.content_type IN ('image/jpeg','image/png') LIMIT 1").bind(c.req.param('mediaId'), c.req.param('opportunityId')).first<{r2Key:string;contentType:string;byteSize:number;sha256:string}>();
+  if (!media) return c.notFound();
+  const file = await c.env.PRIVATE_FILES.get(media.r2Key);
+  if (!file || file.size !== media.byteSize || file.size > 8 * 1024 * 1024) return c.notFound();
+  const bytes = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const actual = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+  if (!media.sha256 || actual !== media.sha256) return c.notFound();
+  c.header('Content-Type', media.contentType);
+  c.header('Cache-Control', 'public, max-age=300');
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('Content-Length', String(bytes.byteLength));
+  return c.body(bytes, 200);
+});
+
 publicPages.get('/robots.txt', (c) => {
   const baseUrl = (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, '');
   return c.text(
-    `User-agent: *\nAllow: /\nDisallow: /dashboard/\nDisallow: /account/\nDisallow: /api/\nSitemap: ${baseUrl}/sitemap.xml\n`,
+    `User-agent: *\nAllow: /\nDisallow: /dashboard/\nDisallow: /account/\nDisallow: /api/\nDisallow: /admin/\nDisallow: /register\nSitemap: ${baseUrl}/sitemap.xml\n`,
     200,
     { 'Content-Type': 'text/plain; charset=utf-8' },
   );
 });
 publicPages.get('/sitemap.xml', async (c) => {
   const rows = await c.env.DB.prepare(
-    "SELECT slug FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 ORDER BY updated_at DESC LIMIT 5000",
+    "SELECT slug FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY updated_at DESC LIMIT 5000",
   ).all<{ slug: string }>();
   const countries = await c.env.DB.prepare(
-    "SELECT DISTINCT country FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND country IS NOT NULL ORDER BY country",
+    "SELECT DISTINCT country FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' AND country IS NOT NULL ORDER BY country",
   ).all<{ country: string }>();
   const countryPaths = countries.results.map(
     (row) => `/casinos-for-sale/${encodeURIComponent(slugify(row.country))}`,

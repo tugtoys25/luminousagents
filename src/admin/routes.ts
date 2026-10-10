@@ -16,6 +16,8 @@ const opportunityInput = z.object({
   opportunityType: z
     .enum(['casino-hotel', 'casino', 'hotel', 'resort', 'gaming-venue', 'other'])
     .default('casino-hotel'),
+  classification: z.enum(['confidential', 'public', 'off_market', 'sold', 'under_offer', 'on_hold']).default('confidential'),
+  labels: z.array(z.string().trim().min(1).max(32)).max(12).default([]),
   priceText: z.string().trim().max(180).optional().default(''),
   summary: z.string().trim().max(1000).optional().default(''),
   bodyHtml: z.string().max(20000).optional().default(''),
@@ -162,7 +164,7 @@ admin.get('/', async (c) => {
     })
     .join('');
   return c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff dashboard · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform dashboard</h1><p class="muted">Signed in as ${escape(staff.displayName || staff.email)} · ${escape(staff.role)}</p><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries">Enquiries</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/nda-templates/ui">NDA templates</a><a href="/dashboard/audit">Audit log</a><a href="/">View public site</a></nav><section class="metric-grid"><div class="metric"><span class="muted">Total records</span><strong>${counts?.total ?? 0}</strong></div><div class="metric"><span class="muted">Awaiting review</span><strong>${counts?.pending ?? 0}</strong></div><div class="metric"><span class="muted">Published & approved</span><strong>${counts?.published ?? 0}</strong></div></section><h2>Needs content review</h2><ul>${pendingRows || '<li>No records awaiting review.</li>'}</ul><h2>Recently updated opportunities</h2><div class="overflow-x-auto"><table><thead><tr><th>Title</th><th>Country</th><th>Lifecycle</th><th>Review</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No records yet.</td></tr>'}</tbody></table></div></main></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff dashboard · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform dashboard</h1><p class="muted">Signed in as ${escape(staff.displayName || staff.email)} · ${escape(staff.role)}</p><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries">Enquiries</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/nda-templates/ui">NDA templates</a><a href="/dashboard/audit">Audit log</a><a href="/">View public site</a></nav><section class="metric-grid"><div class="metric"><span class="muted">Total records</span><strong>${counts?.total ?? 0}</strong></div><div class="metric"><span class="muted">Awaiting review</span><strong>${counts?.pending ?? 0}</strong></div><div class="metric"><span class="muted">Published & approved</span><strong>${counts?.published ?? 0}</strong></div></section><h2>Needs content review</h2><ul>${pendingRows || '<li>No records awaiting review.</li>'}</ul><h2>Recently updated opportunities</h2><div class="overflow-x-auto"><table><thead><tr><th>Title</th><th>Country</th><th>Lifecycle</th><th>Review</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No records yet.</td></tr>'}</tbody></table></div></main></body></html>`,
   );
 });
 
@@ -182,7 +184,7 @@ admin.get(
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) =>
     c.html(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opportunity CMS · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Opportunity CMS</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/nda-requests/ui">NDA requests</a></nav><p class="muted">All legacy records start private. Approval and publication are separate actions.</p><div class="cms-layout"><section><label>Search <input id="cms-search" maxlength="100"></label> <label>Review <select id="cms-review"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="">All</option></select></label><button id="cms-refresh" type="button">Refresh</button><ul id="cms-list" class="cms-list" aria-live="polite">Loading…</ul></section><section class="cms-editor"><h2 id="cms-form-title">Create opportunity</h2><form id="cms-form"><input type="hidden" name="id"><label>Title <input name="title" minlength="3" maxlength="180" required></label><label>Country <input name="country" maxlength="100"></label><label>Assigned broker <select name="assignedBrokerId"><option value="">Unassigned</option></select></label><label>Type <select name="opportunityType"><option value="casino-hotel">Casino & hotel</option><option value="casino">Casino</option><option value="hotel">Hotel</option><option value="resort">Resort</option><option value="gaming-venue">Gaming venue</option><option value="other">Other</option></select></label><label>Price text <input name="priceText" maxlength="180"></label><label>Summary <textarea name="summary" maxlength="1000"></textarea></label><label>Availability <input name="availability" maxlength="300"></label><label>SEO title <input name="seoTitle" maxlength="180"></label><label>SEO description <textarea name="seoDescription" maxlength="320"></textarea></label><label>Body HTML (staff-only editing; sanitisation review required) <textarea name="bodyHtml" maxlength="20000"></textarea></label><button type="submit">Save draft</button><button id="cms-new" type="button">New</button></form><div id="cms-review-actions" hidden><h3>Review & publication</h3><label>Reason <textarea id="cms-reason" minlength="3" maxlength="500"></textarea></label><button id="cms-approve" type="button">Approve content</button><button id="cms-reject" type="button">Reject content</button><label><input id="cms-publish" type="checkbox"> Make public after approval (only after authority, accuracy and rights checks)</label><button id="cms-publish-button" type="button">Publish approved record</button></div><p id="cms-notice" role="status" aria-live="polite"></p></section></div></main><script src="/static/js/dashboard-opportunities.js" defer></script></body></html>`,
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opportunity CMS · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Opportunity CMS</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a></nav><p class="muted">All legacy records start private. Approval and publication are separate actions.</p><div class="cms-layout"><section><label>Search <input id="cms-search" maxlength="100"></label> <label>Review <select id="cms-review"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="">All</option></select></label><button id="cms-refresh" type="button">Refresh</button><ul id="cms-list" class="cms-list" aria-live="polite">Loading…</ul></section><section class="cms-editor"><h2 id="cms-form-title">Create opportunity</h2><form id="cms-form"><input type="hidden" name="id"><label>Title <input name="title" minlength="3" maxlength="180" required></label><label>Country <input name="country" maxlength="100"></label><label>Assigned broker <select name="assignedBrokerId"><option value="">Unassigned</option></select></label><label>Classification <select name="classification"><option value="confidential">Confidential</option><option value="public">Public (requires review)</option><option value="off_market">Off market</option><option value="sold">Sold</option><option value="under_offer">Under offer</option><option value="on_hold">On hold</option></select></label><label>Labels, comma separated <input name="labels" maxlength="400" placeholder="Premium, Freehold, Resort"></label><label>Type <select name="opportunityType"><option value="casino-hotel">Casino & hotel</option><option value="casino">Casino</option><option value="hotel">Hotel</option><option value="resort">Resort</option><option value="gaming-venue">Gaming venue</option><option value="other">Other</option></select></label><label>Price text <input name="priceText" maxlength="180"></label><label>Summary <textarea name="summary" maxlength="1000"></textarea></label><label>Availability <input name="availability" maxlength="300"></label><label>SEO title <input name="seoTitle" maxlength="180"></label><label>SEO description <textarea name="seoDescription" maxlength="320"></textarea></label><label>Body HTML (staff-only editing; sanitisation review required) <textarea name="bodyHtml" maxlength="20000"></textarea></label><button type="submit">Save draft</button><button id="cms-new" type="button">New</button></form><div id="cms-review-actions" hidden><h3>Review & publication</h3><label>Reason <textarea id="cms-reason" minlength="3" maxlength="500"></textarea></label><button id="cms-approve" type="button">Approve content</button><button id="cms-reject" type="button">Reject content</button><label><input id="cms-publish" type="checkbox"> Make public after approval (only after authority, accuracy and rights checks)</label><button id="cms-publish-button" type="button">Publish approved record</button></div><div id="cms-media-panel" hidden><h3>Listing images</h3><p class="muted">JPG or PNG up to 8 MiB. Images stay private until the listing is approved, published and classified public.</p><form id="cms-media-form"><label>Cover image <input type="file" name="file" accept="image/jpeg,image/png" required></label><label>Alternative text <input name="altText" maxlength="240" required></label><button type="submit">Upload image</button></form><ul id="cms-media-list"></ul></div><p id="cms-notice" role="status" aria-live="polite"></p></section></div></main><script src="/static/js/dashboard-opportunities.js" defer></script></body></html>`,
     ),
 );
 
@@ -263,6 +265,8 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
     title: input.title,
     country: input.country,
     opportunityType: input.opportunityType,
+    classification: input.classification,
+    labels: input.labels,
     priceText: input.priceText,
     lifecycle: 'draft',
     contentReviewStatus: 'pending',
@@ -275,7 +279,7 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
     assignedBrokerId,
   };
   await c.env.DB.prepare(
-    "INSERT INTO opportunities (id, slug, title, country, opportunity_type, price_text, lifecycle, content_review_status, summary, body_html, availability, public_visibility, seo_title, seo_description, assigned_broker_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'draft', 'pending', ?, ?, ?, 0, ?, ?, ?, ?, ?)",
+    "INSERT INTO opportunities (id, slug, title, country, opportunity_type, classification, labels_json, price_text, lifecycle, content_review_status, summary, body_html, availability, public_visibility, seo_title, seo_description, assigned_broker_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'pending', ?, ?, ?, 0, ?, ?, ?, ?, ?)",
   )
     .bind(
       opportunityId,
@@ -283,6 +287,8 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
       input.title,
       input.country,
       input.opportunityType,
+      input.classification,
+      JSON.stringify(input.labels),
       input.priceText,
       input.summary,
       input.bodyHtml,
@@ -376,6 +382,8 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
     title: 'title',
     country: 'country',
     opportunityType: 'opportunity_type',
+    classification: 'classification',
+    labels: 'labels_json',
     priceText: 'price_text',
     summary: 'summary',
     bodyHtml: 'body_html',
@@ -385,7 +393,7 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
     assignedBrokerId: 'assigned_broker_id',
   };
   const sets = Object.entries(input).map(([key]) => `${mapping[key]} = ?`);
-  const values = Object.entries(input).map(([, value]) => value);
+  const values = Object.entries(input).map(([key, value]) => key === 'labels' ? JSON.stringify(value) : value);
   if (input.title && input.title !== existing.title) {
     let slug = slugify(input.title);
     const found = await c.env.DB.prepare(
@@ -458,6 +466,7 @@ admin.post('/opportunities/:id/publication', requireRole(...publisherRoles), asy
     publicVisibility &&
     (lifecycle !== 'published' ||
       existing.content_review_status !== 'approved' ||
+      existing.classification !== 'public' ||
       !existing.last_verified_at)
   )
     return c.json(
@@ -465,7 +474,7 @@ admin.post('/opportunities/:id/publication', requireRole(...publisherRoles), asy
         error: {
           code: 'PUBLICATION_BLOCKED',
           message:
-            'Public visibility requires approved content, published lifecycle and a verification timestamp.',
+            'Public visibility requires public classification, approved content, published lifecycle and a verification timestamp.',
         },
       },
       409,
@@ -691,16 +700,28 @@ admin.post(
 );
 
 admin.get('/buyers/ui', requireRole('admin', 'super_admin'), async (c) =>
-  c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buyer access · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Buyer access provisioning</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a></nav><p class="muted">Provision only verified business contacts. Active buyers can request an email OTP; there is no public self-registration.</p><form id="buyer-provision" class="buyer-provision"><label>Full name <input name="displayName" minlength="2" maxlength="120" required></label><label>Business email <input name="email" type="email" maxlength="254" required></label><button type="submit">Provision buyer</button></form><p id="buyer-notice" role="status"></p><section><h2>Recent buyer accounts</h2><button id="buyer-refresh" type="button">Refresh</button><ul id="buyer-list"></ul></section></main><script src="/static/js/dashboard-buyers.js" defer></script></body></html>`,
-  ),
+  c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buyer access · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Buyer registrations</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/buyers/ui">Buyer access</a></nav><p class="muted">New registrations remain invited until an administrator approves them. Activating an account allows email-code sign-in but does not grant confidential data-room access.</p><p id="notice" role="status"></p><section id="buyers">Loading registrations…</section></main><script src="/static/js/dashboard-buyers.js" defer></script></body></html>`),
 );
 
 admin.get('/buyers', requireRole('admin', 'super_admin'), async (c) => {
   const result = await c.env.DB.prepare(
-    "SELECT id, email, display_name AS displayName, status, created_at AS createdAt FROM users WHERE user_type = 'buyer' ORDER BY created_at DESC LIMIT 100",
+    "SELECT u.id, u.email, u.display_name AS displayName, u.status, u.created_at AS createdAt, p.company_name AS companyName, p.role_title AS roleTitle FROM users u LEFT JOIN buyer_profiles p ON p.user_id = u.id WHERE u.user_type = 'buyer' ORDER BY CASE u.status WHEN 'invited' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, u.created_at DESC LIMIT 300",
   ).all();
   return c.json({ data: result.results ?? [] });
+});
+
+admin.patch('/buyers/:id', requireRole('admin', 'super_admin'), async (c) => {
+  const parsed = z.object({ status: z.enum(['active', 'invited', 'suspended']) }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Choose a valid buyer status.' } }, 422);
+  const user = await c.env.DB.prepare("SELECT id, status FROM users WHERE id = ? AND user_type = 'buyer'").bind(c.req.param('id')).first<{id:string;status:string}>();
+  if (!user) return c.json({ error: { code: 'NOT_FOUND', message: 'Buyer not found.' } }, 404);
+  const timestamp = now();
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE users SET status = ?, updated_at = ? WHERE id = ? AND user_type = 'buyer'").bind(parsed.data.status, timestamp, user.id),
+    c.env.DB.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND ? != 'active'").bind(timestamp, user.id, parsed.data.status),
+    c.env.DB.prepare("INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'buyer.status_changed', 'user', ?, ?, ?, ?)").bind(id(), c.get('staff').id, user.id, c.get('requestId'), JSON.stringify({ from: user.status, to: parsed.data.status }), timestamp),
+  ]);
+  return c.json({ data: { id: user.id, status: parsed.data.status } });
 });
 
 admin.post('/buyers/provision', requireRole('admin', 'super_admin'), async (c) => {
@@ -800,7 +821,7 @@ admin.post('/buyers/provision', requireRole('admin', 'super_admin'), async (c) =
 
 admin.get('/nda-templates/ui', requireRole('admin', 'super_admin'), async (c) =>
   c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NDA templates · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>NDA template versions</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/nda-templates/ui">NDA templates</a></nav><p class="muted">Template content is private in R2. Legal approval is required before activation. The seeded version is explicitly a draft and must not be treated as counsel-approved.</p><form id="nda-template-form" class="buyer-provision"><label>Template name <input name="name" value="Mayfair NDA Acknowledgement" minlength="3" maxlength="160" required></label><label>Template text <textarea name="content" minlength="100" maxlength="100000" required></textarea></label><label><input type="checkbox" name="activate"> Activate immediately (only if approved by counsel)</label><button type="submit">Create version</button></form><p id="nda-template-notice" role="status"></p><ul id="nda-template-list"></ul></main><script src="/static/js/dashboard-nda-templates.js" defer></script></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NDA templates · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>NDA template versions</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/nda-templates/ui">NDA templates</a></nav><p class="muted">Template content is private in R2. Legal approval is required before activation. The seeded version is explicitly a draft and must not be treated as counsel-approved.</p><form id="nda-template-form" class="buyer-provision"><label>Template name <input name="name" value="Mayfair NDA Acknowledgement" minlength="3" maxlength="160" required></label><label>Template text <textarea name="content" minlength="100" maxlength="100000" required></textarea></label><label><input type="checkbox" name="activate"> Activate immediately (only if approved by counsel)</label><button type="submit">Create version</button></form><p id="nda-template-notice" role="status"></p><ul id="nda-template-list"></ul></main><script src="/static/js/dashboard-nda-templates.js" defer></script></body></html>`,
   ),
 );
 
@@ -1219,6 +1240,148 @@ admin.post(
   },
 );
 
+admin.post(
+  '/opportunities/:id/media',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
+  async (c) => {
+    const opportunityId = c.req.param('id');
+    const opportunity = await c.env.DB.prepare(
+      'SELECT id, slug, country, public_visibility AS publicVisibility, assigned_broker_id AS assignedBrokerId FROM opportunities WHERE id = ?',
+    )
+      .bind(opportunityId)
+      .first<{ id: string; slug: string; country: string | null; publicVisibility: number; assignedBrokerId: string | null }>();
+    if (!opportunity || (c.get('staff').role === 'broker' && opportunity.assignedBrokerId !== c.get('staff').id))
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
+
+    const body = await c.req.parseBody();
+    const upload = body.file;
+    const altText = typeof body.altText === 'string' ? body.altText.trim() : '';
+    if (
+      !(upload instanceof File) ||
+      upload.size < 1 ||
+      upload.size > 8 * 1024 * 1024 ||
+      altText.length < 3 ||
+      altText.length > 240
+    )
+      return c.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Choose a JPG or PNG up to 8 MiB and provide descriptive alternative text.',
+          },
+        },
+        422,
+      );
+
+    const contentType = upload.type;
+    const bytes = new Uint8Array(await upload.arrayBuffer());
+    const jpeg =
+      contentType === 'image/jpeg' &&
+      bytes.length >= 3 &&
+      bytes[0] === 0xff &&
+      bytes[1] === 0xd8 &&
+      bytes[2] === 0xff;
+    const png =
+      contentType === 'image/png' &&
+      bytes.length >= 8 &&
+      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value);
+    if (!jpeg && !png)
+      return c.json(
+        { error: { code: 'INVALID_FILE_SIGNATURE', message: 'Image bytes do not match JPEG or PNG.' } },
+        415,
+      );
+
+    const hash = await crypto.subtle.digest('SHA-256', bytes);
+    const sha256 = [...new Uint8Array(hash)].map((value) => value.toString(16).padStart(2, '0')).join('');
+    const mediaId = id();
+    const key = `opportunities/${opportunityId}/media/${mediaId}.${jpeg ? 'jpg' : 'png'}`;
+    const timestamp = now();
+    await c.env.PRIVATE_FILES.put(key, bytes.buffer as ArrayBuffer, {
+      httpMetadata: { contentType, cacheControl: 'private, no-store' },
+      customMetadata: { sha256, mediaId },
+    });
+    const order = await c.env.DB.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM opportunity_media WHERE opportunity_id = ?',
+    )
+      .bind(opportunityId)
+      .first<{ next: number }>();
+    try {
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "UPDATE opportunities SET content_review_status = 'pending', public_visibility = 0, updated_at = ? WHERE id = ? AND public_visibility = 1",
+        ).bind(timestamp, opportunityId),
+        c.env.DB.prepare(
+          "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', 'opportunity.media_change_requires_review', 'opportunity', ?, ?, '{}', ? WHERE changes() > 0",
+        ).bind(id(), c.get('staff').id, opportunityId, c.get('requestId'), timestamp),
+        c.env.DB.prepare(
+          'INSERT INTO opportunity_media (id, opportunity_id, r2_key, alt_text, sort_order, created_at, content_type, byte_size, sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ).bind(mediaId, opportunityId, key, altText, order?.next ?? 0, timestamp, contentType, upload.size, sha256),
+        c.env.DB.prepare(
+          "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'opportunity.media_uploaded', 'opportunity_media', ?, ?, ?, ?)",
+        ).bind(
+          id(),
+          c.get('staff').id,
+          mediaId,
+          c.get('requestId'),
+          JSON.stringify({ opportunityId, byteSize: upload.size, contentType, sha256 }),
+          timestamp,
+        ),
+      ]);
+    } catch (error) {
+      await c.env.PRIVATE_FILES.delete(key);
+      throw error;
+    }
+    const cachePurge = await purgeOpportunityPublicCache(c.env, opportunity.slug, opportunity.country);
+    return c.json(
+      { data: { id: mediaId, opportunityId, altText, sortOrder: order?.next ?? 0, contentType, byteSize: upload.size, sha256, cachePurge } },
+      201,
+    );
+  },
+);
+
+admin.get(
+  '/opportunities/:id/media',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
+  async (c) => {
+    const result = await c.env.DB.prepare(
+      "SELECT m.id, m.alt_text AS altText, m.sort_order AS sortOrder, m.content_type AS contentType, m.byte_size AS byteSize, m.sha256 FROM opportunity_media m JOIN opportunities o ON o.id = m.opportunity_id WHERE m.opportunity_id = ? AND (? = 0 OR o.assigned_broker_id = ?) ORDER BY m.sort_order, m.created_at",
+    )
+      .bind(c.req.param('id'), c.get('staff').role === 'broker' ? 1 : 0, c.get('staff').id)
+      .all();
+    return c.json({ data: result.results ?? [] });
+  },
+);
+
+admin.delete(
+  '/opportunities/:id/media/:mediaId',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
+  async (c) => {
+    const media = await c.env.DB.prepare(
+      'SELECT m.id, m.r2_key AS r2Key, o.slug, o.country, o.assigned_broker_id AS assignedBrokerId FROM opportunity_media m JOIN opportunities o ON o.id = m.opportunity_id WHERE m.id = ? AND m.opportunity_id = ?',
+    )
+      .bind(c.req.param('mediaId'), c.req.param('id'))
+      .first<{ id: string; r2Key: string; slug: string; country: string | null; assignedBrokerId: string | null }>();
+    if (!media || (c.get('staff').role === 'broker' && media.assignedBrokerId !== c.get('staff').id))
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Listing image not found.' } }, 404);
+    const timestamp = now();
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        "UPDATE opportunities SET content_review_status = 'pending', public_visibility = 0, updated_at = ? WHERE id = ? AND public_visibility = 1",
+      ).bind(timestamp, c.req.param('id')),
+      c.env.DB.prepare(
+        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', 'opportunity.media_change_requires_review', 'opportunity', ?, ?, '{}', ? WHERE changes() > 0",
+      ).bind(id(), c.get('staff').id, c.req.param('id'), c.get('requestId'), timestamp),
+      c.env.DB.prepare('DELETE FROM opportunity_media WHERE id = ?').bind(media.id),
+      c.env.DB.prepare(
+        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'opportunity.media_deleted', 'opportunity_media', ?, ?, '{}', ?)",
+      ).bind(id(), c.get('staff').id, media.id, c.get('requestId'), timestamp),
+    ]);
+    await c.env.PRIVATE_FILES.delete(media.r2Key);
+    const cachePurge = await purgeOpportunityPublicCache(c.env, media.slug, media.country);
+    return c.json({ data: { deleted: true, cachePurge } });
+  },
+);
+
 admin.post('/documents/:id/scan', requireRole('admin', 'super_admin'), async (c) => {
   const document = await c.env.DB.prepare(
     'SELECT id, opportunity_id AS opportunityId, r2_key AS r2Key, content_type AS contentType, sha256, scan_status AS scanStatus FROM documents WHERE id = ?',
@@ -1612,6 +1775,14 @@ admin.patch(
     return c.json({ data: { id: current.id, updatedAt: timestamp } });
   },
 );
+
+
+admin.get('/access-grants/ui', requireRole('admin', 'publisher', 'super_admin'), async (c) => c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Data-room access · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Data-room access grants</h1><p class="muted">Access is time-limited, independent from account status and revocable. Every revocation requires a reason and is audited.</p><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/buyers/ui">Buyer access</a></nav><p id="notice" role="status"></p><section id="grants">Loading access grants…</section></main><script src="/static/js/dashboard-access-grants.js" defer></script></body></html>`));
+
+admin.get('/access-grants', requireRole('admin', 'publisher', 'auditor', 'super_admin'), async (c) => {
+  const result = await c.env.DB.prepare("SELECT g.id, g.tier, g.granted_at AS grantedAt, g.expires_at AS expiresAt, g.revoked_at AS revokedAt, u.email AS buyerEmail, u.display_name AS buyerName, o.title AS opportunityTitle FROM access_grants g JOIN users u ON u.id = g.user_id JOIN opportunities o ON o.id = g.opportunity_id ORDER BY CASE WHEN g.revoked_at IS NULL AND g.expires_at > ? THEN 0 ELSE 1 END, g.granted_at DESC LIMIT 300").bind(now()).all();
+  return c.json({ data: result.results ?? [] });
+});
 
 admin.post(
   '/access-grants/:id/revoke',

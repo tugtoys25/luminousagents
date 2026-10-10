@@ -9,6 +9,7 @@ import publicPages from './web/pages/public';
 import adminRoutes from './admin/routes';
 import enquiryRoutes from './enquiries/routes';
 import buyerRoutes from './buyers/routes';
+import portalRoutes from './auth/portal-routes';
 import { consumeNotifications, recoverNotificationJobs } from './operations/queue';
 
 const app = new Hono<{ Bindings: Env; Variables: { requestId: string } }>();
@@ -17,12 +18,14 @@ app.use('*', requestIdMiddleware);
 app.use('*', securityHeadersMiddleware);
 app.use('*', publicCacheMiddleware);
 app.use('/api/buyer/*', sameOriginMutationMiddleware);
+app.use('/api/admin/*', sameOriginMutationMiddleware);
 app.use('/dashboard/*', sameOriginMutationMiddleware);
 
 app.get('/healthz', (c) => {
   return c.json({ status: 'ok', service: 'mayfair-platform' }, 200);
 });
 
+app.route('/', portalRoutes);
 app.route('/', publicPages);
 app.route('/', enquiryRoutes);
 app.route('/', buyerRoutes);
