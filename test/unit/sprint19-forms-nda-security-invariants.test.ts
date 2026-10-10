@@ -54,4 +54,13 @@ describe('Sprint 19 forms, enquiries and NDA invariants', () => {
     expect(managed).toContain('form-rate:');
     expect(managed).toContain("code: 'RATE_LIMITED'");
   });
+
+  it('lets staff override built-in public pages through published managed pages', () => {
+    const pub = read('src/web/pages/public.tsx');
+    const pages = read('src/web/static-pages.ts');
+    expect(pub).toContain('staticPageSlug(path)');
+    expect(pub).toMatch(/status = 'published'/);
+    expect(pages).toContain("'/legal/privacy'");
+    expect(routes).toContain("'/pages/defaults'");
+  });
 });

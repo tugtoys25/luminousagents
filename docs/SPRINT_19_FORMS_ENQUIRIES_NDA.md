@@ -29,3 +29,14 @@ Base: Sprint 18 final plus the `$` replacement fix in `src/index.ts`.
 ## Not run here
 
 Typecheck, lint, vitest and the D1 migration were not run (no registry access in the build environment). Run `pnpm format && pnpm check`, apply migration 0017 on staging, then test: submit a contact enquiry and a managed form, triage both, request and approve an NDA as a buyer, check the buyer email, let a grant expire (or revoke it) and request again.
+
+## Editable built-in pages (added)
+
+- Privacy, terms, cookies, AML/KYC, sanctions, anti-bribery, complaints, disclaimer, modern slavery, About, Services and FAQ were hard-coded. They now appear in Dashboard → Pages under "Built-in site pages".
+- "Customise" pre-fills the default text. Set Status to Published and save: the managed page (slug = path with `/` replaced by `-`, e.g. `legal-privacy`) replaces the default at the original URL (`/legal/privacy`). Archive or unpublish it to fall back to the default text.
+- Body text: blank line = new paragraph; HTML is escaped. Public caching is about 60 seconds.
+- Default copy lives in `src/web/static-pages.ts`. Legal wording needs counsel approval before launch.
+
+## Staging setup for the contact form
+
+Public enquiries need `IP_HASH_SECRET`, `TURNSTILE_SECRET_KEY` and `TURNSTILE_SITE_KEY` on staging and production, otherwise `/api/enquiries` returns 503 SERVICE_NOT_CONFIGURED.
