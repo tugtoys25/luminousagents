@@ -55,9 +55,13 @@ for (const file of [
 ])
   absent(
     file,
-    `${file} references Cloudflare Access or OTP login`,
-    /Cf-Access-Jwt-Assertion|ACCESS_AUD|request-code|verify-code|buyer_login_codes/,
+    `${file} references Cloudflare Access JWT enforcement`,
+    /Cf-Access-Jwt-Assertion|ACCESS_AUD/,
   );
+
+match('src/auth/portal-routes.ts', 'buyer email-code request endpoint', /\/api\/buyer\/auth\/request-code/);
+match('src/auth/portal-routes.ts', 'buyer email-code verification endpoint', /\/api\/buyer\/auth\/verify-code/);
+match('migrations/0022_sprint25_security_baseline.sql', 'one-time code challenges stored with expiry', /buyer_email_codes[\s\S]*expires_at/);
 
 if (failures.length) {
   console.error(`Sprint 16 auth gate: ${failures.length} failure(s)`);

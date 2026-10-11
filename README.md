@@ -86,7 +86,7 @@ See [`docs/SPRINT_3.md`](docs/SPRINT_3.md) for the public enquiry form, CRM API,
 
 ## Sprint 4 — Buyer access and private data room
 
-See [`docs/SPRINT_4.md`](docs/SPRINT_4.md) for buyer password/session APIs (Sprint 16 replaced email OTP with email + password), NDA request/review, access grants, and private R2 document access. Sprint 5 added notification delivery source code; live provider setup, `OTP_ENCRYPTION_KEY`, buyer provisioning, malware scanning, NDA review UI, and a full browser-facing buyer portal remain launch blockers.
+See [`docs/SPRINT_4.md`](docs/SPRINT_4.md) for buyer password/session APIs, NDA request/review, access grants, and private R2 document access. Sprint 25 retains custom email/password authentication and adds email one-time-code login as an alternative for buyers; Cloudflare Access is not required. Sprint 5 added notification delivery source code; live provider setup, `OTP_ENCRYPTION_KEY`, buyer provisioning, malware scanning, NDA review UI, and a full browser-facing buyer portal remain launch blockers.
 
 ## Sprint 5 — operational delivery and staff follow-ups
 
@@ -132,7 +132,7 @@ Sprint 16 verification note: all 16 SQL migrations were applied in order to in-m
 
 ## Authentication (Sprint 16: unified email + password)
 
-All sign-in is a form with **email + password**; Cloudflare Access and emailed one-time codes are gone.
+Staff use custom **email + password** authentication without Cloudflare Access. Buyers can sign in with a password or request an emailed one-time code. Buyers who register without a password can set one later or continue using codes.
 
 | Flow                 | Buyer                                                | Staff                                                        |
 | -------------------- | ---------------------------------------------------- | ------------------------------------------------------------ |
@@ -145,3 +145,53 @@ All sign-in is a form with **email + password**; Cloudflare Access and emailed o
 Passwords are hashed with PBKDF2-SHA256 (100,000 iterations, the Workers maximum) and a per-user salt; minimum length 12 with letters and numbers. Five wrong passwords lock the account for 15 minutes; sign-in, reset and registration are also rate limited per IP and email. Reset links are single-use, expire after 60 minutes (invites after 3 days), and a successful reset or password change signs out all other sessions. Responses never reveal whether an email is registered. Apply `migrations/0016_auth_hardening.sql` (builds on 0014 and 0015) before deploying. Hashes from Sprint 14/15 with a different iteration count are accepted and silently upgraded at the next successful login.
 
 **Existing buyers have no password yet; existing staff may not either.** Buyers and staff can use _Forgot password_ (needs `RESEND_API_KEY`, `EMAIL_FROM` and `OTP_ENCRYPTION_KEY`). Password-less staff can also use `/admin/setup` with their email and `ADMIN_BOOTSTRAP_TOKEN`. Otherwise generate a hash with `node scripts/hash-password.mjs` and set it with the SQL in `scripts/provision-staff.sql.example`. See `docs/SPRINT_14.md`.
+
+## Sprint 25 — security baseline
+
+Sprint 25 adds an explicit `price_visibility` policy (confidential by default), public-tier serialization that redacts prices unless explicitly approved public, buyer email-code login, password-optional buyer registration, and configurable safe media URL slugs. Images remain public by default and can be changed to private; public media responses use `no-store` so visibility changes are not held in a shared cache. See [`docs/SPRINT_25_SECURITY_BASELINE.md`](docs/SPRINT_25_SECURITY_BASELINE.md).
+
+## Sprint 24 — shared media library
+
+The staff workspace now includes a searchable Media library at `/dashboard/media/ui`. It supports image and document uploads, metadata/folder editing, visibility controls, copying public URLs, downloading private files, and removal. The shared media picker is automatically added to dashboard fields that represent image URLs (logos, favicons, OG/featured images, covers, backgrounds, avatars, thumbnails and hero media) and document URLs (PDFs, attachments, policy/terms links). Existing opportunity-specific listing media and confidential data-room files remain separate.
+
+Apply `migrations/0021_media_library.sql` before deploying Sprint 24. JPEG, PNG, WebP and GIF images are public by default so staff can immediately use them on public pages; PDF, DOCX and XLSX documents default to private. Only administrators can publish images and only super administrators can publish documents. Review rights and confidentiality before making an asset public. See [`docs/SPRINT_24_MEDIA_LIBRARY.md`](docs/SPRINT_24_MEDIA_LIBRARY.md) for the deployment and staging checklist.
+
+
+## Sprint 26 — opportunity integrity and recovery
+
+Sprint 26 adds a version-history panel and safe restore-as-draft workflow, reasoned bulk content review (up to 50 records per request), administrator-only CSV export, and a controlled CSV import that updates existing IDs only (up to 100 rows per batch). CSV cells are quoted and formula-like values are prefixed to reduce spreadsheet formula injection risk. Restores never reinstate publication: restored records become private drafts and require fresh review.
+
+Apply migration `0023_sprint26_opportunity_integrity.sql` after Sprint 25 migration `0022_sprint25_security_baseline.sql`. See `docs/SPRINT_26_OPPORTUNITY_INTEGRITY.md` for endpoints, safeguards, and validation limitations.
+
+## Sprint 27 — audit operations
+
+Sprint 27 adds a dedicated, read-only audit log page at `/dashboard/audit/ui`, with server-side search, action/entity/date filters, bounded pagination, private caching headers and safe metadata rendering. The JSON endpoint remains at `/dashboard/audit`. Apply `migrations/0024_sprint27_audit_operations.sql` after migration 0023. See [`docs/SPRINT_27_AUDIT_OPERATIONS.md`](docs/SPRINT_27_AUDIT_OPERATIONS.md).
+
+
+## Sprint 29 — staff session controls
+
+Sprint 29 adds a super-administrator-only staff session inventory at `/dashboard/sessions/ui`. Authorized operators can inspect active staff sessions and revoke a selected session; the current session is protected from self-revocation. Session tokens and cookie values are never exposed, revocations are recorded in the audit log, and the endpoints use private/no-store caching. Apply `migrations/0025_sprint29_staff_session_controls.sql` after migration 0024. See [`docs/SPRINT_29_STAFF_SESSION_CONTROLS.md`](docs/SPRINT_29_STAFF_SESSION_CONTROLS.md).
+
+## Sprint 30 — Buyer session controls
+
+Super administrators can review active buyer sessions and revoke an individual session from `/dashboard/buyer-sessions/ui`. Revocation is audited and does not suspend the account or change data-room grants. See `docs/SPRINT_30_BUYER_SESSION_CONTROLS.md`. Full dependency-backed tests and staging validation remain required before release.
+
+
+## Sprint 31 cumulative completion hardening
+
+The Sprint 30 cumulative source has additional implementation for buyer profile/requirements, review queue and verification dates, safe media reference handling, public media hash verification, public directory sorting, tier-3 access controls, signed NDA PDF upload/scanning, and a private data-room document management UI. See `SPRINT_31_HANDOFF.txt`, `docs/SPRINT_30_RELEASE_RUNBOOK.md`, and run `pnpm preflight:sprint31`. These source changes are not a production certification; follow the full staging, external-provider and restore gates before deployment.
+
+## Sprint 32 — completion hardening (staging candidate, not certified production)
+
+Additive on the Sprint 23-30 candidate: no deletions, no new migration, dependencies and lockfile unchanged.
+
+- Redaction: all money amounts are withheld from public text for confidential-price listings (`src/domain/opportunities/redaction.ts`).
+- Lifecycle state machine enforced on publication; `GET /dashboard/opportunities/lifecycle-transitions`.
+- Reconciliation: `GET /dashboard/opportunities/reconciliation` and `pnpm audit:reconcile`.
+- Fixed: buyer email-code request threw on every call (`generic()`); static tests now run in Node and are excluded from `tsc`.
+- Generated role matrix: `docs/ROLE_ROUTE_MATRIX.md` (`pnpm docs:role-matrix`).
+- Audits you can run with Node 22.18+ and no install: `pnpm audit:leaks`, `pnpm audit:reconcile`, `pnpm preflight:sprint32`.
+- `e2e/` Playwright suite for staging (separate package), `docs/MONITORING_AND_ALERTS.md`, R2 document backup workflow.
+
+Read `docs/SPRINT_32_COMPLETION.md` for what was verified and, more importantly, what was not. `pnpm check` has not been run on this source.
+

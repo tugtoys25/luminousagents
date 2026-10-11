@@ -1,0 +1,24 @@
+SPRINT 25 — SECURITY AND RELEASE BASELINE
+Base: Sprint 24 archive. Owner decisions: custom email/password remains; no Cloudflare Access; buyers may use email one-time codes; code-only buyers may set a password later or continue using codes; images public by default with an authorized private toggle and configurable URL slug.
+
+Implemented in source:
+- migrations/0022_sprint25_security_baseline.sql
+- Explicit price_visibility (default confidential) and public-tier price redaction across public listing serialization.
+- Buyer email-code request/verify endpoints, single-use expiry, attempt caps, rate limits, session creation and audit events.
+- Buyer registration accepts no password; code-only buyers can later set one.
+- Media library custom URL slugs; images stay public by default; documents private by default; visibility changes audited; /media responses are no-store.
+- Sprint 25 invariant tests and revised static auth gate.
+
+Validation completed:
+- All migrations 0001–0022 applied in order to in-memory SQLite; 198 opportunity rows retained; new price_visibility defaults to 0 for all 198.
+- TypeScript parser syntax check passed for modified TS/TSX files.
+- Node syntax checks passed for modified browser JavaScript.
+- Sprint 7, 10 and 13 static gates passed.
+
+Blocked / not claimed complete:
+- `pnpm check` and Vitest could not run: dependencies are absent and registry access failed.
+- Sprint 8 and final release gates remain blocked by placeholder D1/KV IDs in wrangler.jsonc.
+- Live Cloudflare staging deployment, actual secrets, Resend delivery, email-code end-to-end tests, malware scanner verification and browser tests remain outstanding.
+- No production migration or deployment was performed.
+
+Before staging: install dependencies with `pnpm install --frozen-lockfile`; run `pnpm check`; configure and verify real account-specific Cloudflare resources; set `OTP_ENCRYPTION_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, Turnstile and scanner secrets; then apply migration 0022 to staging only after checking the target account/database.

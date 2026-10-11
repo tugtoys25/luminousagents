@@ -1,0 +1,15 @@
+SPRINT 28 HANDOFF
+
+Base: Sprint 27 archive.
+Feature: filtered audit-log CSV export.
+Endpoint: GET /dashboard/audit/export.csv
+Allowed roles: admin, auditor, super_admin.
+Filters: search, action substring, entity type, from date, to date.
+Maximum: 5,000 events per download; larger result sets return HTTP 422.
+Security: validated date filters, CSV quoting and formula neutralization, private/no-store, nosniff, and an audit.exported event.
+
+Before deployment:
+1. Install the locked dependencies using pnpm 10.18.3.
+2. Run pnpm check and all existing preflight/release scripts.
+3. Test allowed/denied roles, filter parity, date boundaries, CSV quoting/formula injection, export limits, and audit events in staging.
+4. Configure real Cloudflare resource IDs and secrets, apply/verify migrations in staging, and complete deployment checks.

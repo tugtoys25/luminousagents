@@ -2,8 +2,16 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Env } from '../env';
-import { staffAuth, requireRole, type StaffIdentity } from '../auth/staff-session';
-import { hashPassword, issueResetToken, passwordPolicyError } from '../auth/password';
+import { staffAuth, requireRole, type StaffIdentity, STAFF_COOKIE } from '../auth/staff-session';
+import { checkLifecycleTransition, transitionMatrix } from '../domain/opportunities/lifecycle';
+import {
+  DUPLICATE_LEGACY_ID_SQL,
+  DUPLICATE_SLUG_SQL,
+  RECONCILIATION_CHECKS,
+  RECONCILIATION_GROUPINGS,
+  buildReconciliationSql,
+} from '../domain/opportunities/reconciliation';
+import { hashPassword, issueResetToken, passwordPolicyError, readCookie, sha256Hex } from '../auth/password';
 import { slugify } from '../domain/opportunities/slug';
 import { scanR2Document, ScannerError } from '../security/malware-scanner';
 import { STATIC_PAGES, staticPageSlug } from '../web/static-pages';
@@ -23,6 +31,7 @@ const opportunityInput = z.object({
     .default('confidential'),
   labels: z.array(z.string().trim().min(1).max(32)).max(12).default([]),
   priceText: z.string().trim().max(180).optional().default(''),
+  priceVisibility: z.boolean().optional().default(false),
   summary: z.string().trim().max(1000).optional().default(''),
   bodyHtml: z.string().max(20000).optional().default(''),
   availability: z.string().trim().max(300).optional().default(''),
@@ -51,6 +60,41 @@ const escapeHtml = (s: unknown) =>
     /[&<>"']/g,
     (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!,
   );
+
+function csvCell(value: unknown): string {
+  const text = value == null ? '' : typeof value === 'string' ? value : String(value);
+  // Prevent spreadsheet formula execution while preserving ordinary text.
+  const safe = /^[\s]*[=+@]/.test(text) || /^[\s]*-/.test(text) ? `'${text}` : text;
+  // Also neutralise a leading tab or carriage return.
+  const guarded = /^[=+\-@\t\r]/.test(safe) ? `'${safe}` : safe;
+  return `"${guarded.replace(/"/g, '""')}"`;
+}
+
+function parseCsvRows(source: string): string[][] | null {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (quoted) {
+      if (ch === '"' && source[i + 1] === '"') { cell += '"'; i += 1; }
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"' && cell.length === 0) quoted = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && source[i + 1] === '\n') i += 1;
+      row.push(cell); cell = '';
+      if (row.some((value) => value.trim() !== '')) rows.push(row);
+      row = [];
+    } else cell += ch;
+  }
+  if (quoted) return null;
+  row.push(cell);
+  if (row.some((value) => value.trim() !== '')) rows.push(row);
+  return rows;
+}
 
 const TEMP_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 /** 14 unambiguous characters from a CSPRNG (rejection sampling, no modulo bias). */
@@ -180,6 +224,147 @@ async function audit(
     .run();
 }
 
+const mediaMimeExtensions = new Map<string, string>([
+  ['image/jpeg', '.jpg'], ['image/png', '.png'], ['image/webp', '.webp'], ['image/gif', '.gif'],
+  ['application/pdf', '.pdf'],
+  ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
+  ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'],
+]);
+function mediaSignatureMatches(type: string, b: Uint8Array): boolean {
+  const starts = (...v: number[]) => v.every((x, i) => b[i] === x);
+  if (type === 'image/jpeg') return starts(0xff, 0xd8, 0xff);
+  if (type === 'image/png') return starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+  if (type === 'image/gif') return new TextDecoder().decode(b.slice(0, 6)).match(/^GIF8[79]a$/) !== null;
+  if (type === 'image/webp') return b.length >= 12 && new TextDecoder().decode(b.slice(0, 4)) === 'RIFF' && new TextDecoder().decode(b.slice(8, 12)) === 'WEBP';
+  if (type === 'application/pdf') return new TextDecoder().decode(b.slice(0, 5)) === '%PDF-';
+  if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return starts(0x50, 0x4b, 0x03, 0x04) || starts(0x50, 0x4b, 0x05, 0x06) || starts(0x50, 0x4b, 0x07, 0x08);
+  return false;
+}
+
+admin.get('/media/ui', requireRole('admin', 'editor', 'publisher', 'super_admin'), (c) => c.html(
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Media library · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"><link rel="stylesheet" href="/static/css/dashboard-media.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Media library</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunities</a><a href="/dashboard/media/ui" aria-current="page">Media library</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Manage images and documents in one place. Public files are available to website pages; private files remain staff-only. Changing a file to public should only be done when you have rights to publish it and it contains no confidential information.</p><section class="ml-toolbar"><input id="ml-search" type="search" placeholder="Search filenames, captions or alt text" aria-label="Search media"><select id="ml-kind" aria-label="File type"><option value="all">All file types</option><option value="image">Images</option><option value="document">Documents</option></select><select id="ml-visibility" aria-label="Visibility"><option value="">All visibility</option><option value="public">Public</option><option value="private">Private</option></select><button id="ml-refresh" type="button">Refresh</button><label class="ml-upload">Upload files<input id="ml-upload" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label></section><p id="ml-notice" role="status" aria-live="polite"></p><section id="ml-grid" class="ml-grid" aria-live="polite"><p>Loading media…</p></section><dialog id="ml-edit" class="ml-edit"><form id="ml-edit-form" method="dialog"><h2>Edit media details</h2><input type="hidden" name="id"><label>Filename<input name="filename" maxlength="180" required></label><label>Alternative text (images)<input name="altText" maxlength="240"></label><label>Caption / notes<textarea name="caption" maxlength="500"></textarea></label><label>Folder<input name="folder" maxlength="80" pattern="[a-zA-Z0-9 _-]+" required></label><label>Custom public URL slug (optional)<input name="publicSlug" maxlength="100" pattern="[a-zA-Z0-9-]+" placeholder="e.g. london-casino-exterior"></label><label>Visibility<select name="visibility"><option value="private">Private — staff only</option><option value="public">Public — website accessible</option></select></label><p class="muted">Public URLs can be embedded in public pages. Do not publish confidential deal-room documents.</p><div class="ml-actions"><button type="button" id="ml-edit-cancel">Cancel</button><button type="submit">Save changes</button></div></form></dialog></main><script src="/static/js/dashboard-media.js" defer></script></body></html>`
+));
+
+admin.get('/media', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
+  const q = (c.req.query('q') || '').trim().slice(0, 100).toLowerCase();
+  const kind = c.req.query('type') || 'all';
+  const visibility = c.req.query('visibility') || '';
+  const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') || 60)));
+  const clauses: string[] = [];
+  const args: (string | number)[] = [];
+  if (q) { clauses.push("(lower(filename) LIKE ? ESCAPE '\\' OR lower(alt_text) LIKE ? ESCAPE '\\' OR lower(caption) LIKE ? ESCAPE '\\')"); const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`; args.push(like, like, like); }
+  if (kind === 'image') clauses.push("content_type LIKE 'image/%'");
+  if (kind === 'document') clauses.push("content_type NOT LIKE 'image/%'");
+  if (visibility === 'public' || visibility === 'private') { clauses.push('visibility = ?'); args.push(visibility); }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const rows = await c.env.DB.prepare(`SELECT id, filename, content_type AS contentType, byte_size AS byteSize, alt_text AS altText, caption, folder, visibility, public_slug AS publicSlug, created_at AS createdAt FROM media_assets ${where} ORDER BY created_at DESC LIMIT ?`).bind(...args, limit).all();
+  return c.json({ data: (rows.results || []).map((row) => ({ ...row, url: (row as { visibility: string }).visibility === 'public' ? `/media/${encodeURIComponent(String((row as { publicSlug?: string | null }).publicSlug || (row as { id: string }).id))}` : null })) });
+});
+
+admin.post('/media/upload', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
+  const body = await c.req.parseBody({ all: true });
+  const files = (Array.isArray(body.file) ? body.file : [body.file]).filter((f): f is File => f instanceof File && f.size > 0);
+  if (!files.length) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Choose at least one file.' } }, 422);
+  if (files.length > 10) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Upload up to 10 files at a time.' } }, 422);
+  if (files.reduce((total, file) => total + file.size, 0) > 50 * 1024 * 1024) return c.json({ error: { code: 'REQUEST_TOO_LARGE', message: 'Keep the combined upload below 50 MiB.' } }, 413);
+  const uploaded: Record<string, unknown>[] = [];
+  for (const file of files) {
+    if (file.size > 25 * 1024 * 1024) return c.json({ error: { code: 'FILE_TOO_LARGE', message: `${file.name} exceeds 25 MiB.` } }, 413);
+    const type = file.type.toLowerCase();
+    const ext = mediaMimeExtensions.get(type);
+    if (!ext) return c.json({ error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: `${file.name}: allowed types are JPEG, PNG, WebP, GIF, PDF, DOCX and XLSX.` } }, 415);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!mediaSignatureMatches(type, bytes)) return c.json({ error: { code: 'INVALID_FILE_SIGNATURE', message: `${file.name}: file contents do not match the declared file type.` } }, 415);
+    const mediaId = id();
+    const timestamp = now();
+    // eslint-disable-next-line no-control-regex -- intentionally strips control characters from filenames
+    const safeName = file.name.replace(/[\\/\r\n\u0000-\u001f]/g, '_').slice(0, 180) || `file${ext}`;
+    const key = `media/${mediaId}${ext}`;
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const sha256 = [...new Uint8Array(digest)].map((v) => v.toString(16).padStart(2, '0')).join('');
+    // Images may be made public for site use; uploaded documents remain private until explicitly reviewed.
+    const visibility = type.startsWith('image/') ? 'public' : 'private';
+    await c.env.PRIVATE_FILES.put(key, bytes.buffer as ArrayBuffer, { httpMetadata: { contentType: type, cacheControl: 'private, no-store' }, customMetadata: { mediaId, sha256, originalName: safeName } });
+    try {
+      await c.env.DB.prepare('INSERT INTO media_assets (id, r2_key, filename, content_type, byte_size, sha256, folder, visibility, uploaded_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(mediaId, key, safeName, type, file.size, sha256, 'general', visibility, c.get('staff').id, timestamp, timestamp).run();
+      await audit(c, 'media.uploaded', 'media_asset', mediaId, { contentType: type, byteSize: file.size, sha256 });
+    } catch (error) { await c.env.PRIVATE_FILES.delete(key); throw error; }
+    uploaded.push({ id: mediaId, filename: safeName, contentType: type, byteSize: file.size, visibility, url: visibility === 'public' ? `/media/${encodeURIComponent(mediaId)}` : null, createdAt: timestamp });
+  }
+  return c.json({ data: uploaded }, 201);
+});
+
+admin.patch('/media/:id', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
+  const parsed = z.object({ filename: z.string().trim().min(1).max(180).optional(), altText: z.string().trim().max(240).optional(), caption: z.string().trim().max(500).optional(), folder: z.string().trim().min(1).max(80).regex(/^[a-zA-Z0-9 _-]+$/).optional(), publicSlug: z.string().trim().max(100).regex(/^[a-zA-Z0-9-]+$/).optional().or(z.literal('')), visibility: z.enum(['public', 'private']).optional() }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid media details.' } }, 422);
+  const existing = await c.env.DB.prepare('SELECT id, content_type AS contentType, visibility, public_slug AS publicSlug FROM media_assets WHERE id = ?').bind(c.req.param('id')).first<{ id: string; contentType: string; visibility: string; publicSlug: string | null }>();
+  if (!existing) return c.json({ error: { code: 'NOT_FOUND', message: 'Media item not found.' } }, 404);
+  const patch = parsed.data;
+  if (patch.publicSlug) {
+    const duplicateSlug = await c.env.DB.prepare('SELECT id FROM media_assets WHERE (public_slug = ? OR id = ?) AND id != ? LIMIT 1').bind(patch.publicSlug, patch.publicSlug, existing.id).first();
+    if (duplicateSlug) return c.json({ error: { code: 'SLUG_CONFLICT', message: 'That public URL slug is already in use.' } }, 409);
+  }
+  if (patch.publicSlug !== undefined && patch.publicSlug !== (existing.publicSlug ?? '') && existing.publicSlug) {
+    const oldPath = `/media/${existing.publicSlug}`;
+    const [settings, pages, forms, opportunities] = await Promise.all([
+      c.env.DB.prepare('SELECT setting_key AS name FROM platform_settings WHERE value_json LIKE ? LIMIT 20').bind(`%${oldPath}%`).all<{ name: string }>(),
+      c.env.DB.prepare("SELECT slug AS name FROM managed_pages WHERE body_markdown LIKE ? OR description LIKE ? OR seo_title LIKE ? OR seo_description LIKE ? LIMIT 20").bind(`%${oldPath}%`, `%${oldPath}%`, `%${oldPath}%`, `%${oldPath}%`).all<{ name: string }>(),
+      c.env.DB.prepare("SELECT slug AS name FROM managed_forms WHERE fields_json LIKE ? OR description LIKE ? LIMIT 20").bind(`%${oldPath}%`, `%${oldPath}%`).all<{ name: string }>(),
+      c.env.DB.prepare('SELECT slug AS name FROM opportunities WHERE body_html LIKE ? OR summary LIKE ? OR seo_title LIKE ? OR seo_description LIKE ? LIMIT 20').bind(`%${oldPath}%`, `%${oldPath}%`, `%${oldPath}%`, `%${oldPath}%`).all<{ name: string }>(),
+    ]);
+    const refs = [
+      ...(settings.results ?? []).map((row) => `setting:${row.name}`),
+      ...(pages.results ?? []).map((row) => `page:${row.name}`),
+      ...(forms.results ?? []).map((row) => `form:${row.name}`),
+      ...(opportunities.results ?? []).map((row) => `opportunity:${row.name}`),
+    ];
+    if (refs.length) return c.json({ error: { code: 'MEDIA_URL_IN_USE', message: 'This URL slug is referenced by managed content. Update those references before changing the slug.', references: refs.slice(0, 30) } }, 409);
+  }
+  if (patch.visibility === 'public' && existing.visibility !== 'public' && c.get('staff').role !== 'admin' && c.get('staff').role !== 'super_admin') return c.json({ error: { code: 'FORBIDDEN', message: 'Only administrators can publish media.' } }, 403);
+  if (patch.visibility === 'public' && existing.visibility !== 'public' && !existing.contentType.startsWith('image/') && c.get('staff').role !== 'super_admin') return c.json({ error: { code: 'FORBIDDEN', message: 'Only a super administrator can publish document files. Review confidentiality and rights first.' } }, 403);
+  const sets: string[] = []; const args: (string | number | null)[] = [];
+  for (const [key, column] of [['filename','filename'],['altText','alt_text'],['caption','caption'],['folder','folder'],['publicSlug','public_slug'],['visibility','visibility']] as const) { const value = patch[key]; if (value !== undefined) { sets.push(`${column} = ?`); args.push(value === '' ? null : value); } }
+  if (!sets.length) return c.json({ data: { id: existing.id } });
+  sets.push('updated_at = ?'); args.push(now(), existing.id);
+  await c.env.DB.prepare(`UPDATE media_assets SET ${sets.join(', ')} WHERE id = ?`).bind(...args).run();
+  await audit(c, patch.visibility && patch.visibility !== existing.visibility ? 'media.visibility_changed' : 'media.updated', 'media_asset', existing.id, { fields: Object.keys(patch), previousVisibility: existing.visibility, visibility: patch.visibility ?? existing.visibility, publicSlug: patch.publicSlug ?? existing.publicSlug });
+  return c.json({ data: { id: existing.id, ...patch, url: (patch.visibility || existing.visibility) === 'public' ? `/media/${encodeURIComponent((patch.publicSlug === undefined ? existing.publicSlug : patch.publicSlug) || existing.id)}` : null } });
+});
+
+admin.get('/media/:id/download', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
+  const asset = await c.env.DB.prepare('SELECT r2_key AS r2Key, filename, content_type AS contentType FROM media_assets WHERE id = ?').bind(c.req.param('id')).first<{ r2Key: string; filename: string; contentType: string }>();
+  if (!asset) return c.json({ error: { code: 'NOT_FOUND', message: 'Media item not found.' } }, 404);
+  const object = await c.env.PRIVATE_FILES.get(asset.r2Key);
+  if (!object) return c.json({ error: { code: 'NOT_FOUND', message: 'Stored file not found.' } }, 404);
+  const headers = new Headers(); headers.set('Content-Type', asset.contentType); headers.set('Content-Disposition', `attachment; filename="${asset.filename.replace(/["\\\r\n]/g, '_')}"`); headers.set('Cache-Control', 'private, no-store'); headers.set('X-Content-Type-Options', 'nosniff');
+  return new Response(object.body, { headers });
+});
+
+admin.delete('/media/:id', requireRole('admin', 'super_admin'), async (c) => {
+  const asset = await c.env.DB.prepare('SELECT id, r2_key AS r2Key, filename, public_slug AS publicSlug FROM media_assets WHERE id = ?').bind(c.req.param('id')).first<{ id: string; r2Key: string; filename: string; publicSlug: string | null }>();
+  if (!asset) return c.json({ error: { code: 'NOT_FOUND', message: 'Media item not found.' } }, 404);
+  const publicPaths = [`/media/${asset.id}`, ...(asset.publicSlug ? [`/media/${asset.publicSlug}`] : [])];
+  const references: { type: string; name: string }[] = [];
+  for (const path of publicPaths) {
+    const settings = await c.env.DB.prepare('SELECT setting_key AS name FROM platform_settings WHERE value_json LIKE ? LIMIT 20').bind(`%${path}%`).all<{ name: string }>();
+    for (const row of settings.results ?? []) references.push({ type: 'platform setting', name: row.name });
+    const pages = await c.env.DB.prepare("SELECT slug AS name FROM managed_pages WHERE (body_markdown LIKE ? OR description LIKE ? OR seo_title LIKE ? OR seo_description LIKE ?) LIMIT 20").bind(`%${path}%`, `%${path}%`, `%${path}%`, `%${path}%`).all<{ name: string }>();
+    for (const row of pages.results ?? []) references.push({ type: 'managed page', name: row.name });
+    const forms = await c.env.DB.prepare("SELECT slug AS name FROM managed_forms WHERE (fields_json LIKE ? OR description LIKE ?) LIMIT 20").bind(`%${path}%`, `%${path}%`).all<{ name: string }>();
+    for (const row of forms.results ?? []) references.push({ type: 'managed form', name: row.name });
+    const opportunities = await c.env.DB.prepare('SELECT slug AS name FROM opportunities WHERE body_html LIKE ? OR summary LIKE ? OR seo_title LIKE ? OR seo_description LIKE ? LIMIT 20').bind(`%${path}%`, `%${path}%`, `%${path}%`, `%${path}%`).all<{ name: string }>();
+    for (const row of opportunities.results ?? []) references.push({ type: 'opportunity', name: row.name });
+  }
+  const uniqueReferences = references.filter((reference, index, all) => all.findIndex((other) => other.type === reference.type && other.name === reference.name) === index);
+  if (uniqueReferences.length) {
+    return c.json({ error: { code: 'MEDIA_IN_USE', message: 'This media is referenced by managed content. Replace or unlink those references before deleting it.', references: uniqueReferences.slice(0, 30) } }, 409);
+  }
+  await c.env.DB.prepare('DELETE FROM media_assets WHERE id = ?').bind(asset.id).run();
+  await c.env.PRIVATE_FILES.delete(asset.r2Key);
+  await audit(c, 'media.deleted', 'media_asset', asset.id, { filename: asset.filename });
+  return c.json({ data: { id: asset.id, deleted: true } });
+});
+
 admin.get('/', async (c) => {
   const staff = c.get('staff');
   const brokerOnly = staff.role === 'broker' ? 1 : 0;
@@ -229,7 +414,7 @@ admin.get('/', async (c) => {
     })
     .join('');
   return c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff dashboard · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform dashboard</h1><p class="muted">Signed in as ${escape(staff.displayName || staff.email)} · ${escape(staff.role)}</p><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries/ui">Enquiries</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/nda-templates/ui">NDA templates</a><a href="/dashboard/audit">Audit log</a>${staff.role === 'super_admin' ? '<a href="/dashboard/staff/ui">Staff accounts</a>' : ''}<a href="/dashboard/settings/ui">Platform settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/change-password">Change password</a><a href="/">View public site</a><a href="/admin/logout">Sign out</a></nav><section class="metric-grid" aria-label="Key numbers"><a class="metric" href="/dashboard/opportunities/ui"><span class="muted">Total records</span><strong>${counts?.total ?? 0}</strong><small>Opportunities you can access</small></a><a class="metric" href="/dashboard/opportunities/ui" data-tone="${(counts?.pending ?? 0) > 0 ? 'warn' : 'ok'}"><span class="muted">Awaiting review</span><strong>${counts?.pending ?? 0}</strong><small>${(counts?.pending ?? 0) > 0 ? 'Content waiting for a decision' : 'Nothing waiting'}</small></a><a class="metric" href="/dashboard/opportunities/ui" data-tone="ok"><span class="muted">Published &amp; approved</span><strong>${counts?.published ?? 0}</strong><small>Visible on the public site</small></a></section><h2>Quick actions</h2><section class="quick-grid" aria-label="Quick actions"><a class="quick-card" href="/dashboard/opportunities/ui"><strong>Opportunity CMS</strong><span>Create, edit, review and publish listings.</span></a><a class="quick-card" href="/dashboard/nda-requests/ui"><strong>NDA requests</strong><span>Review requests and grant time-limited access.</span></a><a class="quick-card" href="/dashboard/buyers/ui"><strong>Buyer access</strong><span>Approve registrations and manage accounts.</span></a><a class="quick-card" href="/dashboard/tasks/ui"><strong>Tasks</strong><span>Assign and track operational follow-ups.</span></a><a class="quick-card" href="/dashboard/pages/ui"><strong>Pages</strong><span>Write and publish SEO-friendly content pages.</span></a><a class="quick-card" href="/dashboard/settings/ui"><strong>Platform settings</strong><span>Branding, contact channels and navigation.</span></a></section><div class="dash-cols"><section class="ws-card"><h2>Needs content review</h2>${pendingRows ? `<ul class="review-list">${pendingRows}</ul>` : '<p class="empty-state">No records awaiting review.</p>'}</section><section><h2>Recently updated opportunities</h2><div class="overflow-x-auto"><table><thead><tr><th>Title</th><th>Country</th><th>Lifecycle</th><th>Review</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No records yet.</td></tr>'}</tbody></table></div></section></div></main></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff dashboard · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform dashboard</h1><p class="muted">Signed in as ${escape(staff.displayName || staff.email)} · ${escape(staff.role)}</p><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/opportunities/review-queue/ui">Needs review</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries/ui">Enquiries</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/documents/ui">Data room documents</a><a href="/dashboard/nda-templates/ui">NDA templates</a><a href="/dashboard/audit/ui">Audit log</a>${staff.role === 'super_admin' ? '<a href="/dashboard/staff/ui">Staff accounts</a><a href="/dashboard/sessions/ui">Staff sessions</a><a href="/dashboard/buyer-sessions/ui">Buyer sessions</a>' : ''}<a href="/dashboard/settings/ui">Platform settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/change-password">Change password</a><a href="/">View public site</a><a href="/admin/logout">Sign out</a></nav><section class="metric-grid" aria-label="Key numbers"><a class="metric" href="/dashboard/opportunities/ui"><span class="muted">Total records</span><strong>${counts?.total ?? 0}</strong><small>Opportunities you can access</small></a><a class="metric" href="/dashboard/opportunities/ui" data-tone="${(counts?.pending ?? 0) > 0 ? 'warn' : 'ok'}"><span class="muted">Awaiting review</span><strong>${counts?.pending ?? 0}</strong><small>${(counts?.pending ?? 0) > 0 ? 'Content waiting for a decision' : 'Nothing waiting'}</small></a><a class="metric" href="/dashboard/opportunities/ui" data-tone="ok"><span class="muted">Published &amp; approved</span><strong>${counts?.published ?? 0}</strong><small>Visible on the public site</small></a></section><h2>Quick actions</h2><section class="quick-grid" aria-label="Quick actions"><a class="quick-card" href="/dashboard/opportunities/ui"><strong>Opportunity CMS</strong><span>Create, edit, review and publish listings.</span></a><a class="quick-card" href="/dashboard/nda-requests/ui"><strong>NDA requests</strong><span>Review requests and grant time-limited access.</span></a><a class="quick-card" href="/dashboard/buyers/ui"><strong>Buyer access</strong><span>Approve registrations and manage accounts.</span></a><a class="quick-card" href="/dashboard/tasks/ui"><strong>Tasks</strong><span>Assign and track operational follow-ups.</span></a><a class="quick-card" href="/dashboard/pages/ui"><strong>Pages</strong><span>Write and publish SEO-friendly content pages.</span></a><a class="quick-card" href="/dashboard/settings/ui"><strong>Platform settings</strong><span>Branding, contact channels and navigation.</span></a></section><div class="dash-cols"><section class="ws-card"><h2>Needs content review</h2>${pendingRows ? `<ul class="review-list">${pendingRows}</ul>` : '<p class="empty-state">No records awaiting review.</p>'}</section><section><h2>Recently updated opportunities</h2><div class="overflow-x-auto"><table><thead><tr><th>Title</th><th>Country</th><th>Lifecycle</th><th>Review</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No records yet.</td></tr>'}</tbody></table></div></section></div></main></body></html>`,
   );
 });
 
@@ -249,11 +434,50 @@ admin.get(
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) =>
     c.html(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opportunity CMS · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Opportunity CMS</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/admin/logout">Sign out</a></nav><p class="muted">All legacy records start private. Approval and publication are separate actions.</p><div class="cms-layout"><aside class="cms-list-panel" aria-label="Opportunities"><div class="cms-filters"><label class="span-all">Search <input id="cms-search" type="search" maxlength="100" placeholder="Title, country or label"></label><label>Review <select id="cms-review"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="">All</option></select></label><span></span><button id="cms-refresh" type="button">Refresh</button></div><ul id="cms-list" class="cms-list" aria-live="polite">Loading…</ul></aside><div class="cms-editor-col"><form id="cms-form" class="flow" data-flow data-serp-path="/opportunities/your-listing"><div class="flow-bar"><h2 id="cms-form-title">Create opportunity</h2><span class="flow-badges" id="cms-flow-badges"></span><span class="flow-state" aria-live="polite">All changes saved</span><button id="cms-new" type="button">New</button><button type="submit">Save draft</button></div><input type="hidden" name="id"><fieldset class="flow-card"><legend data-step="1">The opportunity</legend><div class="flow-grid"><label class="span-2">Title <input name="title" minlength="3" maxlength="180" required></label><label>Country <input name="country" maxlength="100"></label><label>Type <select name="opportunityType"><option value="casino-hotel">Casino &amp; hotel</option><option value="casino">Casino</option><option value="hotel">Hotel</option><option value="resort">Resort</option><option value="gaming-venue">Gaming venue</option><option value="other">Other</option></select></label><label>Classification <select name="classification"><option value="confidential">Confidential</option><option value="public">Public (requires review)</option><option value="off_market">Off market</option><option value="sold">Sold</option><option value="under_offer">Under offer</option><option value="on_hold">On hold</option></select></label><label>Assigned broker <select name="assignedBrokerId"><option value="">Unassigned</option></select></label><label>Price text <input name="priceText" maxlength="180"></label><label>Availability <input name="availability" maxlength="300"></label></div></fieldset><fieldset class="flow-card"><legend data-step="2">Summary and detail</legend><div class="flow-grid"><label class="span-2">Summary <textarea name="summary" maxlength="1000"></textarea></label><label class="span-2">Labels, comma separated <input name="labels" maxlength="400" placeholder="Premium, Freehold, Resort"></label><label class="span-2">Body HTML (staff-only editing; sanitisation review required) <textarea name="bodyHtml" maxlength="20000"></textarea></label></div></fieldset><fieldset class="flow-card"><legend data-step="3">Search appearance</legend><p class="muted">How this listing can appear in search results. Leave blank to use the title and summary.</p><div class="flow-grid"><label class="span-2">SEO title <input name="seoTitle" maxlength="180"></label><label class="span-2">SEO description <textarea name="seoDescription" maxlength="320"></textarea></label></div></fieldset></form><section id="cms-review-actions" class="ws-card" hidden><h3>Review &amp; publication</h3><p class="muted">Approval and publication are separate decisions. Both are audited and need a reason.</p><label>Reason <textarea id="cms-reason" minlength="3" maxlength="500"></textarea></label><div class="btn-row"><button id="cms-approve" type="button">Approve content</button><button id="cms-reject" type="button">Reject content</button></div><label><input id="cms-publish" type="checkbox"> Make public after approval (only after authority, accuracy and rights checks)</label><div class="btn-row"><button id="cms-publish-button" type="button">Publish approved record</button></div></section><section id="cms-media-panel" class="ws-card" hidden><h3>Listing images</h3><p class="muted">JPG or PNG up to 8 MiB. Images stay private until the listing is approved, published and classified public.</p><form id="cms-media-form" class="flow-grid"><label>Cover image <input type="file" name="file" accept="image/jpeg,image/png" required></label><label>Alternative text <input name="altText" maxlength="240" required></label><div class="span-2"><button type="submit">Upload image</button></div></form><ul id="cms-media-list" class="media-list"></ul></section><p id="cms-notice" role="status" aria-live="polite"></p></div></div></main><script src="/static/js/dashboard-opportunities.js" defer></script></body></html>`,
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opportunity CMS · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Opportunity CMS</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/admin/logout">Sign out</a></nav><p class="muted">All legacy records start private. Approval and publication are separate actions.</p><div class="cms-layout"><aside class="cms-list-panel" aria-label="Opportunities"><div class="cms-filters"><label class="span-all">Search <input id="cms-search" type="search" maxlength="100" placeholder="Title, country or label"></label><label>Review <select id="cms-review"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="">All</option></select></label><span></span><button id="cms-refresh" type="button">Refresh</button>${['admin','super_admin'].includes(c.get('staff').role) ? '<a class="button secondary" href="/dashboard/opportunities/export.csv">Export CSV</a><label class="cms-import">Import CSV<input id="cms-import-file" type="file" accept="text/csv,.csv"></label><button id="cms-import-button" type="button">Import updates</button>' : ''}<div class="cms-bulk">${['admin','publisher','super_admin'].includes(c.get('staff').role) ? '<label><input id="cms-select-all" type="checkbox"> Select visible</label><button id="cms-bulk-approve" type="button">Approve selected</button><button id="cms-bulk-reject" type="button">Reject selected</button>' : ''}</div></div><ul id="cms-list" class="cms-list" aria-live="polite">Loading…</ul></aside><div class="cms-editor-col"><form id="cms-form" class="flow" data-flow data-serp-path="/opportunities/your-listing"><div class="flow-bar"><h2 id="cms-form-title">Create opportunity</h2><span class="flow-badges" id="cms-flow-badges"></span><span class="flow-state" aria-live="polite">All changes saved</span><button id="cms-new" type="button">New</button><button type="submit">Save draft</button></div><input type="hidden" name="id"><fieldset class="flow-card"><legend data-step="1">The opportunity</legend><div class="flow-grid"><label class="span-2">Title <input name="title" minlength="3" maxlength="180" required></label><label>Country <input name="country" maxlength="100"></label><label>Type <select name="opportunityType"><option value="casino-hotel">Casino &amp; hotel</option><option value="casino">Casino</option><option value="hotel">Hotel</option><option value="resort">Resort</option><option value="gaming-venue">Gaming venue</option><option value="other">Other</option></select></label><label>Classification <select name="classification"><option value="confidential">Confidential</option><option value="public">Public (requires review)</option><option value="off_market">Off market</option><option value="sold">Sold</option><option value="under_offer">Under offer</option><option value="on_hold">On hold</option></select></label><label>Assigned broker <select name="assignedBrokerId"><option value="">Unassigned</option></select></label><label>Price text <input name="priceText" maxlength="180"></label><label class="consent-row"><input type="checkbox" name="priceVisibility"> Price may be shown publicly</label><label>Availability <input name="availability" maxlength="300"></label></div></fieldset><fieldset class="flow-card"><legend data-step="2">Summary and detail</legend><div class="flow-grid"><label class="span-2">Summary <textarea name="summary" maxlength="1000"></textarea></label><label class="span-2">Labels, comma separated <input name="labels" maxlength="400" placeholder="Premium, Freehold, Resort"></label><label class="span-2">Body HTML (staff-only editing; sanitisation review required) <textarea name="bodyHtml" maxlength="20000"></textarea></label></div></fieldset><fieldset class="flow-card"><legend data-step="3">Search appearance</legend><p class="muted">How this listing can appear in search results. Leave blank to use the title and summary.</p><div class="flow-grid"><label class="span-2">SEO title <input name="seoTitle" maxlength="180"></label><label class="span-2">SEO description <textarea name="seoDescription" maxlength="320"></textarea></label></div></fieldset></form><section id="cms-review-actions" class="ws-card" hidden><h3>Review &amp; publication</h3><p class="muted">Approval and publication are separate decisions. Both are audited and need a reason.</p><label>Reason <textarea id="cms-reason" minlength="3" maxlength="500"></textarea></label><div class="btn-row"><button id="cms-approve" type="button">Approve content</button><button id="cms-reject" type="button">Reject content</button><button id="cms-verify" type="button">Mark verified today</button></div><label><input id="cms-publish" type="checkbox"> Make public after approval (only after authority, accuracy and rights checks)</label><div class="btn-row"><button id="cms-publish-button" type="button">Publish approved record</button></div></section><section id="cms-media-panel" class="ws-card" hidden><h3>Listing images</h3><p class="muted">JPG or PNG up to 8 MiB. Images stay private until the listing is approved, published and classified public.</p><form id="cms-media-form" class="flow-grid"><label>Cover image <input type="file" name="file" accept="image/jpeg,image/png" required></label><label>Alternative text <input name="altText" maxlength="240" required></label><div class="span-2"><button type="submit">Upload image</button></div></form><ul id="cms-media-list" class="media-list"></ul></section><section id="cms-history-panel" class="ws-card" hidden><h3>Version history</h3><p class="muted">Restoring a version creates a new version and returns the listing to a private draft requiring review.</p><ul id="cms-history-list"></ul></section><p id="cms-notice" role="status" aria-live="polite"></p></div></div></main><script src="/static/js/dashboard-opportunities.js" defer></script></body></html>`,
     ),
 );
 
-admin.get('/opportunities', async (c) => {
+admin.get('/opportunities/review-queue/ui', requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'), (c) => c.html(
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Needs review · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Needs review</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/opportunities/review-queue/ui" aria-current="page">Needs review</a><a href="/dashboard/audit/ui">Audit log</a></nav><p class="muted">Review pending content, missing information and listings whose verification is older than 180 days. This queue never publishes a listing.</p><p id="review-queue-notice" role="status" aria-live="polite">Loading review queue…</p><div class="overflow-x-auto"><table><thead><tr><th>Opportunity</th><th>Country</th><th>Status</th><th>Reasons</th><th>Last verified</th><th>Action</th></tr></thead><tbody id="review-queue-rows"></tbody></table></div></main><script src="/static/js/dashboard-review-queue.js" defer></script></body></html>`
+));
+
+admin.get('/opportunities/review-queue', requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'), async (c) => {
+  const staff = c.get('staff');
+  const rows = await c.env.DB.prepare(
+    `SELECT id, title, country, price_text AS priceText, summary, lifecycle,
+      content_review_status AS reviewStatus, public_visibility AS publicVisibility,
+      classification, last_verified_at AS lastVerifiedAt, updated_at AS updatedAt,
+      assigned_broker_id AS assignedBrokerId
+     FROM opportunities
+     WHERE (? = 0 OR assigned_broker_id = ?)
+       AND (content_review_status = 'pending' OR country IS NULL OR trim(country) = ''
+         OR trim(summary) = '' OR last_verified_at IS NULL OR last_verified_at < ?
+         OR (trim(price_text) <> '' AND price_minor IS NULL AND currency IS NULL))
+     ORDER BY CASE WHEN content_review_status = 'pending' THEN 0 ELSE 1 END, updated_at ASC
+     LIMIT 250`,
+  ).bind(staff.role === 'broker' ? 1 : 0, staff.id, new Date(Date.now() - 180 * 86400000).toISOString()).all<{
+    id: string; title: string; country: string | null; priceText: string; summary: string;
+    lifecycle: string; reviewStatus: string; publicVisibility: number; classification: string;
+    lastVerifiedAt: string | null; updatedAt: string; assignedBrokerId: string | null;
+  }>();
+  const data = (rows.results ?? []).map((row) => {
+    const reasons: string[] = [];
+    if (row.reviewStatus === 'pending') reasons.push('content_review_pending');
+    if (!row.country?.trim()) reasons.push('country_missing');
+    if (!row.summary.trim()) reasons.push('summary_missing');
+    if (!row.lastVerifiedAt) reasons.push('never_verified');
+    else if (Date.parse(row.lastVerifiedAt) < Date.now() - 180 * 86400000) reasons.push('verification_stale');
+    if (row.priceText.trim() && !row.priceText.match(/\d/) ) reasons.push('price_needs_review');
+    if (row.lifecycle === 'published' && row.publicVisibility !== 1) reasons.push('published_but_private');
+    if (row.publicVisibility === 1 && (row.classification !== 'public' || row.reviewStatus !== 'approved')) reasons.push('publication_invariant_violation');
+    return { ...row, reasons };
+  });
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ data, limit: 250, truncated: data.length === 250 });
+});
+
+admin.get('/opportunities', requireRole('admin', 'editor', 'broker', 'publisher', 'auditor', 'super_admin'), async (c) => {
   const q = c.req.query('q')?.trim().slice(0, 100) ?? '';
   const status = c.req.query('review') ?? '';
   const validStatus = ['pending', 'approved', 'rejected'].includes(status) ? status : '';
@@ -281,6 +505,7 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
       422,
     );
   const input = parsed.data;
+  if (input.priceVisibility && !publisherRoles.includes(c.get('staff').role)) return c.json({ error: { code: 'FORBIDDEN', message: 'Only authorized publishers may mark a price as public.' } }, 403);
   const opportunityId = id();
   const timestamp = now();
   const assignedBrokerId =
@@ -333,6 +558,7 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
     classification: input.classification,
     labels: input.labels,
     priceText: input.priceText,
+    priceVisibility: input.priceVisibility,
     lifecycle: 'draft',
     contentReviewStatus: 'pending',
     summary: input.summary,
@@ -344,7 +570,7 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
     assignedBrokerId,
   };
   await c.env.DB.prepare(
-    "INSERT INTO opportunities (id, slug, title, country, opportunity_type, classification, labels_json, price_text, lifecycle, content_review_status, summary, body_html, availability, public_visibility, seo_title, seo_description, assigned_broker_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'pending', ?, ?, ?, 0, ?, ?, ?, ?, ?)",
+    "INSERT INTO opportunities (id, slug, title, country, opportunity_type, classification, labels_json, price_text, price_visibility, lifecycle, content_review_status, summary, body_html, availability, public_visibility, seo_title, seo_description, assigned_broker_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'pending', ?, ?, ?, 0, ?, ?, ?, ?, ?)",
   )
     .bind(
       opportunityId,
@@ -355,6 +581,7 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
       input.classification,
       JSON.stringify(input.labels),
       input.priceText,
+      input.priceVisibility ? 1 : 0,
       input.summary,
       input.bodyHtml,
       input.availability,
@@ -384,7 +611,233 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
   );
 });
 
-admin.get('/opportunities/:id', async (c) => {
+admin.get('/opportunities/export.csv', requireRole('admin', 'super_admin'), async (c) => {
+  const result = await c.env.DB.prepare(
+    `SELECT id, legacy_id, slug, title, country, opportunity_type, classification, labels_json,
+      price_text, price_visibility, lifecycle, content_review_status, legacy_status, summary,
+      body_html, availability, points_json, public_visibility, last_verified_at, published_at,
+      seo_title, seo_description, assigned_broker_id, created_at, updated_at
+     FROM opportunities ORDER BY updated_at DESC`,
+  ).all<Record<string, unknown>>();
+  const columns = [
+    'id','legacy_id','slug','title','country','opportunity_type','classification','labels_json',
+    'price_text','price_visibility','lifecycle','content_review_status','legacy_status','summary',
+    'body_html','availability','points_json','public_visibility','last_verified_at','published_at',
+    'seo_title','seo_description','assigned_broker_id','created_at','updated_at',
+  ];
+  const rows = [columns, ...(result.results ?? []).map((row) => columns.map((key) => row[key]))];
+  const csv = rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
+  await audit(c, 'opportunity.exported', 'opportunity', 'all', { count: result.results?.length ?? 0, format: 'csv' });
+  return new Response(csv, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="casinos-of-mayfair-opportunities-${new Date().toISOString().slice(0,10)}.csv"`,
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+});
+
+admin.post('/opportunities/bulk-review', requireRole(...publisherRoles), async (c) => {
+  const schema = z.object({
+    ids: z.array(z.string().trim().min(1).max(100)).min(1).max(50),
+    decision: z.enum(['approved', 'rejected']),
+    reason: z.string().trim().min(3).max(500),
+  });
+  const parsed = schema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Select 1–50 records and provide a review reason.' } }, 422);
+  const ids = [...new Set(parsed.data.ids)];
+  const timestamp = now();
+  const outcomes: Array<{ id: string; status: string }> = [];
+  for (const opportunityId of ids) {
+    const existing = await c.env.DB.prepare('SELECT id, slug, country FROM opportunities WHERE id = ?')
+      .bind(opportunityId).first<{ id: string; slug: string; country: string | null }>();
+    if (!existing) { outcomes.push({ id: opportunityId, status: 'not_found' }); continue; }
+    await c.env.DB.prepare(
+      "UPDATE opportunities SET content_review_status = ?, last_verified_at = CASE WHEN ? = 'approved' THEN ? ELSE last_verified_at END, public_visibility = 0, updated_at = ? WHERE id = ?",
+    ).bind(parsed.data.decision, parsed.data.decision, timestamp, timestamp, opportunityId).run();
+    const cachePurge = await purgeOpportunityPublicCache(c.env, existing.slug, existing.country);
+    await audit(c, `opportunity.review.${parsed.data.decision}`, 'opportunity', opportunityId, {
+      reason: parsed.data.reason, bulk: true, cachePurge,
+    });
+    outcomes.push({ id: opportunityId, status: parsed.data.decision });
+  }
+  return c.json({ data: { outcomes, processed: outcomes.filter((item) => item.status !== 'not_found').length } });
+});
+
+admin.post('/opportunities/import.csv', requireRole('admin', 'super_admin'), async (c) => {
+  const raw = await c.req.text();
+  if (raw.length > 1_000_000) return c.json({ error: { code: 'IMPORT_TOO_LARGE', message: 'CSV import is limited to 1 MB.' } }, 413);
+  const rows = parseCsvRows(raw);
+  if (!rows || rows.length < 2) return c.json({ error: { code: 'INVALID_CSV', message: 'Provide a valid CSV with a header and at least one data row.' } }, 422);
+  if (rows.length > 101) return c.json({ error: { code: 'IMPORT_TOO_MANY_ROWS', message: 'Import is limited to 100 opportunity rows per batch.' } }, 422);
+  const headers = (rows[0] ?? []).map((header) => header.trim().replace(/^\uFEFF/, ''));
+  if (new Set(headers).size !== headers.length || !headers.includes('id') || !headers.includes('title'))
+    return c.json({ error: { code: 'INVALID_CSV_HEADER', message: 'CSV headers must be unique and include id and title.' } }, 422);
+  const allowed = new Set(['id','legacy_id','slug','title','country','opportunity_type','classification','labels_json','price_text','price_visibility','lifecycle','content_review_status','legacy_status','summary','body_html','availability','points_json','public_visibility','last_verified_at','published_at','seo_title','seo_description','assigned_broker_id','created_at','updated_at']);
+  const unknownHeaders = headers.filter((header) => !allowed.has(header));
+  if (unknownHeaders.length) return c.json({ error: { code: 'INVALID_CSV_HEADER', message: `Unsupported columns: ${unknownHeaders.join(', ')}` } }, 422);
+  const staff = c.get('staff');
+  const staged: Array<{ existing: Record<string, unknown>; values: Record<string, unknown>; id: string; snapshot: Record<string, unknown>; version: number; updatedAt: string }> = [];
+  const seen = new Set<string>();
+  const allowedTypes = ['casino-hotel','casino','hotel','resort','gaming-venue','other'];
+  const allowedClasses = ['confidential','public','off_market','sold','under_offer','on_hold'];
+  for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+    const cells = rows[rowIndex];
+    if (!cells) continue;
+    if (cells.length !== headers.length) return c.json({ error: { code: 'INVALID_CSV_ROW', message: `Row ${rowIndex + 1} has ${cells.length} cells; expected ${headers.length}.` } }, 422);
+    const row = Object.fromEntries(headers.map((header, index) => [header, cells[index]])) as Record<string, string>;
+    const opportunityId = (row.id ?? '').trim();
+    if (!opportunityId || seen.has(opportunityId)) return c.json({ error: { code: 'INVALID_CSV_ID', message: `Row ${rowIndex + 1} has a blank or duplicate ID.` } }, 422);
+    seen.add(opportunityId);
+    const existing = await c.env.DB.prepare('SELECT * FROM opportunities WHERE id = ?').bind(opportunityId).first<Record<string, unknown>>();
+    if (!existing) return c.json({ error: { code: 'UNKNOWN_CSV_ID', message: `Row ${rowIndex + 1} references an unknown opportunity ID. Imports update existing records only.` } }, 422);
+    const title = (row.title ?? '').trim();
+    if (title.length < 3 || title.length > 180) return c.json({ error: { code: 'INVALID_CSV_TITLE', message: `Row ${rowIndex + 1} title must be 3–180 characters.` } }, 422);
+    const get = (key: string, fallback: unknown) => Object.prototype.hasOwnProperty.call(row, key) ? row[key] : fallback;
+    const type = String(get('opportunity_type', existing.opportunity_type));
+    const classification = String(get('classification', existing.classification));
+    if (!allowedTypes.includes(type) || !allowedClasses.includes(classification)) return c.json({ error: { code: 'INVALID_CSV_ENUM', message: `Row ${rowIndex + 1} has an unsupported opportunity type or classification.` } }, 422);
+    let labels: unknown = get('labels_json', existing.labels_json);
+    if (typeof labels === 'string') {
+      try { labels = JSON.parse(labels); } catch { return c.json({ error: { code: 'INVALID_CSV_LABELS', message: `Row ${rowIndex + 1} labels_json must be a JSON array.` } }, 422); }
+    }
+    if (!Array.isArray(labels) || labels.length > 12 || labels.some((label) => typeof label !== 'string' || !label.trim() || label.length > 32))
+      return c.json({ error: { code: 'INVALID_CSV_LABELS', message: `Row ${rowIndex + 1} labels_json must contain up to 12 non-empty strings of at most 32 characters.` } }, 422);
+    const priceVisibilityText = String(get('price_visibility', existing.price_visibility));
+    if (!['0','1'].includes(priceVisibilityText)) return c.json({ error: { code: 'INVALID_CSV_PRICE_VISIBILITY', message: `Row ${rowIndex + 1} price_visibility must be 0 or 1.` } }, 422);
+    const fields: Record<string, unknown> = {
+      title,
+      country: String(get('country', existing.country ?? '')).slice(0,100),
+      opportunity_type: type,
+      classification,
+      labels_json: JSON.stringify(labels),
+      price_text: String(get('price_text', existing.price_text ?? '')).slice(0,180),
+      price_visibility: Number(priceVisibilityText),
+      summary: String(get('summary', existing.summary ?? '')).slice(0,1000),
+      body_html: String(get('body_html', existing.body_html ?? '')).slice(0,20000),
+      availability: String(get('availability', existing.availability ?? '')).slice(0,300),
+      seo_title: String(get('seo_title', existing.seo_title ?? '')).slice(0,180),
+      seo_description: String(get('seo_description', existing.seo_description ?? '')).slice(0,320),
+    };
+    const nextVersion = await c.env.DB.prepare('SELECT COALESCE(MAX(version_number), 0) + 1 AS next FROM opportunity_versions WHERE opportunity_id = ?').bind(opportunityId).first<{ next: number }>();
+    const updatedAt = now();
+    const snapshot = { ...existing, ...fields, slug: fields.title === existing.title ? existing.slug : slugify(String(fields.title)), lifecycle: 'draft', content_review_status: 'pending', public_visibility: 0, updated_at: updatedAt };
+    // Never let imported title changes create duplicate slugs.
+    const slugCollision = await c.env.DB.prepare('SELECT id FROM opportunities WHERE slug = ? AND id != ?').bind(snapshot.slug, opportunityId).first();
+    if (slugCollision) snapshot.slug = `${slugify(String(fields.title))}-${opportunityId.slice(0,8)}`;
+    staged.push({ existing, values: fields, id: opportunityId, snapshot, version: nextVersion?.next ?? 1, updatedAt });
+  }
+  // Prevalidate the whole CSV before any writes, then use one D1 batch for atomic updates/version/audit records.
+  const statements = staged.flatMap((item) => {
+    const fields = item.values;
+    const columns = Object.keys(fields);
+    const update = c.env.DB.prepare(`UPDATE opportunities SET ${columns.map((column) => `${column} = ?`).join(', ')}, slug = ?, lifecycle = 'draft', content_review_status = 'pending', public_visibility = 0, updated_at = ? WHERE id = ?`)
+      .bind(...columns.map((column) => fields[column]), item.snapshot.slug, item.updatedAt, item.id);
+    const version = c.env.DB.prepare('INSERT INTO opportunity_versions (id, opportunity_id, version_number, snapshot_json, changed_by, change_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(id(), item.id, item.version, JSON.stringify(item.snapshot), staff.id, 'CSV import; returned to private draft for review', item.updatedAt);
+    const auditLog = c.env.DB.prepare('INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id(), staff.id, 'staff', 'opportunity.imported', 'opportunity', item.id, c.get('requestId'), JSON.stringify({ source: 'csv', reviewReset: true }), item.updatedAt);
+    return [update, version, auditLog];
+  });
+  await c.env.DB.batch(statements);
+  const purges = await Promise.all(staged.map((item) => purgeOpportunityPublicCache(c.env, String(item.existing.slug), typeof item.existing.country === 'string' ? item.existing.country : null)));
+  return c.json({ data: { imported: staged.length, resetToPrivateDraft: true, cachePurgesConfigured: purges.filter((item) => item.configured).length } });
+});
+
+admin.get('/opportunities/:id/versions', requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'), async (c) => {
+  const staff = c.get('staff');
+  const brokerOnly = staff.role === 'broker' ? 1 : 0;
+  const owned = await c.env.DB.prepare('SELECT id FROM opportunities WHERE id = ? AND (? = 0 OR assigned_broker_id = ?)')
+    .bind(c.req.param('id'), brokerOnly, staff.id).first();
+  if (!owned) return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
+  const result = await c.env.DB.prepare(
+    'SELECT id, version_number AS versionNumber, changed_by AS changedBy, change_reason AS changeReason, created_at AS createdAt FROM opportunity_versions WHERE opportunity_id = ? ORDER BY version_number DESC LIMIT 100',
+  ).bind(c.req.param('id')).all();
+  return c.json({ data: result.results ?? [] });
+});
+
+admin.post('/opportunities/:id/versions/:versionNumber/restore', requireRole(...editorRoles), async (c) => {
+  const versionNumber = Number(c.req.param('versionNumber'));
+  const restoreInput = z.object({ reason: z.string().trim().min(3).max(500) }).safeParse(await c.req.json().catch(() => null));
+  if (!restoreInput.success) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Provide a restore reason of at least 3 characters.' } }, 422);
+  if (!Number.isSafeInteger(versionNumber) || versionNumber < 1)
+    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid version number.' } }, 422);
+  const staff = c.get('staff');
+  const brokerOnly = staff.role === 'broker' ? 1 : 0;
+  const existing = await c.env.DB.prepare('SELECT * FROM opportunities WHERE id = ? AND (? = 0 OR assigned_broker_id = ?)')
+    .bind(c.req.param('id'), brokerOnly, staff.id).first<Record<string, unknown>>();
+  if (!existing) return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
+  const version = await c.env.DB.prepare(
+    'SELECT snapshot_json FROM opportunity_versions WHERE opportunity_id = ? AND version_number = ?',
+  ).bind(existing.id, versionNumber).first<{ snapshot_json: string }>();
+  if (!version) return c.json({ error: { code: 'NOT_FOUND', message: 'Version not found.' } }, 404);
+  let snapshot: Record<string, unknown>;
+  try { snapshot = JSON.parse(version.snapshot_json) as Record<string, unknown>; }
+  catch { return c.json({ error: { code: 'VERSION_CORRUPT', message: 'This version cannot be restored because its snapshot is invalid.' } }, 409); }
+  const editable = ['title','country','opportunity_type','classification','labels_json','price_text','price_visibility','summary','body_html','availability','seo_title','seo_description'];
+  if (typeof snapshot.title !== 'string' || typeof snapshot.slug !== 'string')
+    return c.json({ error: { code: 'VERSION_CORRUPT', message: 'This version is missing required opportunity fields.' } }, 409);
+  const values = editable.map((key) => snapshot[key] ?? (key === 'price_visibility' ? 0 : key === 'labels_json' ? '[]' : ''));
+  const timestamp = now();
+  const assignments = editable.map((key) => `${key} = ?`).join(', ');
+  // Restores content only; review and publication are deliberately reset to private/pending.
+  let restoredSlug = snapshot.slug;
+  const slugCollision = await c.env.DB.prepare('SELECT id FROM opportunities WHERE slug = ? AND id != ?').bind(restoredSlug, existing.id).first<{ id: string }>();
+  if (slugCollision) restoredSlug = `${slugify(String(snapshot.title))}-${String(existing.id).slice(0, 8)}`;
+  await c.env.DB.prepare(
+    `UPDATE opportunities SET ${assignments}, slug = ?, lifecycle = 'draft', content_review_status = 'pending', public_visibility = 0, updated_at = ? WHERE id = ?`,
+  ).bind(...values, restoredSlug, timestamp, existing.id).run();
+  const restored = await c.env.DB.prepare('SELECT * FROM opportunities WHERE id = ?').bind(existing.id).first<Record<string, unknown>>();
+  const next = await c.env.DB.prepare('SELECT COALESCE(MAX(version_number), 0) + 1 AS next FROM opportunity_versions WHERE opportunity_id = ?')
+    .bind(existing.id).first<{ next: number }>();
+  await c.env.DB.prepare(
+    'INSERT INTO opportunity_versions (id, opportunity_id, version_number, snapshot_json, changed_by, change_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).bind(id(), existing.id, next?.next ?? 1, JSON.stringify(restored), staff.id, `Restored version ${versionNumber}: ${restoreInput.data.reason}; returned to draft for review`, timestamp).run();
+  const cachePurge = await purgeOpportunityPublicCache(c.env, String(existing.slug), typeof existing.country === 'string' ? existing.country : null);
+  await audit(c, 'opportunity.version_restored', 'opportunity', String(existing.id), { restoredVersion: versionNumber, cachePurge });
+  return c.json({ data: { opportunity: restored, restoredVersion: versionNumber, reviewStatus: 'pending', publicVisibility: false } });
+});
+
+admin.get('/opportunities/reconciliation', requireRole('admin', 'auditor', 'super_admin'), async (c) => {
+  c.header('Cache-Control', 'private, no-store');
+  const counts = (await c.env.DB.prepare(buildReconciliationSql()).first<Record<string, number>>()) ?? {};
+  const groups: Record<string, Array<Record<string, unknown>>> = {};
+  for (const grouping of RECONCILIATION_GROUPINGS) {
+    const result = await c.env.DB.prepare(
+      `SELECT ${grouping.column} AS value, COUNT(*) AS count FROM opportunities GROUP BY ${grouping.column} ORDER BY count DESC`,
+    ).all<Record<string, unknown>>();
+    groups[grouping.key] = result.results ?? [];
+  }
+  const duplicateLegacy = await c.env.DB.prepare(DUPLICATE_LEGACY_ID_SQL).first<{ n: number }>();
+  const duplicateSlug = await c.env.DB.prepare(DUPLICATE_SLUG_SQL).first<{ n: number }>();
+  const checks = RECONCILIATION_CHECKS.map((check) => ({
+    key: check.key,
+    label: check.label,
+    severity: check.severity,
+    count: Number(counts[check.key] ?? 0),
+  }));
+  const blockers = checks.filter((check) => check.severity === 'blocker' && check.count > 0);
+  return c.json({
+    data: {
+      generatedAt: now(),
+      total: Number(counts.total ?? 0),
+      duplicateLegacyIds: Number(duplicateLegacy?.n ?? 0),
+      duplicateSlugs: Number(duplicateSlug?.n ?? 0),
+      checks,
+      groups,
+      publishable: blockers.length === 0 && Number(duplicateLegacy?.n ?? 0) === 0 && Number(duplicateSlug?.n ?? 0) === 0,
+      blockers: blockers.map((check) => check.key),
+    },
+  });
+});
+
+admin.get('/opportunities/lifecycle-transitions', requireRole(...editorRoles, 'publisher', 'auditor'), (c) => {
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ data: { role: c.get('staff').role, transitions: transitionMatrix(c.get('staff').role) } });
+});
+
+admin.get('/opportunities/:id', requireRole('admin', 'editor', 'broker', 'publisher', 'auditor', 'super_admin'), async (c) => {
   const staff = c.get('staff');
   const brokerOnly = staff.role === 'broker' ? 1 : 0;
   const row = await c.env.DB.prepare(
@@ -415,6 +868,7 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
   if (!existing)
     return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
   const input = parsed.data;
+  if (input.priceVisibility && !publisherRoles.includes(staff.role)) return c.json({ error: { code: 'FORBIDDEN', message: 'Only authorized publishers may mark a price as public.' } }, 403);
   const updatedAt = now();
   if (Object.prototype.hasOwnProperty.call(input, 'assignedBrokerId')) {
     const requested = input.assignedBrokerId ?? null;
@@ -450,6 +904,7 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
     classification: 'classification',
     labels: 'labels_json',
     priceText: 'price_text',
+    priceVisibility: 'price_visibility',
     summary: 'summary',
     bodyHtml: 'body_html',
     availability: 'availability',
@@ -459,7 +914,7 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
   };
   const sets = Object.entries(input).map(([key]) => `${mapping[key]} = ?`);
   const values = Object.entries(input).map(([key, value]) =>
-    key === 'labels' ? JSON.stringify(value) : value,
+    key === 'labels' ? JSON.stringify(value) : key === 'priceVisibility' ? (value ? 1 : 0) : value,
   );
   if (input.title && input.title !== existing.title) {
     let slug = slugify(input.title);
@@ -511,6 +966,18 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
   return c.json({ data: updated });
 });
 
+admin.post('/opportunities/:id/verify', requireRole(...publisherRoles), async (c) => {
+  const parsed = z.object({ reason: z.string().trim().min(3).max(500) }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Provide a verification note of at least 3 characters.' } }, 422);
+  const existing = await c.env.DB.prepare('SELECT id, title, assigned_broker_id AS assignedBrokerId FROM opportunities WHERE id = ?').bind(c.req.param('id')).first<{ id: string; title: string; assignedBrokerId: string | null }>();
+  if (!existing) return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
+  const timestamp = now();
+  await c.env.DB.prepare('UPDATE opportunities SET last_verified_at = ?, updated_at = ? WHERE id = ?').bind(timestamp, timestamp, existing.id).run();
+  await audit(c, 'opportunity.verified', 'opportunity', existing.id, { reason: parsed.data.reason, verifiedAt: timestamp });
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ data: { id: existing.id, lastVerifiedAt: timestamp } });
+});
+
 admin.post('/opportunities/:id/publication', requireRole(...publisherRoles), async (c) => {
   const parsed = publicationInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success)
@@ -529,6 +996,12 @@ admin.post('/opportunities/:id/publication', requireRole(...publisherRoles), asy
   if (!existing)
     return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
   const { lifecycle, publicVisibility, changeReason } = parsed.data;
+  const transition = checkLifecycleTransition(existing.lifecycle, lifecycle, c.get('staff').role);
+  if (!transition.ok)
+    return c.json(
+      { error: { code: transition.code, message: transition.message, allowed: transition.allowed } },
+      409,
+    );
   if (
     publicVisibility &&
     (lifecycle !== 'published' ||
@@ -565,6 +1038,7 @@ admin.post('/opportunities/:id/publication', requireRole(...publisherRoles), asy
     typeof existing.country === 'string' ? existing.country : null,
   );
   await audit(c, 'opportunity.publication_changed', 'opportunity', String(existing.id), {
+    fromLifecycle: existing.lifecycle,
     lifecycle,
     publicVisibility,
     changeReason,
@@ -1148,7 +1622,7 @@ admin.get(
   requireRole('admin', 'broker', 'publisher', 'super_admin'),
   async (c) => {
     return c.html(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NDA review · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>NDA request review</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/audit">Audit log</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Review requests and record a reason. Approval grants time-limited data-room access; it is not a legal opinion or an electronic signature.</p><label>Filter <select id="status-filter"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="revoked">Revoked</option><option value="">All statuses</option></select></label><p id="notice" role="status"></p><section id="requests" aria-live="polite">Loading requests…</section></main><script src="/static/js/dashboard-nda.js" defer></script></body></html>`,
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NDA review · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>NDA request review</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/audit/ui">Audit log</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Review requests and record a reason. Approval grants time-limited data-room access; it is not a legal opinion or an electronic signature.</p><label>Filter <select id="status-filter"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="revoked">Revoked</option><option value="">All statuses</option></select></label><p id="notice" role="status"></p><section id="requests" aria-live="polite">Loading requests…</section></main><script src="/static/js/dashboard-nda.js" defer></script></body></html>`,
     );
   },
 );
@@ -1162,13 +1636,25 @@ admin.get(
     const staff = c.get('staff');
     const brokerOnly = staff.role === 'broker' ? 1 : 0;
     const result = await c.env.DB.prepare(
-      "SELECT n.id, n.status, n.acceptance_name AS acceptanceName, n.accepted_at AS acceptedAt, n.review_reason AS reviewReason, n.created_at AS createdAt, u.email AS buyerEmail, u.display_name AS buyerName, o.title AS opportunityTitle FROM nda_requests n JOIN users u ON u.id = n.user_id JOIN opportunities o ON o.id = n.opportunity_id WHERE (? = '' OR n.status = ?) AND (? = 0 OR o.assigned_broker_id = ?) ORDER BY n.created_at DESC LIMIT 100",
+      "SELECT n.id, n.status, n.acceptance_name AS acceptanceName, n.accepted_at AS acceptedAt, n.review_reason AS reviewReason, CASE WHEN n.signed_pdf_r2_key IS NULL THEN 0 ELSE 1 END AS hasSignedPdf, n.created_at AS createdAt, u.email AS buyerEmail, u.display_name AS buyerName, o.title AS opportunityTitle FROM nda_requests n JOIN users u ON u.id = n.user_id JOIN opportunities o ON o.id = n.opportunity_id WHERE (? = '' OR n.status = ?) AND (? = 0 OR o.assigned_broker_id = ?) ORDER BY n.created_at DESC LIMIT 100",
     )
       .bind(valid, valid, brokerOnly, staff.id)
       .all();
     return c.json({ data: result.results ?? [] });
   },
 );
+
+admin.get('/nda-requests/:id/signed-pdf', requireRole('admin', 'publisher', 'super_admin'), async (c) => {
+  const request = await c.env.DB.prepare('SELECT id, signed_pdf_r2_key AS r2Key, signed_pdf_sha256 AS sha256 FROM nda_requests WHERE id = ? LIMIT 1').bind(c.req.param('id')).first<{ id: string; r2Key: string | null; sha256: string | null }>();
+  if (!request?.r2Key || !request.sha256) return c.json({ error: { code: 'NOT_FOUND', message: 'Signed NDA PDF not found.' } }, 404);
+  const object = await c.env.PRIVATE_FILES.get(request.r2Key);
+  if (!object || object.size > 10 * 1024 * 1024) return c.json({ error: { code: 'OBJECT_MISSING', message: 'Signed NDA PDF is unavailable.' } }, 404);
+  const bytes = await object.arrayBuffer();
+  const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (value) => value.toString(16).padStart(2, '0')).join('');
+  if (hash !== request.sha256) return c.json({ error: { code: 'INTEGRITY_FAILURE', message: 'Signed NDA PDF integrity check failed.' } }, 409);
+  await audit(c, 'nda.signed_pdf_downloaded', 'nda_request', request.id, { sha256: hash });
+  return new Response(bytes, { headers: { 'Content-Type': 'application/pdf', 'Content-Length': String(bytes.byteLength), 'Content-Disposition': `attachment; filename="signed-nda-${request.id}.pdf"`, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
+});
 
 admin.patch(
   '/nda-requests/:id/review',
@@ -1179,7 +1665,7 @@ admin.patch(
         decision: z.enum(['approved', 'rejected']),
         reason: z.string().trim().min(3).max(1000),
         accessDays: z.number().int().min(1).max(90).default(30),
-        tier: z.union([z.literal(1), z.literal(2)]).default(2),
+        tier: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(2),
       })
       .safeParse(await c.req.json().catch(() => null));
     if (!parsed.success)
@@ -1187,6 +1673,12 @@ admin.patch(
         { error: { code: 'VALIDATION_ERROR', message: 'Provide a decision and review reason.' } },
         422,
       );
+    if (parsed.data.tier === 3 && c.get('staff').role !== 'super_admin') {
+      return c.json({ error: { code: 'FORBIDDEN', message: 'Tier 3 access requires a super administrator.' } }, 403);
+    }
+    if (parsed.data.tier === 3 && parsed.data.reason.length < 20) {
+      return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Tier 3 approval requires a detailed justification of at least 20 characters.' } }, 422);
+    }
     const request = await c.env.DB.prepare(
       'SELECT id, user_id AS userId, opportunity_id AS opportunityId, status FROM nda_requests WHERE id = ?',
     )
@@ -1298,7 +1790,7 @@ admin.post(
       upload.size > 20 * 1024 * 1024 ||
       !filename ||
       filename.length > 180 ||
-      ![1, 2].includes(tier)
+      ![1, 2, 3].includes(tier)
     )
       return c.json(
         {
@@ -1309,6 +1801,7 @@ admin.post(
         },
         422,
       );
+    if (tier === 3 && c.get('staff').role !== 'super_admin') return c.json({ error: { code: 'FORBIDDEN', message: 'Only a super administrator may upload tier-3 documents.' } }, 403);
     const allowed = new Map([
       ['application/pdf', '.pdf'],
       ['image/jpeg', '.jpg'],
@@ -1598,6 +2091,25 @@ admin.delete(
   },
 );
 
+admin.get('/documents/ui', requireRole('admin', 'editor', 'publisher', 'super_admin'), (c) => c.html(
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Data room documents · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">CONFIDENTIAL STAFF WORKSPACE</p><h1>Data room documents</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/documents/ui" aria-current="page">Data room documents</a><a href="/dashboard/audit/ui">Audit log</a></nav><p class="muted">Documents are stored in private R2. They are never publicly served. Files remain unavailable to buyers until a trusted scanner verifies the exact stored bytes as clean.</p><form id="document-upload" class="flow"><label>Opportunity <select name="opportunityId" id="document-opportunity" required><option value="">Loading opportunities…</option></select></label><label>Document tier <select name="tier"><option value="1">Tier 1 — basic confidential</option><option value="2" selected>Tier 2 — confidential</option><option value="3">Tier 3 — highest confidentiality (super administrator only)</option></select></label><label>File (PDF, JPEG, PNG, DOCX or XLSX; max 20 MiB)<input type="file" name="file" accept="application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label><button type="submit">Upload private document</button><p id="document-upload-notice" role="status" aria-live="polite"></p></form><hr><label>Filter by opportunity <select id="document-filter"><option value="">All opportunities</option></select></label><p id="document-notice" role="status" aria-live="polite">Loading documents…</p><div class="overflow-x-auto"><table><thead><tr><th>Document</th><th>Opportunity</th><th>Tier</th><th>Scan</th><th>Created</th><th>Actions</th></tr></thead><tbody id="document-rows"></tbody></table></div></main><script src="/static/js/dashboard-documents.js" defer></script></body></html>`
+));
+
+admin.get('/documents', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
+  const opportunityId = (c.req.query('opportunityId') ?? '').trim().slice(0, 100);
+  const rows = await c.env.DB.prepare(
+    `SELECT d.id, d.opportunity_id AS opportunityId, d.filename, d.content_type AS contentType,
+      d.byte_size AS byteSize, d.tier, d.scan_status AS scanStatus, d.sha256,
+      d.scan_provider AS scanProvider, d.scanned_at AS scannedAt, d.created_at AS createdAt,
+      o.title AS opportunityTitle
+     FROM documents d JOIN opportunities o ON o.id = d.opportunity_id
+     WHERE (? = '' OR d.opportunity_id = ?)
+     ORDER BY d.created_at DESC LIMIT 200`,
+  ).bind(opportunityId, opportunityId).all();
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ data: rows.results ?? [], limit: 200 });
+});
+
 admin.post('/documents/:id/scan', requireRole('admin', 'super_admin'), async (c) => {
   const document = await c.env.DB.prepare(
     'SELECT id, opportunity_id AS opportunityId, r2_key AS r2Key, content_type AS contentType, sha256, scan_status AS scanStatus FROM documents WHERE id = ?',
@@ -1805,14 +2317,14 @@ admin.get(
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) => {
     return c.html(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff tasks · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Task management</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries/ui">Enquiries</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/audit">Audit log</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Create and assign operational follow-ups. Avoid putting sensitive buyer or deal information in task descriptions.</p><form id="task-create" class="task-form"><label>Task title<input name="title" minlength="3" maxlength="180" required></label><label>Priority<select name="priority"><option value="normal">Normal</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><label>Due date<input name="dueAt" type="datetime-local"></label><label>Assignee user ID (optional)<input name="assignedTo" placeholder="Staff user UUID"></label><label class="full-row">Description<textarea name="description" maxlength="4000"></textarea></label><button type="submit">Create task</button></form><p id="task-notice" class="notice" role="status"></p><section id="task-list" class="task-list" aria-live="polite"><p>Loading tasks…</p></section></main><script src="/static/js/dashboard-tasks.js" defer></script></body></html>`,
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff tasks · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Task management</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/enquiries/ui">Enquiries</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/notifications/ui">Notifications</a><a href="/dashboard/audit/ui">Audit log</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Create and assign operational follow-ups. Avoid putting sensitive buyer or deal information in task descriptions.</p><form id="task-create" class="task-form"><label>Task title<input name="title" minlength="3" maxlength="180" required></label><label>Priority<select name="priority"><option value="normal">Normal</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><label>Due date<input name="dueAt" type="datetime-local"></label><label>Assignee user ID (optional)<input name="assignedTo" placeholder="Staff user UUID"></label><label class="full-row">Description<textarea name="description" maxlength="4000"></textarea></label><button type="submit">Create task</button></form><p id="task-notice" class="notice" role="status"></p><section id="task-list" class="task-list" aria-live="polite"><p>Loading tasks…</p></section></main><script src="/static/js/dashboard-tasks.js" defer></script></body></html>`,
     );
   },
 );
 
 admin.get('/notifications/ui', requireRole('admin', 'auditor', 'super_admin'), async (c) => {
   return c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Notification operations · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Notification operations</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/jobs">Notification job API</a><a href="/dashboard/audit">Audit log</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Delivery status only. Payloads and one-time sign-in codes are never exposed here.</p><p id="notice" role="status"></p><section id="jobs">Loading notification jobs…</section></main><script src="/static/js/dashboard-notifications.js" defer></script></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Notification operations · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Notification operations</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/tasks/ui">Tasks</a><a href="/dashboard/notifications/jobs">Notification job API</a><a href="/dashboard/audit/ui">Audit log</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Delivery status only. Payloads and one-time sign-in codes are never exposed here.</p><p id="notice" role="status"></p><section id="jobs">Loading notification jobs…</section></main><script src="/static/js/dashboard-notifications.js" defer></script></body></html>`,
   );
 });
 
@@ -2093,11 +2605,92 @@ admin.post('/notifications/jobs/:id/retry', requireRole('admin', 'super_admin'),
   return c.json({ data: { id: job.id, status: 'queued' } });
 });
 
-admin.get('/audit', requireRole('admin', 'auditor', 'super_admin'), async (c) => {
+admin.get('/audit/ui', requireRole('admin', 'auditor', 'super_admin'), async (c) =>
+  c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Audit log · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">GOVERNANCE</p><h1>Audit log</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/staff/ui">Staff accounts</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Read-only record of administrative and platform events. Filters are applied server-side; details are metadata, not a substitute for reviewing the underlying record.</p><form id="audit-filters" class="flow-grid"><label>Search <input id="audit-search" type="search" maxlength="100" placeholder="Action, entity ID or actor email"></label><label>Action contains <input id="audit-action" type="text" maxlength="100" placeholder="opportunity.updated"></label><label>Entity type <input id="audit-entity" type="text" maxlength="60" placeholder="opportunity"></label><label>From date <input id="audit-from" type="date"></label><label>To date <input id="audit-to" type="date"></label><div class="btn-row"><button type="submit">Apply filters</button><button id="audit-reset" type="button" class="secondary">Reset</button><button id="audit-export" type="button" class="secondary">Export filtered CSV</button></div></form><p class="muted">CSV export is limited to 5,000 matching events per download. Narrow the filters if the result is larger.</p><p id="audit-status" role="status" aria-live="polite">Loading audit events…</p><div class="overflow-x-auto"><table><thead><tr><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead><tbody id="audit-rows"><tr><td colspan="5">Loading…</td></tr></tbody></table></div><div class="btn-row"><button id="audit-prev" type="button" disabled>Previous</button><span id="audit-page">Page 1</span><button id="audit-next" type="button" disabled>Next</button></div></main><script src="/static/js/dashboard-audit.js" defer></script></body></html>`),
+);
+
+admin.get('/audit/export.csv', requireRole('admin', 'auditor', 'super_admin'), async (c) => {
+  const query = c.req.query();
+  const search = (query.search ?? '').trim().slice(0, 100);
+  const action = (query.action ?? '').trim().slice(0, 100);
+  const entityType = (query.entityType ?? '').trim().slice(0, 60);
+  const from = query.from ?? '';
+  const to = query.to ?? '';
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  const validDate = (value: string) => {
+    if (!datePattern.test(value)) return false;
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  };
+  if ((from && !validDate(from)) || (to && !validDate(to)) || (from && to && from > to))
+    return c.json({ error: { code: 'INVALID_AUDIT_FILTER', message: 'Use valid dates and ensure the start date is not after the end date.' } }, 422);
+  const where: string[] = [];
+  const binds: string[] = [];
+  if (search) { where.push('(a.action LIKE ? OR a.entity_id LIKE ? OR u.email LIKE ?)'); const term = `%${search}%`; binds.push(term, term, term); }
+  if (action) { where.push('a.action LIKE ?'); binds.push(`%${action}%`); }
+  if (entityType) { where.push('a.entity_type = ?'); binds.push(entityType); }
+  if (from) { where.push('a.created_at >= ?'); binds.push(`${from}T00:00:00.000Z`); }
+  if (to) { where.push('a.created_at < ?'); const next = new Date(`${to}T00:00:00.000Z`); next.setUTCDate(next.getUTCDate() + 1); binds.push(next.toISOString()); }
+  const filterSql = where.length ? ` WHERE ${where.join(' AND ')}` : '';
   const result = await c.env.DB.prepare(
-    'SELECT a.id, a.action, a.entity_type AS entityType, a.entity_id AS entityId, a.details_json AS details, a.created_at AS createdAt, u.email AS actorEmail FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id ORDER BY a.created_at DESC LIMIT 200',
-  ).all();
-  return c.json({ data: result.results ?? [], limit: 200 });
+    `SELECT a.id, a.created_at AS createdAt, u.email AS actorEmail, a.actor_type AS actorType, a.action, a.entity_type AS entityType, a.entity_id AS entityId, a.request_id AS requestId, a.details_json AS details FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id${filterSql} ORDER BY a.created_at DESC, a.id DESC LIMIT 5001`,
+  ).bind(...binds).all<{ id: string; createdAt: string; actorEmail: string | null; actorType: string; action: string; entityType: string; entityId: string; requestId: string | null; details: string | null }>();
+  const rows = result.results ?? [];
+  if (rows.length > 5000)
+    return c.json({ error: { code: 'AUDIT_EXPORT_TOO_LARGE', message: 'More than 5,000 events match. Add filters and try again.' } }, 422);
+  const cell = (value: unknown) => {
+    let text = value == null ? '' : typeof value === 'string' ? value : String(value);
+    if (/^[\s]*[=+@-]/.test(text)) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+  const header = ['id', 'created_at_utc', 'actor_email', 'actor_type', 'action', 'entity_type', 'entity_id', 'request_id', 'details_json'];
+  const csv = [header, ...rows.map((row) => [row.id, row.createdAt, row.actorEmail, row.actorType, row.action, row.entityType, row.entityId, row.requestId, row.details])]
+    .map((row) => row.map(cell).join(',')).join('\r\n') + '\r\n';
+  await audit(c, 'audit.exported', 'audit_log', 'filtered', { count: rows.length, filters: { search: Boolean(search), action: Boolean(action), entityType: Boolean(entityType), from: from || null, to: to || null }, format: 'csv' });
+  c.header('Cache-Control', 'private, no-store');
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('Content-Type', 'text/csv; charset=utf-8');
+  c.header('Content-Disposition', `attachment; filename="casinos-of-mayfair-audit-${new Date().toISOString().slice(0, 10)}.csv"`);
+  return c.body(csv);
+});
+
+admin.get('/audit', requireRole('admin', 'auditor', 'super_admin'), async (c) => {
+  const query = c.req.query();
+  const pageRaw = Number(query.page ?? 1);
+  const limitRaw = Number(query.limit ?? 50);
+  const requestedPage = Number.isSafeInteger(pageRaw) ? Math.max(1, Math.min(10000, pageRaw)) : 1;
+  const limit = Number.isSafeInteger(limitRaw) ? Math.max(1, Math.min(100, limitRaw)) : 50;
+  const search = (query.search ?? '').trim().slice(0, 100);
+  const action = (query.action ?? '').trim().slice(0, 100);
+  const entityType = (query.entityType ?? '').trim().slice(0, 60);
+  const from = query.from ?? '';
+  const to = query.to ?? '';
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  const validDate = (value: string) => {
+    if (!datePattern.test(value)) return false;
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  };
+  if ((from && !validDate(from)) || (to && !validDate(to)) || (from && to && from > to))
+    return c.json({ error: { code: 'INVALID_AUDIT_FILTER', message: 'Use valid dates and ensure the start date is not after the end date.' } }, 422);
+  const where: string[] = [];
+  const binds: (string | number)[] = [];
+  if (search) { where.push('(a.action LIKE ? OR a.entity_id LIKE ? OR u.email LIKE ?)'); const term = `%${search}%`; binds.push(term, term, term); }
+  if (action) { where.push('a.action LIKE ?'); binds.push(`%${action}%`); }
+  if (entityType) { where.push('a.entity_type = ?'); binds.push(entityType); }
+  if (from) { where.push('a.created_at >= ?'); binds.push(`${from}T00:00:00.000Z`); }
+  if (to) { where.push('a.created_at < ?'); const next = new Date(`${to}T00:00:00.000Z`); next.setUTCDate(next.getUTCDate() + 1); binds.push(next.toISOString()); }
+  const filterSql = where.length ? ` WHERE ${where.join(' AND ')}` : '';
+  const count = await c.env.DB.prepare(`SELECT COUNT(*) AS total FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id${filterSql}`).bind(...binds).first<{ total: number }>();
+  const total = count?.total ?? 0;
+  const pages = Math.ceil(total / limit);
+  const page = Math.min(requestedPage, Math.max(1, pages));
+  const offset = (page - 1) * limit;
+  const result = await c.env.DB.prepare(
+    `SELECT a.id, a.action, a.entity_type AS entityType, a.entity_id AS entityId, a.details_json AS details, a.created_at AS createdAt, u.email AS actorEmail FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id${filterSql} ORDER BY a.created_at DESC, a.id DESC LIMIT ? OFFSET ?`,
+  ).bind(...binds, limit, offset).all();
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ data: result.results ?? [], page, limit, total, pages });
 });
 
 const platformSettingKeys = [
@@ -2279,7 +2872,7 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
     )
     .join('');
   return c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform settings</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform settings</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Platform settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/dashboard/audit">Audit log</a><a href="/admin/change-password">Change password</a><a href="/admin/logout">Sign out</a></nav><p class="setting-help">Edit branding, contact channels, GA4, typography, colours, navigation and structured homepage/geo sections. Values are stored in D1 and applied to public pages where supported. JSON fields must contain valid JSON; navigation and sections should be arrays of objects.</p><form id="settings-form" class="flow" data-flow><div class="flow-bar"><h2>Platform settings</h2><span class="flow-state" aria-live="polite">All changes saved</span><button type="submit">Save platform settings</button></div>${fields}<p id="settings-notice" role="status" aria-live="polite"></p></form><section class="ws-card"><h2>Custom content</h2><p><a href="/dashboard/pages/ui">Manage pages</a> · <a href="/dashboard/forms/ui">Manage custom forms</a></p></section></main><script src="/static/js/dashboard-settings.js" defer></script></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform settings</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform settings</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Platform settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/dashboard/audit/ui">Audit log</a><a href="/admin/change-password">Change password</a><a href="/admin/logout">Sign out</a></nav><p class="setting-help">Edit branding, contact channels, GA4, typography, colours, navigation and structured homepage/geo sections. Values are stored in D1 and applied to public pages where supported. JSON fields must contain valid JSON; navigation and sections should be arrays of objects.</p><form id="settings-form" class="flow" data-flow><div class="flow-bar"><h2>Platform settings</h2><span class="flow-state" aria-live="polite">All changes saved</span><button type="submit">Save platform settings</button></div>${fields}<p id="settings-notice" role="status" aria-live="polite"></p></form><section class="ws-card"><h2>Custom content</h2><p><a href="/dashboard/pages/ui">Manage pages</a> · <a href="/dashboard/forms/ui">Manage custom forms</a></p></section></main><script src="/static/js/dashboard-settings.js" defer></script></body></html>`,
   );
 });
 admin.get('/settings', requireRole('admin', 'super_admin', 'editor'), async (c) => {
@@ -2628,12 +3221,6 @@ function submissionFilters(c: {
   const like = `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
   return [safeStatus, safeStatus, form, form, q, like];
 }
-const csvCell = (value: unknown): string => {
-  let text = String(value ?? '');
-  // Neutralise spreadsheet formula injection from public input.
-  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return `"${text.replace(/"/g, '""')}"`;
-};
 admin.get(
   '/form-submissions',
   requireRole('admin', 'super_admin', 'editor', 'broker', 'auditor'),
@@ -2692,7 +3279,7 @@ admin.get('/form-submissions/export.csv', requireRole('admin', 'super_admin'), a
   await audit(c, 'managed_form.submissions_exported', 'managed_form_submission', 'export', {
     count: rows.length,
   });
-  return new Response(`﻿${lines.join('\r\n')}\r\n`, {
+  return new Response(`\uFEFF${lines.join('\r\n')}\r\n`, {
     headers: {
       'content-type': 'text/csv; charset=utf-8',
       'content-disposition': `attachment; filename="form-submissions-${now().slice(0, 10)}.csv"`,
@@ -2832,12 +3419,90 @@ admin.post('/forms', requireRole('admin', 'super_admin', 'editor'), async (c) =>
   return c.json({ data: { id: formId, slug: d.slug, status: d.status, url: `/forms/${d.slug}` } });
 });
 
+/* ---------------------------------------------------------------- staff session security (super administrators only) */
+admin.get('/sessions/ui', requireRole('super_admin'), async (c) =>
+  c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff sessions · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">SECURITY OPERATIONS</p><h1>Staff sessions</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/staff/ui">Staff accounts</a><a href="/dashboard/sessions/ui">Staff sessions</a><a href="/dashboard/buyer-sessions/ui">Buyer sessions</a><a href="/dashboard/audit/ui">Audit log</a><a href="/admin/change-password">Change password</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Review active staff sign-ins and revoke sessions that should no longer have access. Session tokens and cookie values are never displayed. Your current session cannot be revoked here.</p><p id="session-status" role="status" aria-live="polite">Loading sessions…</p><div class="overflow-x-auto"><table><thead><tr><th>Staff member</th><th>Role</th><th>Created (UTC)</th><th>Last activity (UTC)</th><th>Expires (UTC)</th><th>Status</th><th>Action</th></tr></thead><tbody id="session-rows"><tr><td colspan="7">Loading…</td></tr></tbody></table></div></main><script src="/static/js/dashboard-sessions.js" defer></script></body></html>`),
+);
+
+admin.get('/sessions', requireRole('super_admin'), async (c) => {
+  const token = readCookie(c.req.header('cookie'), STAFF_COOKIE);
+  const currentHash = token ? await sha256Hex(token) : '';
+  const result = await c.env.DB.prepare(
+    "SELECT s.id, s.user_id AS userId, s.created_at AS createdAt, s.last_seen_at AS lastSeenAt, s.expires_at AS expiresAt, u.email, u.display_name AS displayName, u.role, CASE WHEN s.token_hash = ? THEN 1 ELSE 0 END AS isCurrent FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.session_type = 'staff' AND s.revoked_at IS NULL AND s.expires_at > ? AND u.user_type = 'staff' AND u.status = 'active' ORDER BY s.last_seen_at DESC, s.id LIMIT 500",
+  ).bind(currentHash, now()).all();
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ data: (result.results ?? []).map((row) => ({
+    id: row['id'], userId: row['userId'], email: row['email'], displayName: row['displayName'], role: row['role'],
+    createdAt: row['createdAt'], lastSeenAt: row['lastSeenAt'], expiresAt: row['expiresAt'], isCurrent: row['isCurrent'] === 1,
+  })) });
+});
+
+admin.post('/sessions/:id/revoke', requireRole('super_admin'), async (c) => {
+  const sessionId = c.req.param('id');
+  if (!/^[0-9a-f-]{36}$/i.test(sessionId))
+    return c.json({ error: { code: 'INVALID_SESSION_ID', message: 'Invalid session ID.' } }, 422);
+  const token = readCookie(c.req.header('cookie'), STAFF_COOKIE);
+  const currentHash = token ? await sha256Hex(token) : '';
+  const session = await c.env.DB.prepare(
+    "SELECT s.id, s.user_id AS userId, s.token_hash AS tokenHash, u.email FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.session_type = 'staff' AND s.revoked_at IS NULL AND u.user_type = 'staff'",
+  ).bind(sessionId).first<{ id: string; userId: string; tokenHash: string; email: string }>();
+  if (!session)
+    return c.json({ error: { code: 'SESSION_NOT_FOUND', message: 'Active staff session not found.' } }, 404);
+  if (session.tokenHash === currentHash)
+    return c.json({ error: { code: 'CURRENT_SESSION_PROTECTED', message: 'Your current session cannot be revoked from this page. Sign out normally instead.' } }, 409);
+  const timestamp = now();
+  const changed = await c.env.DB.prepare(
+    "UPDATE sessions SET revoked_at = ? WHERE id = ? AND session_type = 'staff' AND revoked_at IS NULL",
+  ).bind(timestamp, session.id).run();
+  if ((changed.meta?.changes ?? 0) !== 1)
+    return c.json({ error: { code: 'SESSION_ALREADY_REVOKED', message: 'This session is no longer active.' } }, 409);
+  await audit(c, 'staff.session_revoked', 'session', session.id, { targetUserId: session.userId, targetEmail: session.email });
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ data: { id: session.id, revoked: true } });
+});
+
+/* ---------------------------------------------------------------- buyer session security (super administrators only) */
+admin.get('/buyer-sessions/ui', requireRole('super_admin'), async (c) =>
+  c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buyer sessions · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">SECURITY OPERATIONS</p><h1>Buyer sessions</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/sessions/ui">Staff sessions</a><a href="/dashboard/audit/ui">Audit log</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Review active buyer sign-ins and revoke sessions when a buyer reports a lost device or suspicious activity. This page never displays session tokens. Revocation ends the selected session; it does not suspend the buyer account or change data-room grants.</p><p id="buyer-session-status" role="status" aria-live="polite">Loading sessions…</p><div class="overflow-x-auto"><table><thead><tr><th>Buyer</th><th>Account status</th><th>Created (UTC)</th><th>Last activity (UTC)</th><th>Expires (UTC)</th><th>Action</th></tr></thead><tbody id="buyer-session-rows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div></main><script src="/static/js/dashboard-buyer-sessions.js" defer></script></body></html>`),
+);
+
+admin.get('/buyer-sessions', requireRole('super_admin'), async (c) => {
+  const result = await c.env.DB.prepare(
+    "SELECT s.id, s.user_id AS userId, s.created_at AS createdAt, s.last_seen_at AS lastSeenAt, s.expires_at AS expiresAt, u.email, u.display_name AS displayName, u.status AS accountStatus FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.session_type = 'buyer' AND s.revoked_at IS NULL AND s.expires_at > ? AND u.user_type = 'buyer' ORDER BY s.last_seen_at DESC, s.id LIMIT 500",
+  ).bind(now()).all();
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ data: (result.results ?? []).map((row) => ({
+    id: row['id'], userId: row['userId'], email: row['email'], displayName: row['displayName'],
+    accountStatus: row['accountStatus'], createdAt: row['createdAt'], lastSeenAt: row['lastSeenAt'], expiresAt: row['expiresAt'],
+  })) });
+});
+
+admin.post('/buyer-sessions/:id/revoke', requireRole('super_admin'), async (c) => {
+  const sessionId = c.req.param('id');
+  if (!/^[0-9a-f-]{36}$/i.test(sessionId))
+    return c.json({ error: { code: 'INVALID_SESSION_ID', message: 'Invalid session ID.' } }, 422);
+  const session = await c.env.DB.prepare(
+    "SELECT s.id, s.user_id AS userId, u.email FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.session_type = 'buyer' AND s.revoked_at IS NULL AND u.user_type = 'buyer'",
+  ).bind(sessionId).first<{ id: string; userId: string; email: string }>();
+  if (!session)
+    return c.json({ error: { code: 'SESSION_NOT_FOUND', message: 'Active buyer session not found.' } }, 404);
+  const timestamp = now();
+  const changed = await c.env.DB.prepare(
+    "UPDATE sessions SET revoked_at = ? WHERE id = ? AND session_type = 'buyer' AND revoked_at IS NULL",
+  ).bind(timestamp, session.id).run();
+  if ((changed.meta?.changes ?? 0) !== 1)
+    return c.json({ error: { code: 'SESSION_ALREADY_REVOKED', message: 'This session is no longer active.' } }, 409);
+  await audit(c, 'buyer.session_revoked', 'session', session.id, { targetUserId: session.userId, targetEmail: session.email });
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ data: { id: session.id, revoked: true } });
+});
+
 /* ---------------------------------------------------------------- staff accounts (super administrators only) */
 const staffRoles = ['super_admin', 'admin', 'editor', 'broker', 'publisher', 'auditor'] as const;
 
 admin.get('/staff/ui', requireRole('super_admin'), async (c) =>
   c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff accounts · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Staff accounts</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/audit">Audit log</a></nav><p class="muted">Only super administrators can create staff, edit names and emails, change roles, set temporary passwords or suspend access. A temporary password forces the person to choose a new one at first sign-in.</p><div class="dx-toolbar"><div class="dx-tabs" id="staff-tabs" role="tablist"><button type="button" class="dx-tab" role="tab" data-tab="all" aria-selected="false">All<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="active" aria-selected="false">Active<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="suspended" aria-selected="false">Suspended<span class="dx-count">0</span></button></div><input class="dx-search" id="staff-search" type="search" placeholder="Search" aria-label="Search"><span class="dx-spacer"></span><button type="button" class="dx-btn dx-btn-primary" id="staff-add">Add staff</button></div><div id="staff-list" class="dx-table-wrap">Loading…</div></main><script src="/static/js/dashboard-kit.js" defer></script><script src="/static/js/dashboard-staff.js" defer></script></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff accounts · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Staff accounts</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/sessions/ui">Staff sessions</a><a href="/dashboard/audit/ui">Audit log</a></nav><p class="muted">Only super administrators can create staff, edit names and emails, change roles, set temporary passwords or suspend access. A temporary password forces the person to choose a new one at first sign-in.</p><div class="dx-toolbar"><div class="dx-tabs" id="staff-tabs" role="tablist"><button type="button" class="dx-tab" role="tab" data-tab="all" aria-selected="false">All<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="active" aria-selected="false">Active<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="suspended" aria-selected="false">Suspended<span class="dx-count">0</span></button></div><input class="dx-search" id="staff-search" type="search" placeholder="Search" aria-label="Search"><span class="dx-spacer"></span><button type="button" class="dx-btn dx-btn-primary" id="staff-add">Add staff</button></div><div id="staff-list" class="dx-table-wrap">Loading…</div></main><script src="/static/js/dashboard-kit.js" defer></script><script src="/static/js/dashboard-staff.js" defer></script></body></html>`,
   ),
 );
 

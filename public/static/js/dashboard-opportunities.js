@@ -5,11 +5,14 @@ const reviewActions = document.querySelector('#cms-review-actions');
 const mediaPanel = document.querySelector('#cms-media-panel');
 const mediaList = document.querySelector('#cms-media-list');
 const mediaForm = document.querySelector('#cms-media-form');
+const historyPanel = document.querySelector('#cms-history-panel');
+const historyList = document.querySelector('#cms-history-list');
+const selectedBulkIds = new Set();
 let selected = null;
 const val = (name) => form.elements.namedItem(name)?.value ?? '';
 const set = (name, value) => {
   const el = form.elements.namedItem(name);
-  if (el) el.value = value ?? '';
+  if (el) { if (el.type === 'checkbox') el.checked = value === true || value === 1 || value === '1'; else el.value = value ?? ''; }
 };
 const say = (message) => {
   notice.textContent = message;
@@ -95,6 +98,15 @@ async function loadList() {
     list.replaceChildren();
     for (const item of data) {
       const li = document.createElement('li');
+      const select = document.createElement('input');
+      select.type = 'checkbox';
+      select.className = 'cms-row-select';
+      select.setAttribute('aria-label', `Select ${item.title}`);
+      select.checked = selectedBulkIds.has(item.id);
+      select.addEventListener('change', () => {
+        if (select.checked) selectedBulkIds.add(item.id);
+        else selectedBulkIds.delete(item.id);
+      });
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.id = item.id;
@@ -111,7 +123,7 @@ async function loadList() {
       );
       button.append(title, meta);
       button.addEventListener('click', () => loadItem(item.id));
-      li.append(button);
+      li.append(select, button);
       list.append(li);
     }
     if (!data.length) list.textContent = 'No matching opportunities.';
@@ -152,6 +164,82 @@ async function loadMedia(opportunityId) {
     mediaList.textContent = error.message;
   }
 }
+async function loadHistory(opportunityId) {
+  if (!historyPanel || !historyList) return;
+  historyPanel.hidden = false;
+  historyList.textContent = 'Loading version history…';
+  try {
+    const versions = await api(`/dashboard/opportunities/${encodeURIComponent(opportunityId)}/versions`);
+    historyList.replaceChildren();
+    for (const version of versions) {
+      const li = document.createElement('li');
+      const description = document.createElement('span');
+      description.textContent = `Version ${version.versionNumber} · ${version.createdAt} · ${version.changeReason || 'No reason recorded'}`;
+      li.append(description);
+      const restore = document.createElement('button');
+      restore.type = 'button';
+      restore.textContent = 'Restore as draft';
+      restore.addEventListener('click', async () => {
+        const reason = window.prompt(`Restore version ${version.versionNumber}? This returns the record to a private draft and requires fresh review. Enter a reason:`);
+        if (!reason || reason.trim().length < 3) return say('Restore cancelled; provide a reason of at least 3 characters.');
+        try {
+          await api(`/dashboard/opportunities/${encodeURIComponent(opportunityId)}/versions/${encodeURIComponent(version.versionNumber)}/restore`, { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) });
+          await loadItem(opportunityId);
+          await loadList();
+          say(`Version ${version.versionNumber} restored as a private draft.`);
+        } catch (error) { say(error.message); }
+      });
+      li.append(restore);
+      historyList.append(li);
+    }
+    if (!versions.length) historyList.textContent = 'No saved versions found.';
+  } catch (error) { historyList.textContent = error.message; }
+}
+async function bulkReview(decision) {
+  const ids = [...selectedBulkIds];
+  if (!ids.length) return say('Select at least one opportunity first.');
+  if (ids.length > 50) return say('Bulk review is limited to 50 opportunities at a time.');
+  const reason = window.prompt(`Reason for ${decision} ${ids.length} selected opportunities:`);
+  if (!reason || reason.trim().length < 3) return say('Bulk review cancelled; provide a reason of at least 3 characters.');
+  try {
+    const result = await api('/dashboard/opportunities/bulk-review', { method: 'POST', body: JSON.stringify({ ids, decision, reason: reason.trim() }) });
+    selectedBulkIds.clear();
+    document.querySelector('#cms-select-all').checked = false;
+    await loadList();
+    say(`Bulk review complete: ${result.processed} processed; ${result.outcomes.filter((item) => item.status === 'not_found').length} not found. All remain private.`);
+  } catch (error) { say(error.message); }
+}
+document.querySelector('#cms-import-button')?.addEventListener('click', async () => {
+  const input = document.querySelector('#cms-import-file');
+  const file = input?.files?.[0];
+  if (!file) return say('Choose a CSV file to import.');
+  if (file.size > 1_000_000) return say('CSV import is limited to 1 MB.');
+  if (!window.confirm('Import updates to existing opportunity IDs? Every imported record will become a private draft and require fresh review.')) return;
+  try {
+    const csv = await file.text();
+    const response = await fetch('/dashboard/opportunities/import.csv', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'text/csv; charset=utf-8' }, body: csv,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body?.error?.message || `Import failed (${response.status})`);
+    selectedBulkIds.clear();
+    await loadList();
+    if (selected) await loadItem(selected.id);
+    input.value = '';
+    say(`Imported ${body.data.imported} opportunity updates. All imported records are private drafts requiring fresh review.`);
+  } catch (error) { say(error.message); }
+});
+document.querySelector('#cms-bulk-approve')?.addEventListener('click', () => bulkReview('approved'));
+document.querySelector('#cms-bulk-reject')?.addEventListener('click', () => bulkReview('rejected'));
+document.querySelector('#cms-select-all')?.addEventListener('change', (event) => {
+  const checked = event.currentTarget.checked;
+  for (const checkbox of list.querySelectorAll('.cms-row-select')) {
+    checkbox.checked = checked;
+    const id = checkbox.closest('li')?.querySelector('button[data-id]')?.dataset.id;
+    if (id) { if (checked) selectedBulkIds.add(id); else selectedBulkIds.delete(id); }
+  }
+});
+
 async function loadItem(id) {
   try {
     const item = await api(`/dashboard/opportunities/${encodeURIComponent(id)}`);
@@ -161,6 +249,7 @@ async function loadItem(id) {
       country: 'country',
       opportunity_type: 'opportunityType',
       price_text: 'priceText',
+      price_visibility: 'priceVisibility',
       summary: 'summary',
       availability: 'availability',
       seo_title: 'seoTitle',
@@ -181,6 +270,7 @@ async function loadItem(id) {
     mediaPanel.hidden = false;
     document.querySelector('#cms-reason').value = '';
     await loadMedia(item.id);
+    await loadHistory(item.id);
     say(`Loaded ${item.title}. Saving changes resets content review and public visibility.`);
   } catch (error) {
     say(error.message);
@@ -192,6 +282,7 @@ function newItem() {
   set('id', '');
   reviewActions.hidden = true;
   mediaPanel.hidden = true;
+  if (historyPanel) historyPanel.hidden = true;
   mediaList.replaceChildren();
   document.querySelector('#cms-form-title').textContent = 'Create opportunity';
   showBadges(null);
@@ -215,6 +306,7 @@ form.addEventListener('submit', async (event) => {
       'bodyHtml',
     ].map((name) => [name, val(name)]),
   );
+  data.priceVisibility = Boolean(form.elements.namedItem('priceVisibility')?.checked);
   data.assignedBrokerId = val('assignedBrokerId') || null;
   data.labels = val('labels')
     .split(',')
@@ -285,6 +377,17 @@ async function review(decision) {
   }
 }
 document.querySelector('#cms-approve').addEventListener('click', () => review('approved'));
+document.querySelector('#cms-verify')?.addEventListener('click', async () => {
+  if (!selected) return say('Select an opportunity first.');
+  const reason = document.querySelector('#cms-reason').value.trim();
+  if (reason.length < 3) return say('Add a verification note of at least 3 characters before marking this record verified.');
+  try {
+    await api(`/dashboard/opportunities/${encodeURIComponent(selected.id)}/verify`, { method: 'POST', body: JSON.stringify({ reason }) });
+    await loadItem(selected.id);
+    await loadList();
+    say('Verification date updated and audit event recorded. Publication status was not changed.');
+  } catch (error) { say(error.message || 'Could not update verification date.'); }
+});
 document.querySelector('#cms-reject').addEventListener('click', () => review('rejected'));
 document.querySelector('#cms-publish-button').addEventListener('click', async () => {
   if (!selected) return say('Select an opportunity first.');

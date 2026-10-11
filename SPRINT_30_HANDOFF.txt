@@ -1,0 +1,17 @@
+SPRINT 30 HANDOFF — BUYER SESSION CONTROLS
+
+Base: Sprint 29
+New migration: migrations/0026_sprint30_buyer_session_controls.sql
+UI: /dashboard/buyer-sessions/ui (super_admin only)
+API: GET /dashboard/buyer-sessions
+API: POST /dashboard/buyer-sessions/:id/revoke
+
+Before staging or production:
+1. Install the pinned dependencies and run pnpm check.
+2. Apply migrations 0001–0026 to an isolated staging D1 database.
+3. Verify access is denied to non-super-admin users.
+4. Verify revocation invalidates only the selected buyer session and creates buyer.session_revoked audit entry.
+5. Confirm no session token material is returned and API responses are private/no-store.
+6. Resolve existing Cloudflare resource placeholders and complete all established release gates.
+
+This source archive is not a claim of staging verification or production deployment.

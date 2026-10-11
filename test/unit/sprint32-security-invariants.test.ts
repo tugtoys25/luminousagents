@@ -1,0 +1,80 @@
+import { describe, expect, it } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Static source guards. They run in plain Node (vitest.node.config.ts) because they read repository files.
+const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+
+describe('Sprint 32 static guards', () => {
+  it('buyer email-code request returns the generic response object, not a call to it', () => {
+    const auth = read('src/auth/portal-routes.ts');
+    const start = auth.indexOf("portal.post('/api/buyer/auth/request-code'");
+    const end = auth.indexOf("portal.post('/api/buyer/auth/verify-code'");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const handler = auth.slice(start, end);
+    expect(handler).toContain('const generic = {');
+    expect(handler).not.toContain('generic()');
+    expect(handler).toContain('c.json(generic, 202)');
+  });
+
+  it('checks the lifecycle transition before writing the publication change', () => {
+    const admin = read('src/admin/routes.ts');
+    const route = admin.indexOf("admin.post('/opportunities/:id/publication'");
+    expect(route).toBeGreaterThan(-1);
+    const body = admin.slice(route, route + 4000);
+    const check = body.indexOf('checkLifecycleTransition(');
+    const write = body.indexOf('UPDATE opportunities SET lifecycle');
+    expect(check).toBeGreaterThan(-1);
+    expect(write).toBeGreaterThan(check);
+    expect(body).toContain('transition.code');
+    expect(body).toContain('fromLifecycle');
+  });
+
+  it('registers fixed opportunity paths before the :id wildcard so they are reachable', () => {
+    const admin = read('src/admin/routes.ts');
+    const wildcard = admin.indexOf("admin.get('/opportunities/:id',");
+    expect(wildcard).toBeGreaterThan(-1);
+    for (const fixed of [
+      "admin.get('/opportunities/lifecycle-transitions'",
+      "admin.get('/opportunities/reconciliation'",
+      "admin.get('/opportunities/review-queue'",
+      "admin.get('/opportunities/export.csv'",
+    ]) {
+      const at = admin.indexOf(fixed);
+      expect(at, fixed).toBeGreaterThan(-1);
+      expect(at, `${fixed} must come before the :id route`).toBeLessThan(wildcard);
+    }
+  });
+
+  it('keeps the public serializer on the shared redaction module', () => {
+    const serializer = read('src/domain/opportunities/serialize.ts');
+    expect(serializer).toContain("from './redaction.ts'");
+    expect(serializer).toContain('redactConfidentialText');
+    const pages = read('src/web/pages/public.tsx');
+    expect(pages).not.toContain('serializeOpportunity(row, 1)');
+  });
+
+  it('runs the static source tests in Node and excludes them from the Workers pool and tsc', () => {
+    expect(read('vitest.config.ts')).toContain("'test/unit/sprint2[4-9]-*.test.ts'");
+    expect(read('vitest.node.config.ts')).toContain("'test/unit/sprint2[4-9]-*.test.ts'");
+    const tsconfig = read('tsconfig.json');
+    for (const name of ['sprint25-security-baseline', 'sprint31-completion-hardening', 'sprint32-security-invariants']) {
+      expect(tsconfig).toContain(`test/unit/${name}.test.ts`);
+    }
+  });
+
+  it('ships the generated role matrix and the offline audit scripts', () => {
+    for (const path of [
+      'docs/ROLE_ROUTE_MATRIX.md',
+      'scripts/sprint32-role-matrix.mjs',
+      'scripts/sprint32-leak-audit.mjs',
+      'scripts/sprint32-reconcile.mjs',
+      'src/domain/opportunities/lifecycle.ts',
+      'src/domain/opportunities/redaction.ts',
+      'src/domain/opportunities/reconciliation.ts',
+    ]) {
+      expect(existsSync(resolve(process.cwd(), path)), path).toBe(true);
+    }
+  });
+});

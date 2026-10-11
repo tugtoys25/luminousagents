@@ -8,7 +8,13 @@ export default defineWorkersConfig(async () => {
       include: ['test/**/*.test.ts'],
       // These tests read repository files with node:fs, which the Workers runtime does not
       // implement. They run in plain Node via vitest.node.config.ts instead.
-      exclude: [...configDefaults.exclude, 'test/unit/*-security-invariants.test.ts'],
+      exclude: [
+        ...configDefaults.exclude,
+        'test/unit/*-security-invariants.test.ts',
+        // Sprint 24-31 static source checks also read repository files with node:fs.
+        'test/unit/sprint2[4-9]-*.test.ts',
+        'test/unit/sprint3[01]-*.test.ts',
+      ],
       setupFiles: ['./test/apply-migrations.ts'],
       poolOptions: {
         workers: {

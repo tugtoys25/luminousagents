@@ -1,0 +1,14 @@
+{
+  "name": "casinos-of-mayfair-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Staging end-to-end checks. Kept outside the main package so the root pnpm-lock.yaml stays valid for --frozen-lockfile installs.",
+  "scripts": {
+    "install:browsers": "playwright install chromium",
+    "test": "playwright test",
+    "test:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}

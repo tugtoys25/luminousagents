@@ -1,3 +1,5 @@
+import { redactConfidentialText } from './redaction.ts';
+
 export interface OpportunityRow {
   id: string;
   slug: string;
@@ -5,6 +7,7 @@ export interface OpportunityRow {
   country: string | null;
   opportunity_type: string;
   price_text: string;
+  price_visibility?: number;
   lifecycle: string;
   summary: string;
   availability: string;
@@ -38,7 +41,7 @@ export interface PublicOpportunity {
 /** The sole serialization boundary for opportunity data leaving the Worker. */
 export function serializeOpportunity(
   row: OpportunityRow,
-  viewerTier: 1 | 2 = 1,
+  viewerTier: 0 | 1 | 2 | 3 = 0,
 ): PublicOpportunity {
   let points: string[] = [];
   try {
@@ -56,20 +59,22 @@ export function serializeOpportunity(
   } catch {
     labels = [];
   }
+  const confidentialPrice = viewerTier === 0 && row.price_visibility !== 1;
+  const publicText = (value: string) => confidentialPrice ? redactConfidentialText(value, row.price_text || '') : value;
   return {
     slug: row.slug,
-    title: row.title,
+    title: publicText(row.title),
     country: row.country,
     type: row.opportunity_type,
-    price: viewerTier >= 1 ? row.price_text || null : null,
-    summary: row.summary,
-    availability: row.availability || null,
-    points,
-    seoTitle: row.seo_title || row.title,
-    seoDescription: row.seo_description || row.summary.slice(0, 160),
-    labels,
+    price: viewerTier >= 1 || row.price_visibility === 1 ? row.price_text || null : null,
+    summary: publicText(row.summary),
+    availability: row.availability ? publicText(row.availability) : null,
+    points: points.map(publicText),
+    seoTitle: publicText(row.seo_title || row.title),
+    seoDescription: publicText(row.seo_description || row.summary.slice(0, 160)),
+    labels: labels.map(publicText),
     coverMediaId: row.cover_media_id ?? null,
-    coverMediaAlt: row.cover_media_alt ?? row.title,
+    coverMediaAlt: publicText(row.cover_media_alt ?? row.title),
     coverMediaPath: row.cover_media_id
       ? `/media/opportunities/${encodeURIComponent(row.id)}/${encodeURIComponent(row.cover_media_id)}`
       : null,

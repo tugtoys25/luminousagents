@@ -1,0 +1,15 @@
+CASINOS OF MAYFAIR — SPRINT 26 HANDOFF
+Base: Sprint 25
+
+Implemented:
+- Opportunity version-history endpoint and CMS panel.
+- Reasoned restore-as-draft, with slug collision handling and a new version/audit record.
+- Publisher-only bulk approve/reject for up to 50 opportunities; never bulk-publishes.
+- Admin/super-admin-only audited CSV export with spreadsheet formula-injection mitigation.
+- Review/version indexes in migration 0023.
+
+Migration order: apply migrations 0001 through 0023.
+
+Validation: migrations applied to in-memory SQLite; 198 seeded opportunities retained; JavaScript and TypeScript parser syntax checks passed. Full dependency-backed tests/typecheck/lint, staging D1, E2E/browser testing, and deploy remain outstanding. Do not mark production-ready until these checks pass.
+
+See docs/SPRINT_26_OPPORTUNITY_INTEGRITY.md and the Sprint 26 execution report.

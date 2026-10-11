@@ -48,7 +48,7 @@ publicPages.get('/', async (c) => {
     const rows = await c.env.DB.prepare(
       `SELECT ${OPPORTUNITY_CARD_SELECT} FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY published_at DESC, title ASC LIMIT 3`,
     ).all<OpportunityRow>();
-    latest = rows.results.map((row) => serializeOpportunity(row, 1));
+    latest = rows.results.map((row) => serializeOpportunity(row, 0));
   } catch {
     latest = [];
   }
@@ -203,6 +203,8 @@ publicPages.get('/casinos-for-sale', async (c) => {
   const country = (c.req.query('country') ?? '').trim().slice(0, 80);
   const type = (c.req.query('type') ?? '').trim().slice(0, 40);
   const query = (c.req.query('q') ?? '').trim().slice(0, 100);
+  const sort = ['newest', 'title', 'country'].includes(c.req.query('sort') ?? '') ? (c.req.query('sort') ?? 'newest') : 'newest';
+  const orderBy = sort === 'title' ? 'title COLLATE NOCASE ASC, published_at DESC' : sort === 'country' ? 'country COLLATE NOCASE ASC, title COLLATE NOCASE ASC' : 'published_at DESC, title ASC';
   const page = Math.max(1, Math.min(1000, Number.parseInt(c.req.query('page') ?? '1', 10) || 1));
   const conditions = [
     "lifecycle = 'published'",
@@ -223,8 +225,15 @@ publicPages.get('/casinos-for-sale', async (c) => {
     binds.push(type);
   }
   if (query) {
+    const queryPattern = `%${query}%`;
     conditions.push('(title LIKE ? OR summary LIKE ?)');
-    binds.push(`%${query}%`, `%${query}%`);
+    binds.push(queryPattern, queryPattern);
+    // Numeric/currency/price-oriented searches must not reveal that a hidden price phrase exists.
+    // For these searches, omit confidential listings whose raw text matches the term.
+    if (/(?:\d|£|\$|€|\b(?:price|asking|million|billion|thousand|dollars?|pounds?|euros?|usd|gbp|eur)\b)/i.test(query)) {
+      conditions.push('NOT (price_visibility = 0 AND (title LIKE ? OR summary LIKE ? OR price_text LIKE ?))');
+      binds.push(queryPattern, queryPattern, queryPattern);
+    }
   }
   const where = conditions.join(' AND ');
   try {
@@ -235,11 +244,11 @@ publicPages.get('/casinos-for-sale', async (c) => {
       .first<{ total: number }>();
     const total = countResult?.total ?? 0;
     const rows = await c.env.DB.prepare(
-      `SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE ${where} ORDER BY published_at DESC, title ASC LIMIT 12 OFFSET ?`,
+      `SELECT id, slug, title, country, opportunity_type, price_text, price_visibility, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE ${where} ORDER BY ${orderBy} LIMIT 12 OFFSET ?`,
     )
       .bind(...binds, (page - 1) * 12)
       .all<OpportunityRow>();
-    const opportunities = rows.results.map((row) => serializeOpportunity(row, 1));
+    const opportunities = rows.results.map((row) => serializeOpportunity(row, 0));
     const countriesResult = await c.env.DB.prepare(
       "SELECT DISTINCT country FROM opportunities WHERE lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' AND country IS NOT NULL ORDER BY country",
     ).all<{ country: string }>();
@@ -320,6 +329,12 @@ publicPages.get('/casinos-for-sale', async (c) => {
                     Other asset
                   </option>
                 </select>
+                <label for="sort">Sort by</label>
+                <select id="sort" name="sort">
+                  <option value="newest" selected={sort === 'newest'}>Recently published</option>
+                  <option value="title" selected={sort === 'title'}>Title A–Z</option>
+                  <option value="country" selected={sort === 'country'}>Market A–Z</option>
+                </select>
                 <button class="button button-primary filter-submit" type="submit">
                   Apply filters
                 </button>
@@ -361,7 +376,7 @@ publicPages.get('/casinos-for-sale', async (c) => {
                 <nav class="pagination" aria-label="Pagination">
                   {page > 1 ? (
                     <a
-                      href={`?${new URLSearchParams({ ...(country ? { country } : {}), ...(type ? { type } : {}), ...(query ? { q: query } : {}), page: String(page - 1) }).toString()}`}
+                      href={`?${new URLSearchParams({ ...(country ? { country } : {}), ...(type ? { type } : {}), ...(query ? { q: query } : {}), ...(sort !== 'newest' ? { sort } : {}), page: String(page - 1) }).toString()}`}
                     >
                       ← Previous
                     </a>
@@ -370,7 +385,7 @@ publicPages.get('/casinos-for-sale', async (c) => {
                   )}
                   {page * 12 < total ? (
                     <a
-                      href={`?${new URLSearchParams({ ...(country ? { country } : {}), ...(type ? { type } : {}), ...(query ? { q: query } : {}), page: String(page + 1) }).toString()}`}
+                      href={`?${new URLSearchParams({ ...(country ? { country } : {}), ...(type ? { type } : {}), ...(query ? { q: query } : {}), ...(sort !== 'newest' ? { sort } : {}), page: String(page + 1) }).toString()}`}
                     >
                       Next →
                     </a>
@@ -417,11 +432,11 @@ publicPages.get('/casinos-for-sale/:country', async (c) => {
     .replace(/-/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
   const rows = await c.env.DB.prepare(
-    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE lower(country) = lower(?) AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY published_at DESC, title ASC LIMIT 100",
+    "SELECT id, slug, title, country, opportunity_type, price_text, price_visibility, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE lower(country) = lower(?) AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY published_at DESC, title ASC LIMIT 100",
   )
     .bind(countryName)
     .all<OpportunityRow>();
-  const items = rows.results.map((row) => serializeOpportunity(row, 1));
+  const items = rows.results.map((row) => serializeOpportunity(row, 0));
   return c.html(
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
@@ -485,9 +500,9 @@ publicPages.get('/casinos-for-sale/:country', async (c) => {
 
 publicPages.get('/casino-hotels', async (c) => {
   const rows = await c.env.DB.prepare(
-    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE opportunity_type = 'casino-hotel' AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY published_at DESC, title ASC LIMIT 100",
+    "SELECT id, slug, title, country, opportunity_type, price_text, price_visibility, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE opportunity_type = 'casino-hotel' AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY published_at DESC, title ASC LIMIT 100",
   ).all<OpportunityRow>();
-  const items = rows.results.map((row) => serializeOpportunity(row, 1));
+  const items = rows.results.map((row) => serializeOpportunity(row, 0));
   return c.html(
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
@@ -534,9 +549,9 @@ publicPages.get('/casino-hotels', async (c) => {
 
 publicPages.get('/archive', async (c) => {
   const rows = await c.env.DB.prepare(
-    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE lifecycle IN ('sold','off_market') AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY updated_at DESC LIMIT 100",
+    "SELECT id, slug, title, country, opportunity_type, price_text, price_visibility, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE lifecycle IN ('sold','off_market') AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' ORDER BY updated_at DESC LIMIT 100",
   ).all<OpportunityRow>();
-  const items = rows.results.map((row) => serializeOpportunity(row, 1));
+  const items = rows.results.map((row) => serializeOpportunity(row, 0));
   return c.html(
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
@@ -575,7 +590,7 @@ publicPages.get('/archive', async (c) => {
 publicPages.get('/opportunities/:slug', async (c) => {
   const slug = c.req.param('slug').slice(0, 110);
   const row = await c.env.DB.prepare(
-    "SELECT id, slug, title, country, opportunity_type, price_text, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE slug = ? AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' LIMIT 1",
+    "SELECT id, slug, title, country, opportunity_type, price_text, price_visibility, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt FROM opportunities WHERE slug = ? AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public' LIMIT 1",
   )
     .bind(slug)
     .first<OpportunityRow>();
@@ -599,7 +614,7 @@ publicPages.get('/opportunities/:slug', async (c) => {
       </BaseLayout>,
       404,
     );
-  const item = serializeOpportunity(row, 1);
+  const item = serializeOpportunity(row, 0);
   return c.html(
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
@@ -1091,9 +1106,9 @@ publicPages.get('/sitemap.xml', async (c) => {
       ).first<{ updatedAt: string | null }>(),
     ]);
     const newest = listings.results[0]?.updatedAt;
-    entries[1].lastmod = isoDate(newest);
-    entries[0].lastmod = isoDate(newest);
-    entries[3].lastmod = isoDate(archived?.updatedAt);
+    if (entries[1]) entries[1].lastmod = isoDate(newest);
+    if (entries[0]) entries[0].lastmod = isoDate(newest);
+    if (entries[3]) entries[3].lastmod = isoDate(archived?.updatedAt);
     // Managed pages that override a built-in page are served at the built-in path.
     const builtIn = new Map(STATIC_PAGES.map(([path]) => [staticPageSlug(path), path]));
     for (const row of pages.results) {

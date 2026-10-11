@@ -16,7 +16,8 @@ describe('Sprint 16 unified password-authentication invariants', () => {
     ]) {
       const source = read(file);
       expect(source).not.toMatch(/Cf-Access-Jwt-Assertion|ACCESS_TEAM_DOMAIN|ACCESS_AUD/);
-      expect(source).not.toMatch(/request-code|verify-code|buyer_login_codes/);
+      // Sprint 25 owner decision (DECISIONS.md): buyers may use email one-time codes again, in buyer_email_codes.
+      expect(source).not.toMatch(/buyer_login_codes/);
     }
   });
 

@@ -45,11 +45,12 @@ async function sendEmail(
   subject: string,
   html: string,
   text: string,
+  idempotencyKey?: string,
 ): Promise<void> {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM) throw new Error('Email provider is not configured');
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json', ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) },
     body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject, html, text }),
   });
   if (!response.ok) throw new Error(`Email provider returned HTTP ${response.status}`);
@@ -58,6 +59,8 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
   const payload = JSON.parse(
     await decryptPayload(job.payload_json, env.OTP_ENCRYPTION_KEY ?? ''),
   ) as Record<string, unknown>;
+  const sendJobEmail = (emailEnv: Env, to: string, subject: string, html: string, text: string) =>
+    sendEmail(emailEnv, to, subject, html, text, `mayfair-${job.id}`);
   if (job.job_type === 'auth.password_reset') {
     const email = String(payload['email'] ?? '');
     const token = String(payload['token'] ?? '');
@@ -69,7 +72,7 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
     const link = `${base}${kind === 'staff' ? '/admin/reset-password' : '/reset-password'}?token=${token}`;
     const hours = Math.round(minutes / 60);
     const lifetime = hours >= 2 ? `${hours} hours` : `${minutes} minutes`;
-    await sendEmail(
+    await sendJobEmail(
       env,
       email,
       invite
@@ -88,7 +91,7 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
       .first<{ id: string; name: string; email: string }>();
     if (!enquiry) throw new Error('Enquiry record not found');
     const base = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
-    await sendEmail(
+    await sendJobEmail(
       env,
       enquiry.email,
       'We received your enquiry · Casinos of Mayfair',
@@ -115,7 +118,7 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
       }>();
     if (!row) throw new Error('Assigned broker or enquiry record not found');
     const base = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
-    await sendEmail(
+    await sendJobEmail(
       env,
       row.brokerEmail,
       'New enquiry assigned to you · Casinos of Mayfair',
@@ -153,7 +156,7 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
       }>();
     if (!buyer) throw new Error('Pending buyer registration not found');
     const base = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
-    await sendEmail(
+    await sendJobEmail(
       env,
       opsEmail,
       'Buyer registration requires review · Casinos of Mayfair',
@@ -172,7 +175,7 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
       .first<{ name: string; email: string; company: string; message: string }>();
     if (!enquiry) throw new Error('Enquiry record not found');
     const base = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
-    await sendEmail(
+    await sendJobEmail(
       env,
       opsEmail,
       'New website enquiry · Casinos of Mayfair',
@@ -191,13 +194,26 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
       .first<{ id: string; email: string; title: string }>();
     if (!request) throw new Error('NDA request not found');
     const base = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
-    await sendEmail(
+    await sendJobEmail(
       env,
       opsEmail,
       'NDA review requested · Casinos of Mayfair',
       `<p>A buyer has requested access to an opportunity data room.</p><p><strong>Opportunity:</strong> ${escapeHtml(request.title)}</p><p><strong>Buyer:</strong> ${escapeHtml(request.email)}</p><p><a href="${base}/dashboard/nda-requests">Review NDA requests</a></p>`,
       `NDA review requested for ${request.title} by ${request.email}. Review: ${base}/dashboard/nda-requests`,
     );
+    return;
+  }
+  if (job.job_type === 'nda.signed_pdf_uploaded') {
+    const requestId = String(payload['ndaRequestId'] ?? '');
+    if (!requestId) throw new Error('Invalid signed-NDA notification payload');
+    const request = await env.DB.prepare(
+      'SELECT n.id, u.email, u.display_name AS buyerName, o.title AS opportunityTitle FROM nda_requests n JOIN users u ON u.id = n.user_id JOIN opportunities o ON o.id = n.opportunity_id WHERE n.id = ? AND n.signed_pdf_r2_key IS NOT NULL',
+    ).bind(requestId).first<{ id: string; email: string; buyerName: string | null; opportunityTitle: string }>();
+    if (!request) throw new Error('Signed NDA request not found');
+    const base = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
+    await sendJobEmail(env, opsEmail, 'Signed NDA uploaded · Casinos of Mayfair',
+      `<p>A buyer uploaded a signed NDA PDF that passed the configured malware scan.</p><p><strong>Opportunity:</strong> ${escapeHtml(request.opportunityTitle)}</p><p><strong>Buyer:</strong> ${escapeHtml(request.buyerName || request.email)}</p><p><a href="${base}/dashboard/nda-requests/ui">Review NDA requests</a></p>`,
+      `Signed NDA PDF uploaded for ${request.opportunityTitle} by ${request.buyerName || request.email}. Review: ${base}/dashboard/nda-requests/ui`);
     return;
   }
   if (job.job_type === 'nda.decision') {
@@ -222,7 +238,7 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
     const greeting = escapeHtml(request.name || 'there');
     const approved = request.status === 'approved';
     const until = request.expiresAt ? new Date(request.expiresAt).toUTCString() : '';
-    await sendEmail(
+    await sendJobEmail(
       env,
       request.email,
       approved
@@ -256,7 +272,7 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
     const fields = Object.entries(data)
       .map(([key, value]) => `<p><strong>${escapeHtml(key)}:</strong> ${escapeHtml(value)}</p>`)
       .join('');
-    await sendEmail(
+    await sendJobEmail(
       env,
       opsEmail,
       `New form submission: ${submission.formTitle} · Casinos of Mayfair`,
@@ -289,7 +305,7 @@ export async function consumeNotifications(batch: MessageBatch<unknown>, env: En
       continue;
     }
     const claim = await env.DB.prepare(
-      "UPDATE notification_jobs SET status = 'processing', attempts = attempts + 1, updated_at = ? WHERE id = ? AND status = 'queued'",
+      "UPDATE notification_jobs SET status = 'processing', attempts = attempts + 1, updated_at = ? WHERE id = ? AND status IN ('queued','failed')",
     )
       .bind(now(), job.id)
       .run();
@@ -338,8 +354,9 @@ export async function recoverNotificationJobs(env: Env): Promise<void> {
   )
     .bind(now(), now(), staleBefore)
     .run();
+  await env.DB.prepare("UPDATE notification_jobs SET status = 'dead', updated_at = ? WHERE status = 'failed' AND attempts >= 5").bind(now()).run();
   const due = await env.DB.prepare(
-    "SELECT id, job_type AS type FROM notification_jobs WHERE status = 'queued' AND available_at <= ? ORDER BY created_at LIMIT 100",
+    "SELECT id, job_type AS type FROM notification_jobs WHERE status IN ('queued','failed') AND attempts < 5 AND available_at <= ? ORDER BY created_at LIMIT 100",
   )
     .bind(now())
     .all<{ id: string; type: string }>();

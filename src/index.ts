@@ -41,10 +41,13 @@ app.use('/dashboard*', async (c, next) => {
     const identity = staff
       ? `<meta name="mayfair-staff" content="${escapeAttr(staff.role)}" data-name="${escapeAttr(staff.displayName || staff.email)}" data-email="${escapeAttr(staff.email)}">`
       : '';
-    html = html.replace('</head>', () => `${identity}</head>`);
+    const mediaCss = html.includes('/static/css/dashboard-media.css')
+      ? ''
+      : '<link rel="stylesheet" href="/static/css/dashboard-media.css">';
+    html = html.replace('</head>', () => `${identity}${mediaCss}</head>`);
     html = html.replace(
       '</body>',
-      () => '<script src="/static/js/dashboard-shell.js" defer></script></body>',
+      () => '<script src="/static/js/dashboard-media-picker.js" defer></script><script src="/static/js/dashboard-shell.js" defer></script></body>',
     );
     const headers = new Headers(c.res.headers);
     headers.delete('content-length');
@@ -56,6 +59,25 @@ app.use('/dashboard*', async (c, next) => {
   }
 });
 
+// Public media is served only for assets explicitly marked public in the staff library.
+app.get('/media/:id', async (c) => {
+  const asset = await c.env.DB.prepare('SELECT r2_key AS r2Key, content_type AS contentType, filename, byte_size AS byteSize, sha256 FROM media_assets WHERE (id = ? OR public_slug = ?) AND visibility = \'public\'').bind(c.req.param('id'), c.req.param('id')).first<{ r2Key: string; contentType: string; filename: string; byteSize: number; sha256: string }>();
+  if (!asset) return c.notFound();
+  const object = await c.env.PRIVATE_FILES.get(asset.r2Key);
+  if (!object || object.size !== asset.byteSize || object.size > 25 * 1024 * 1024) return c.notFound();
+  const bytes = await object.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const actual = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+  if (!asset.sha256 || actual !== asset.sha256.toLowerCase()) return c.notFound();
+  const isImage = asset.contentType.startsWith('image/');
+  const headers = new Headers();
+  headers.set('Content-Type', asset.contentType);
+  headers.set('Content-Length', String(bytes.byteLength));
+  headers.set('Cache-Control', 'public, max-age=0, s-maxage=0, must-revalidate');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  headers.set('Content-Disposition', `${isImage ? 'inline' : 'attachment'}; filename="${asset.filename.replace(/["\\\r\n]/g, '_')}"`);
+  return new Response(bytes, { headers });
+});
 app.get('/healthz', (c) => {
   return c.json({ status: 'ok', service: 'mayfair-platform' }, 200);
 });
@@ -195,7 +217,7 @@ app.use('*', async (c, next) => {
       head += `<style>:root{${primary ? `--red:${primary};--color-primary:${primary};` : ''}${accent ? `--gold:${accent};--color-accent:${accent};` : ''}${background ? `--paper:${background};--color-background:${background};` : ''}${font ? `--sans:${font};--font-family:${font};` : ''}${
         get('font_heading')
           ? `--serif:${get('font_heading')
-              .replace(/[^a-zA-Z0-9 ,\-'\"]/g, '')
+              .replace(/[^a-zA-Z0-9 ,\-'"]/g, '')
               .slice(0, 100)};`
           : ''
       }}</style>`;

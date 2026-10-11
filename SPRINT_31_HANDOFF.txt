@@ -1,0 +1,7 @@
+Casinos of Mayfair cumulative completion hardening
+
+Baseline retained: Sprint 23.
+Integrated source base: cumulative Sprint 30 (which includes Sprint 24 media through Sprint 30 session-management additions).
+New changes: buyer profile/requirements API and UI; reference-aware media deletion and URL-slug change protection; public media object SHA-256 verification; opportunity review queue and explicit verification workflow; public directory sort controls; tier-3 grant/document support with super-admin-only authorization; signed NDA PDF upload with mandatory clean scanner result, private R2 storage, hash metadata, staff-only audited download and notification; data-room document management UI; Resend idempotency keys for queue retries; review queue, signed NDA and NDA legal-gate migrations; additional static regression tests and release runbook.
+
+Do not deploy from this archive without running the full check suite and staging release gate. Live Cloudflare resource IDs, Worker secrets, real scanner/Resend/Turnstile integration, legal review, staff MFA decision, browser E2E and D1/R2 restore drills remain external acceptance gates.

@@ -159,7 +159,6 @@ managed.post('/api/forms/:slug/submit', async (c) => {
     return c.json({ error: { code: 'CONSENT_REQUIRED', message: 'Consent is required.' } }, 422);
   const opportunitySlug = typeof raw.opportunity === 'string' ? raw.opportunity.slice(0, 120) : '';
   let opportunityId: string | null = null;
-  let opportunityTitle = '';
   if (opportunitySlug) {
     const op = await c.env.DB.prepare(
       "SELECT id,title FROM opportunities WHERE slug=? AND lifecycle='published' AND content_review_status='approved' AND public_visibility=1 LIMIT 1",
@@ -168,7 +167,6 @@ managed.post('/api/forms/:slug/submit', async (c) => {
       .first<{ id: string; title: string }>();
     if (op) {
       opportunityId = op.id;
-      opportunityTitle = op.title;
     }
   }
   const id = uuid(),

@@ -26,6 +26,17 @@
     "dist",
     "test/unit/sprint7-security-invariants.test.ts",
     "test/unit/sprint10-security-invariants.test.ts",
-    "test/unit/sprint16-security-invariants.test.ts"
+    "test/unit/sprint16-security-invariants.test.ts",
+    "test/unit/sprint18-security-invariants.test.ts",
+    "test/unit/sprint19-forms-nda-security-invariants.test.ts",
+    "test/unit/sprint24-media-library-invariants.test.ts",
+    "test/unit/sprint25-security-baseline.test.ts",
+    "test/unit/sprint26-opportunity-integrity.test.ts",
+    "test/unit/sprint27-audit-operations.test.ts",
+    "test/unit/sprint28-audit-export.test.ts",
+    "test/unit/sprint29-staff-session-controls.test.ts",
+    "test/unit/sprint30-buyer-session-controls.test.ts",
+    "test/unit/sprint31-completion-hardening.test.ts",
+    "test/unit/sprint32-security-invariants.test.ts"
   ]
 }

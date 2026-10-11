@@ -29,3 +29,26 @@ The SQL seed is idempotent by `legacy_id`; it is not a substitute for the team's
 - `0018_seed_contact_settings.sql`: seeds public contact settings (phones, emails, WhatsApp) with INSERT OR IGNORE so dashboard edits are never overwritten. Apply before deploying Sprint 21 UI changes.
 - `0019_seed_cookie_banner.sql`: seeds the cookie/privacy banner settings (INSERT OR IGNORE). Apply before deploying the configurable banner.
 - `0020_seed_cookie_terms_url.sql`: seeds the Terms of use link for the cookie banner (INSERT OR IGNORE).
+
+- `0021_media_library.sql`: shared staff-managed media assets, folders, visibility, hashes and upload metadata. Images are public on upload; documents remain private until reviewed and explicitly published by an authorized administrator.
+
+- `0022_sprint25_security_baseline.sql`: adds confidential-by-default price visibility, optional safe public media URL slugs, and expiring single-use buyer email-code challenges.
+- `0023_sprint26_opportunity_integrity.sql`: indexes the opportunity review queue and version history.
+- `0024_sprint27_audit_operations.sql`: indexes audit events by action, entity type and actor alongside descending creation time for the audit review filters.
+- `0025_sprint29_staff_session_controls.sql`: indexes active staff sessions and per-user session activity for the super-administrator session inventory.
+
+- `0026_sprint30_buyer_session_controls.sql`: adds an index for active buyer-session inventory and last-activity ordering.
+
+### 0027 — Sprint 27 review queue indexes
+Adds indexes for pending review, assigned-broker review queues, and stale verification checks. Safe to apply after `0026_sprint30_buyer_session_controls.sql`.
+
+### 0028 — Sprint 29 compliance access tier
+Rebuilds the grant/document tables with a tier-3 option while preserving existing rows and indexes. Tier 3 is enforced server-side for super administrators only and requires a detailed approval reason. Apply only after taking a verified staging backup and checking the target migration history.
+
+### 0029 — Sprint 29 signed NDA uploads
+Adds integrity and scanner-provenance fields for buyer-uploaded signed NDA PDFs. The upload route requires a verified clean scanner result, stores the object only in private R2, and audits staff downloads.
+
+### 0030 — Sprint 30 NDA legal gate
+Deactivates the repository-seeded NDA acknowledgement if it is still the active template and has no managed private R2 object. This prevents an unreviewed bootstrap document from being presented as an approved NDA. Create a managed, counsel-approved version and explicitly activate it before enabling NDA requests in staging or production.
+
+Sprint 32 adds no migration. The numbered set remains 0001 through 0030.

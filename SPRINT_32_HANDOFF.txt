@@ -1,0 +1,21 @@
+Casinos of Mayfair — Sprint 32 handoff
+
+Baseline: cumulative Sprint 23-30 remediated candidate (includes the "Sprint 30 remediation patch"). Sprint 23 untouched.
+Additive only. No migration added (numbered set stays 0001-0030). package.json dependencies and pnpm-lock.yaml unchanged.
+
+DO FIRST
+1. pnpm install --frozen-lockfile && pnpm check        (never run on Sprints 24-32; fix every failure)
+2. pnpm preflight:sprint32 ; pnpm audit:leaks ; pnpm audit:reconcile      (Node 22.18+, no install needed)
+3. cd e2e && npm install && E2E_BASE_URL=<staging> npm test     (never run)
+
+NEW
+- src/domain/opportunities/redaction.ts, lifecycle.ts, reconciliation.ts
+- Publication route enforces lifecycle transitions (409 INVALID_LIFECYCLE_TRANSITION)
+- GET /dashboard/opportunities/lifecycle-transitions, GET /dashboard/opportunities/reconciliation
+- Fixed buyer email-code request (generic() was called on an object)
+- Static tests moved to the Node runner and excluded from tsc
+- docs/ROLE_ROUTE_MATRIX.md (generated), SPRINT_32_COMPLETION.md, SPRINT_32_OWNER_DECISIONS.md, MONITORING_AND_ALERTS.md
+- .github/workflows/r2-documents-backup.yml (never run), e2e/ Playwright suite (never run)
+
+STILL OPEN (external): real Cloudflare ids and secrets, scanner, Resend domain, Turnstile, restore drill, monitoring,
+owner decisions, counsel sign-off, hand review of all 198 listings. Do not deploy to production from this archive.

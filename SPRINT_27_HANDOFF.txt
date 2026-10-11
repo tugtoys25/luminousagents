@@ -1,0 +1,16 @@
+CASINOS OF MAYFAIR — SPRINT 27 HANDOFF
+Base: Sprint 26
+
+Implemented:
+- Staff audit-log UI at /dashboard/audit/ui for admin, auditor, and super_admin roles.
+- Corrected dashboard navigation to point to the audit UI instead of the JSON API.
+- Server-side audit search, action/entity filters, inclusive date filtering, bounded pagination, total counts, and private/no-store responses.
+- Safe text-node rendering for audit metadata and empty/error states.
+- Migration 0024 adds action/date, entity/date, and actor/date indexes.
+- Static unit assertions added in test/unit/sprint27-audit-operations.test.ts.
+
+Migration order: apply migrations 0001 through 0024.
+
+Not yet verified: full pnpm check, live Cloudflare D1 migration, browser/E2E testing, and staging/production deploy. Do not mark production-ready until these checks pass.
+
+See docs/SPRINT_27_AUDIT_OPERATIONS.md and the Sprint 27 execution report.

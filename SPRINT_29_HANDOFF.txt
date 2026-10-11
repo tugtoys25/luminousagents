@@ -1,0 +1,8 @@
+SPRINT 29 HANDOFF
+Base: Sprint 28 source archive
+Feature: super-administrator staff-session inventory and revocation
+Migration: 0025_sprint29_staff_session_controls.sql
+UI: /dashboard/sessions/ui
+API: GET /dashboard/sessions; POST /dashboard/sessions/:id/revoke
+Docs: docs/SPRINT_29_STAFF_SESSION_CONTROLS.md
+Status: source implementation packaged; full dependency-backed tests and staging verification remain required.

@@ -143,6 +143,13 @@
       name: 'Content & site',
       items: [
         {
+          label: 'Media library',
+          href: '/dashboard/media/ui',
+          icon: 'doc',
+          match: ['/dashboard/media'],
+          kw: 'images photos files pdf uploads assets library',
+        },
+        {
           label: 'Pages',
           href: '/dashboard/pages/ui',
           icon: 'page',
@@ -170,7 +177,7 @@
       items: [
         {
           label: 'Audit log',
-          href: '/dashboard/audit',
+          href: '/dashboard/audit/ui',
           icon: 'clock',
           match: ['/dashboard/audit'],
           kw: 'history changes',

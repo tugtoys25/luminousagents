@@ -135,6 +135,10 @@ const newPasswordFields = (name = 'password', label = 'Password') =>
     'name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200" required',
   ) +
   '<p id="pw-hint" class="fine">At least 12 characters, with letters and numbers.</p>';
+const optionalPasswordFields = () =>
+  field('password', 'Password (optional — leave blank to use email codes)', 'name="password" type="password" autocomplete="new-password" minlength="12" maxlength="200" aria-describedby="pw-hint"') +
+  field('confirm', 'Confirm password (if setting one)', 'name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200"') +
+  '<p id="pw-hint" class="fine">You may leave both password fields blank and sign in using a one-time code sent to your email.</p>';
 const formTag = (id: string, endpoint: string, extra = '') =>
   `<form id="${id}" data-auth-form data-endpoint="${endpoint}" ${extra} novalidate>`;
 const formEnd = (button: string) =>
@@ -287,7 +291,7 @@ portal.get('/register', (c) =>
       'Buyer registration',
       'Your next opportunity starts here.',
       'Create a buyer account. New accounts require team approval before sign-in and confidential access are enabled.',
-      `${formTag('buyer-register', '/api/buyer/register')}${field('name', 'Full name', 'name="displayName" autocomplete="name" minlength="2" maxlength="120" required')}${emailField('Business email')}${newPasswordFields('password', 'Password')}${field('company', 'Company', 'name="companyName" autocomplete="organization" maxlength="160"')}${field('role', 'Role / title', 'name="roleTitle" maxlength="120"')}<div class="field"><label for="interest">Investment focus</label><select id="interest" name="investmentFocus"><option value="casino-hotel">Casino &amp; hotel</option><option value="casino">Casino</option><option value="hotel">Hotel / hospitality</option><option value="resort">Resort / destination</option><option value="other">Other</option></select></div><div class="field"><label class="consent-row"><input class="consent-checkbox" type="checkbox" name="consent" required> I have read the <a href="/legal/privacy">privacy notice</a> and agree that the team may use these details to review my registration.</label></div>${formEnd('Submit registration')}`,
+      `${formTag('buyer-register', '/api/buyer/register')}${field('name', 'Full name', 'name="displayName" autocomplete="name" minlength="2" maxlength="120" required')}${emailField('Business email')}${optionalPasswordFields()}${field('company', 'Company', 'name="companyName" autocomplete="organization" maxlength="160"')}${field('role', 'Role / title', 'name="roleTitle" maxlength="120"')}<div class="field"><label for="interest">Investment focus</label><select id="interest" name="investmentFocus"><option value="casino-hotel">Casino &amp; hotel</option><option value="casino">Casino</option><option value="hotel">Hotel / hospitality</option><option value="resort">Resort / destination</option><option value="other">Other</option></select></div><div class="field"><label class="consent-row"><input class="consent-checkbox" type="checkbox" name="consent" required> I have read the <a href="/legal/privacy">privacy notice</a> and agree that the team may use these details to review my registration.</label></div>${formEnd('Submit registration')}`,
       '<a href="/account">Buyer sign in</a><a href="/">Public website</a>',
       'Access to the right information, <em>at the right time.</em>',
     ),
@@ -318,14 +322,16 @@ portal.get('/reset-password', (c) =>
   ),
 );
 portal.get('/account/change-password', async (c) => {
-  if (!(await currentUser(c, 'buyer'))) return c.redirect('/account', 302);
+  const user = await currentUser(c, 'buyer');
+  if (!user) return c.redirect('/account', 302);
+  const hasPassword = Boolean(user.passwordHash);
   return send(
     c,
     page(
-      'Change password',
-      'Change your password.',
-      'Enter your current password, then choose a new one. Other sessions will be signed out.',
-      `${formTag('buyer-change', '/api/buyer/auth/change-password', 'data-success-redirect="/account"')}${field('current', 'Current password', 'name="currentPassword" type="password" autocomplete="current-password" maxlength="200" required')}${newPasswordFields('newPassword', 'New password')}${formEnd('Change password')}`,
+      hasPassword ? 'Change password' : 'Set a password',
+      hasPassword ? 'Change your password.' : 'Add a password to your account.',
+      hasPassword ? 'Enter your current password, then choose a new one. Other sessions will be signed out.' : 'You signed in with an email code. You can add a password now or continue using email codes.',
+      hasPassword ? `${formTag('buyer-change', '/api/buyer/auth/change-password', 'data-success-redirect="/account"')}${field('current', 'Current password', 'name="currentPassword" type="password" autocomplete="current-password" maxlength="200" required')}${newPasswordFields('newPassword', 'New password')}${formEnd('Change password')}` : `${formTag('buyer-set-password', '/api/buyer/auth/set-password', 'data-success-redirect="/account"')}${newPasswordFields('password', 'New password')}${formEnd('Set password')}`,
       '<a href="/account">Back to account</a><a href="/">Public website</a>',
     ),
   );
@@ -599,6 +605,104 @@ function mountAuthApi(kind: Kind, base: string) {
 }
 mountAuthApi('staff', '/api/admin/auth');
 mountAuthApi('buyer', '/api/buyer/auth');
+portal.post('/api/buyer/auth/set-password', async (c) => {
+  const user = await currentUser(c, 'buyer');
+  if (!user) return err(c, 401, 'UNAUTHENTICATED', 'Sign in to set a password.');
+  if (user.passwordHash) return err(c, 409, 'PASSWORD_ALREADY_SET', 'Use the change-password form to replace an existing password.');
+  const input = z.object({ password: z.string().max(200) }).safeParse(await c.req.json().catch(() => null));
+  if (!input.success) return err(c, 422, 'VALIDATION_ERROR', 'Enter a valid password.');
+  const policy = passwordPolicyError(input.data.password, user.email);
+  if (policy) return err(c, 422, 'WEAK_PASSWORD', policy);
+  const timestamp = now();
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE users SET password_hash = ?, password_updated_at = ?, must_change_password = 0, updated_at = ? WHERE id = ? AND user_type = 'buyer'").bind(await hashPassword(input.data.password), timestamp, timestamp, user.id),
+    c.env.DB.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND id != ? AND revoked_at IS NULL').bind(timestamp, user.id, user.sessionId),
+    c.env.DB.prepare("INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,?,'buyer.password_set','user',?,?, '{}',?)").bind(newId(), user.id, 'buyer', user.id, c.get('requestId'), timestamp),
+  ]);
+  return c.json({ data: { changed: true, message: 'Password set. You can now sign in using either your password or an email code.' } });
+});
+
+
+/* ----------------------------------------------- buyer email-code sign-in */
+const buyerCodeCookie = 'mayfair_buyer_session';
+async function buyerCodeHash(email: string, code: string, secret: string): Promise<string> {
+  return sha256Hex(`mayfair-buyer-code-v1:${secret}:${email.toLowerCase()}:${code}`);
+}
+async function sendBuyerCodeEmail(env: Env, email: string, code: string): Promise<void> {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) throw new Error('Email provider is not configured');
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: env.EMAIL_FROM,
+      to: [email],
+      subject: 'Your sign-in code · Casinos of Mayfair',
+      html: `<p>Your Casinos of Mayfair sign-in code is <strong>${code}</strong>.</p><p>It expires in 10 minutes and can be used once. If you did not request it, you can ignore this email.</p>`,
+      text: `Your Casinos of Mayfair sign-in code is ${code}. It expires in 10 minutes and can be used once. If you did not request it, ignore this email.`,
+    }),
+  });
+  if (!response.ok) throw new Error(`Email provider returned HTTP ${response.status}`);
+}
+portal.post('/api/buyer/auth/request-code', async (c) => {
+  const input = z.object({ email: emailSchema }).safeParse(await c.req.json().catch(() => null));
+  if (!input.success) return err(c, 422, 'VALIDATION_ERROR', 'Enter a valid email address.');
+  const email = input.data.email.toLowerCase();
+  if ((await throttled(c.env, `buyer-code-ip:${clientIp(c)}`, 10, 900)) || (await throttled(c.env, `buyer-code-email:${email}`, 5, 900)))
+    return err(c, 429, 'RATE_LIMITED', 'Too many code requests. Please wait and try again.');
+  const generic = { data: { accepted: true, message: 'If this is an active buyer account, a sign-in code has been sent.' } };
+  if (!c.env.OTP_ENCRYPTION_KEY || c.env.OTP_ENCRYPTION_KEY.length < 32 || !c.env.RESEND_API_KEY || !c.env.EMAIL_FROM)
+    return err(c, 503, 'EMAIL_CODE_UNAVAILABLE', 'Email-code sign-in is temporarily unavailable. Please use password sign-in or contact the team.');
+  const user = await c.env.DB.prepare("SELECT id, email FROM users WHERE email = ? COLLATE NOCASE AND user_type = 'buyer' AND status = 'active' LIMIT 1")
+    .bind(email).first<{ id: string; email: string }>();
+  if (!user) return c.json(generic, 202);
+  const code = String(crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000).padStart(6, '0');
+  const timestamp = now();
+  const expires = new Date(Date.now() + 10 * 60_000).toISOString();
+  const challengeId = newId();
+  await c.env.DB.prepare('UPDATE buyer_email_codes SET used_at = ? WHERE user_id = ? AND used_at IS NULL').bind(timestamp, user.id).run();
+  await c.env.DB.prepare('INSERT INTO buyer_email_codes (id,user_id,code_hash,expires_at,attempts,created_at) VALUES (?,?,?,?,0,?)')
+    .bind(challengeId, user.id, await buyerCodeHash(user.email, code, c.env.OTP_ENCRYPTION_KEY), expires, timestamp).run();
+  try {
+    await sendBuyerCodeEmail(c.env, user.email, code);
+  } catch {
+    await c.env.DB.prepare('UPDATE buyer_email_codes SET used_at = ? WHERE id = ?').bind(now(), challengeId).run();
+    return err(c, 503, 'EMAIL_DELIVERY_FAILED', 'We could not send a sign-in code. Please try again later or use password sign-in.');
+  }
+  await auditEvent(c.env, c, 'public', user.id, 'buyer.email_code_requested', challengeId);
+  return c.json(generic, 202);
+});
+portal.post('/api/buyer/auth/verify-code', async (c) => {
+  const input = z.object({ email: emailSchema, code: z.string().regex(/^\d{6}$/) }).safeParse(await c.req.json().catch(() => null));
+  if (!input.success) return err(c, 422, 'VALIDATION_ERROR', 'Enter your email and six-digit code.');
+  const email = input.data.email.toLowerCase();
+  if ((await throttled(c.env, `buyer-code-verify-ip:${clientIp(c)}`, 20, 900)) || (await throttled(c.env, `buyer-code-verify-email:${email}`, 10, 900)))
+    return err(c, 429, 'RATE_LIMITED', 'Too many verification attempts. Please wait and try again.');
+  if (!c.env.OTP_ENCRYPTION_KEY || c.env.OTP_ENCRYPTION_KEY.length < 32) return err(c, 503, 'EMAIL_CODE_UNAVAILABLE', 'Email-code sign-in is not configured.');
+  const row = await c.env.DB.prepare("SELECT c.id AS challengeId,c.code_hash AS codeHash,c.expires_at AS expiresAt,c.attempts,u.id,u.email,u.display_name AS displayName,u.status,u.must_change_password AS mustChange FROM buyer_email_codes c JOIN users u ON u.id=c.user_id WHERE u.email = ? COLLATE NOCASE AND u.user_type='buyer' AND c.used_at IS NULL ORDER BY c.created_at DESC LIMIT 1")
+    .bind(email).first<{ challengeId: string; codeHash: string; expiresAt: string; attempts: number; id: string; email: string; displayName: string; status: string; mustChange: number }>();
+  const timestamp = now();
+  if (!row || row.status !== 'active' || row.expiresAt <= timestamp || row.attempts >= 5) return err(c, 401, 'INVALID_CODE', 'The code is invalid or expired. Request a new code and try again.');
+  if (row.mustChange === 1) {
+    await c.env.DB.prepare('UPDATE buyer_email_codes SET used_at = ? WHERE id = ? AND used_at IS NULL').bind(timestamp, row.challengeId).run();
+    return err(c, 403, 'PASSWORD_CHANGE_REQUIRED', 'This account must complete its password change using password sign-in before email-code sign-in can be used.');
+  }
+  const candidate = await buyerCodeHash(row.email, input.data.code, c.env.OTP_ENCRYPTION_KEY);
+  if (candidate !== row.codeHash) {
+    await c.env.DB.prepare('UPDATE buyer_email_codes SET attempts = attempts + 1, used_at = CASE WHEN attempts + 1 >= 5 THEN ? ELSE used_at END WHERE id = ? AND used_at IS NULL').bind(timestamp, row.challengeId).run();
+    return err(c, 401, 'INVALID_CODE', 'The code is invalid or expired. Request a new code and try again.');
+  }
+  const token = randomToken(32);
+  const sessionId = newId();
+  const expires = new Date(Date.now() + BUYER_SESSION_SECONDS * 1000).toISOString();
+  const consumed = await c.env.DB.prepare('UPDATE buyer_email_codes SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ? AND attempts < 5').bind(timestamp, row.challengeId, timestamp).run();
+  if ((consumed.meta?.changes ?? 0) !== 1) return err(c, 401, 'INVALID_CODE', 'The code is invalid or expired. Request a new code and try again.');
+  await c.env.DB.batch([
+    c.env.DB.prepare('INSERT INTO sessions (id,user_id,token_hash,created_at,last_seen_at,expires_at,session_type) VALUES (?,?,?,?,?,?,?)').bind(sessionId, row.id, await sha256Hex(token), timestamp, timestamp, expires, 'buyer'),
+    c.env.DB.prepare("INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,?,'buyer.email_code_login','session',?,?, '{}',?)").bind(newId(), row.id, 'buyer', sessionId, c.get('requestId'), timestamp),
+  ]);
+  c.header('Set-Cookie', sessionCookie(buyerCodeCookie, token, BUYER_SESSION_SECONDS));
+  return c.json({ data: { id: row.id, email: row.email, displayName: row.displayName, expiresAt: expires, redirectTo: '/account' } });
+});
 
 /* ------------------------------------------------ first administrator */
 
@@ -628,7 +732,7 @@ portal.post('/api/admin/bootstrap', async (c) => {
   for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!;
   if (diff !== 0) return err(c, 403, 'INVALID_SETUP_TOKEN', 'Setup could not be authorised.');
   const email = input.data.email.toLowerCase();
-  const policy = passwordPolicyError(input.data.password, email);
+  const policy = input.data.password ? passwordPolicyError(input.data.password, email) : null;
   if (policy) return err(c, 422, 'WEAK_PASSWORD', policy);
   const timestamp = now();
   const userId = newId();
@@ -723,7 +827,7 @@ portal.post('/api/buyer/register', async (c) => {
     .object({
       displayName: z.string().trim().min(2).max(120),
       email: emailSchema,
-      password: z.string().max(200),
+      password: z.string().max(200).optional().default(''),
       companyName: z.string().trim().max(160).optional().default(''),
       roleTitle: z.string().trim().max(120).optional().default(''),
       investmentFocus: z
@@ -735,7 +839,7 @@ portal.post('/api/buyer/register', async (c) => {
   if (!input.success)
     return err(c, 422, 'VALIDATION_ERROR', 'Check the registration details and try again.');
   const email = input.data.email.toLowerCase();
-  const policy = passwordPolicyError(input.data.password, email);
+  const policy = input.data.password ? passwordPolicyError(input.data.password, email) : null;
   if (policy) return err(c, 422, 'WEAK_PASSWORD', policy);
   if (
     (await throttled(c.env, `buyer-register-email:${email}`, 5, 3600)) ||
@@ -755,12 +859,12 @@ portal.post('/api/buyer/register', async (c) => {
   const timestamp = now();
   const userId = newId();
   const jobId = newId();
-  const hash = await hashPassword(input.data.password);
+  const hash = input.data.password ? await hashPassword(input.data.password) : null;
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
         "INSERT INTO users (id,email,display_name,user_type,role,status,password_hash,password_updated_at,created_at,updated_at) VALUES (?,?,?,'buyer','buyer','invited',?,?,?,?)",
-      ).bind(userId, email, input.data.displayName, hash, timestamp, timestamp, timestamp),
+      ).bind(userId, email, input.data.displayName, hash, hash ? timestamp : null, timestamp, timestamp),
       c.env.DB.prepare(
         'INSERT INTO buyer_profiles (user_id,company_name,role_title,experience_notes,updated_at,privacy_consent_at,privacy_notice_version) VALUES (?,?,?,?,?,?,?)',
       ).bind(

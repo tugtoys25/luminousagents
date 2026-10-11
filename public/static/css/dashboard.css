@@ -243,6 +243,48 @@
 }
 .cms-list li {
   margin: 0.65rem 0;
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+}
+.cms-list li > .cms-row-select {
+  flex: 0 0 auto;
+  margin-top: 0.75rem;
+}
+.cms-list li > button {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+.cms-import {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+.cms-bulk {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 0.35rem;
+}
+.cms-bulk label {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+#cms-history-list {
+  display: grid;
+  gap: 0.65rem;
+  padding-left: 1.2rem;
+}
+#cms-history-list li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
 }
 .cms-editor,
 .buyer-provision {

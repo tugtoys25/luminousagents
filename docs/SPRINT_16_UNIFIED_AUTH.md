@@ -1,3 +1,5 @@
+> **Superseded in part by Sprint 25:** custom email/password remains and Cloudflare Access is not required, but buyers now have email one-time-code sign-in as an optional alternative. Buyer registration may omit a password, and code-only buyers can set one later. See `docs/SPRINT_25_SECURITY_BASELINE.md`.
+
 # Sprint 16 — unified email + password authentication on the Sprint 15 platform
 
 Sprint 16 merges two independently built authentication implementations: the Sprint 14/15 staff-only login and a complete staff + buyer password system. The Sprint 15 platform-management features (settings, GA4 consent, WhatsApp widget, managed pages and forms, compliance pages) are unchanged.

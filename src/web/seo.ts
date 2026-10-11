@@ -35,15 +35,14 @@ export function crumbsFromPath(path: string): Crumb[] {
     } catch {
       /* keep raw segment */
     }
+    const name = LABELS[decoded] ?? titleCase(decoded);
+    if (UNLINKED.has(decoded) && index < segments.length - 1) return { name };
     return {
-      name: LABELS[decoded] ?? titleCase(decoded),
-      path:
-        UNLINKED.has(decoded) && index < segments.length - 1
-          ? undefined
-          : `/${segments
-              .slice(0, index + 1)
-              .map(encodeURIComponent)
-              .join('/')}`,
+      name,
+      path: `/${segments
+        .slice(0, index + 1)
+        .map(encodeURIComponent)
+        .join('/')}`,
     };
   });
 }
