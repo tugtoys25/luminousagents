@@ -15,15 +15,7 @@
   const form = $('op-form');
   const bulkBar = $('op-bulk');
 
-  const state = {
-    stage: 'all',
-    page: 1,
-    pageSize: 25,
-    total: 0,
-    counts: {},
-    rows: [],
-    picked: new Set(),
-  };
+  const state = { stage: 'all', page: 1, pageSize: 25, total: 0, counts: {}, rows: [], picked: new Set() };
   let current = null; // opportunity being edited (raw API row) or null for new
   let brokersLoaded = false;
 
@@ -33,10 +25,7 @@
     const response = await fetch(url, {
       credentials: 'same-origin',
       ...options,
-      headers: {
-        ...(options.body && !isForm ? { 'content-type': 'application/json' } : {}),
-        ...(options.headers || {}),
-      },
+      headers: { ...(options.body && !isForm ? { 'content-type': 'application/json' } : {}), ...(options.headers || {}) },
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -54,8 +43,7 @@
     const review = o.reviewStatus ?? o.content_review_status;
     const visible = (o.publicVisibility ?? o.public_visibility) === 1;
     if (lifecycle === 'published' && visible) return 'live';
-    if (['sold', 'off_market', 'archived', 'on_hold', 'under_offer'].includes(lifecycle))
-      return 'closed';
+    if (['sold', 'off_market', 'archived', 'on_hold', 'under_offer'].includes(lifecycle)) return 'closed';
     if (review === 'approved') return 'ready';
     if (lifecycle === 'in_review') return 'review';
     return 'draft';
@@ -72,10 +60,7 @@
   /* ---------- workflow actions (one place, used by table and editor) ---------- */
   async function act(id, action, extra = {}) {
     try {
-      const r = await call(
-        `/dashboard/opportunities/${encodeURIComponent(id)}/workflow`,
-        json('POST', { action, ...extra }),
-      );
+      const r = await call(`/dashboard/opportunities/${encodeURIComponent(id)}/workflow`, json('POST', { action, ...extra }));
       return r.data;
     } catch (error) {
       if (error.code === 'NOT_PUBLIC' && action === 'publish') {
@@ -115,14 +100,10 @@
     const stage = o.stage;
     const buttons = [`<a class="dx-btn dx-btn-sm dx-btn-primary" href="#edit/${id}">Edit</a>`];
     if (stage === 'live')
-      buttons.push(
-        `<a class="dx-btn dx-btn-sm" href="/opportunities/${encodeURIComponent(o.slug)}" target="_blank" rel="noopener">View</a>`,
-      );
+      buttons.push(`<a class="dx-btn dx-btn-sm" href="/opportunities/${encodeURIComponent(o.slug)}" target="_blank" rel="noopener">View</a>`);
     if (isPublisher) {
       if (stage === 'closed') {
-        buttons.push(
-          `<button class="dx-btn dx-btn-sm" data-act="restore" data-id="${id}">Restore</button>`,
-        );
+        buttons.push(`<button class="dx-btn dx-btn-sm" data-act="restore" data-id="${id}">Restore</button>`);
       } else {
         buttons.push(
           o.reviewStatus === 'approved'
@@ -143,9 +124,7 @@
             : `<button class="dx-btn dx-btn-sm dx-btn-ghost-danger" data-act="archive" data-id="${id}">Archive</button>`,
       );
     } else if (stage === 'draft') {
-      buttons.push(
-        `<button class="dx-btn dx-btn-sm" data-act="submit" data-id="${id}">Send for review</button>`,
-      );
+      buttons.push(`<button class="dx-btn dx-btn-sm" data-act="submit" data-id="${id}">Send for review</button>`);
     }
     return `<div class="dx-row-actions">${buttons.join('')}</div>`;
   }
@@ -153,13 +132,10 @@
   function renderTable() {
     const columns = isPublisher ? 7 : 6;
     if (!state.rows.length) {
-      table.innerHTML =
-        '<div class="dx-empty">No opportunities match. Try another tab or search.</div>';
+      table.innerHTML = '<div class="dx-empty">No opportunities match. Try another tab or search.</div>';
     } else {
       table.innerHTML = `<table class="dx-table"><thead><tr>${
-        isPublisher
-          ? '<th class="dx-col-check"><input type="checkbox" id="op-pick-all" aria-label="Select all on this page"></th>'
-          : ''
+        isPublisher ? '<th class="dx-col-check"><input type="checkbox" id="op-pick-all" aria-label="Select all on this page"></th>' : ''
       }<th>Opportunity</th><th>Price</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody>${state.rows
         .map(
           (o) =>
@@ -318,10 +294,7 @@
     dlg.el.querySelector('#bulk-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        const r = await call(
-          '/dashboard/opportunities/bulk-review',
-          json('POST', { ids, decision, reason: new FormData(e.currentTarget).get('reason') }),
-        );
+        const r = await call('/dashboard/opportunities/bulk-review', json('POST', { ids, decision, reason: new FormData(e.currentTarget).get('reason') }));
         state.picked.clear();
         dlg.close();
         toast(`${r.data.processed} listing${r.data.processed === 1 ? '' : 's'} ${decision}.`);
@@ -398,20 +371,14 @@
     const card = $('op-publish-card');
     card.hidden = false;
     const reached = stage === 'live' ? 3 : stage === 'ready' ? 2 : 1;
-    card
-      .querySelectorAll('#op-steps li')
-      .forEach((li, index) => li.classList.toggle('is-done', index < reached));
+    card.querySelectorAll('#op-steps li').forEach((li, index) => li.classList.toggle('is-done', index < reached));
     const closed = stage === 'closed';
     const help = {
       draft: isPublisher
         ? 'Check the details, then approve the listing. Approving records today as the verification date.'
         : 'When the details are ready, send it for review. A publisher will approve it.',
-      review: isPublisher
-        ? 'Waiting for a publisher. Approve it when the details are checked.'
-        : 'Waiting for a publisher to approve it.',
-      ready: isPublisher
-        ? 'Approved. Publish it to show it on the website.'
-        : 'Approved. A publisher can publish it.',
+      review: isPublisher ? 'Waiting for a publisher. Approve it when the details are checked.' : 'Waiting for a publisher to approve it.',
+      ready: isPublisher ? 'Approved. Publish it to show it on the website.' : 'Approved. A publisher can publish it.',
       live: 'This listing is visible on the website.',
       closed: `This listing is ${String(o.lifecycle).replace('_', ' ')}, so it is hidden from the website.`,
     }[stage];
@@ -419,39 +386,19 @@
     const box = $('op-publish-actions');
     const buttons = [];
     if (!isPublisher) {
-      if (stage === 'draft')
-        buttons.push(
-          '<button type="button" class="dx-btn dx-btn-primary" data-wf="submit">Send for review</button>',
-        );
+      if (stage === 'draft') buttons.push('<button type="button" class="dx-btn dx-btn-primary" data-wf="submit">Send for review</button>');
     } else if (closed) {
-      buttons.push(
-        '<button type="button" class="dx-btn" data-wf="restore">Restore listing</button>',
-      );
+      buttons.push('<button type="button" class="dx-btn" data-wf="restore">Restore listing</button>');
     } else {
-      if (stage === 'draft' || stage === 'review')
-        buttons.push(
-          '<button type="button" class="dx-btn dx-btn-primary" data-wf="approve">Approve</button>',
-        );
-      if (stage === 'draft')
-        buttons.push(
-          '<button type="button" class="dx-btn" data-wf="submit">Mark as in review</button>',
-        );
+      if (stage === 'draft' || stage === 'review') buttons.push('<button type="button" class="dx-btn dx-btn-primary" data-wf="approve">Approve</button>');
+      if (stage === 'draft') buttons.push('<button type="button" class="dx-btn" data-wf="submit">Mark as in review</button>');
       if (stage === 'ready') {
-        buttons.push(
-          '<button type="button" class="dx-btn dx-btn-primary" data-wf="publish">Publish</button>',
-        );
-        buttons.push(
-          '<button type="button" class="dx-btn" data-wf="unapprove">Remove approval</button>',
-        );
+        buttons.push('<button type="button" class="dx-btn dx-btn-primary" data-wf="publish">Publish</button>');
+        buttons.push('<button type="button" class="dx-btn" data-wf="unapprove">Remove approval</button>');
       }
-      if (stage === 'live')
-        buttons.push('<button type="button" class="dx-btn" data-wf="unpublish">Unpublish</button>');
-      buttons.push(
-        '<button type="button" class="dx-btn" data-wf="reverify">Re-verify details</button>',
-      );
-      buttons.push(
-        '<button type="button" class="dx-btn dx-btn-ghost-danger" data-wf="archive">Archive</button>',
-      );
+      if (stage === 'live') buttons.push('<button type="button" class="dx-btn" data-wf="unpublish">Unpublish</button>');
+      buttons.push('<button type="button" class="dx-btn" data-wf="reverify">Re-verify details</button>');
+      buttons.push('<button type="button" class="dx-btn dx-btn-ghost-danger" data-wf="archive">Archive</button>');
     }
     box.innerHTML = buttons.join('');
     $('op-stage-badge').innerHTML = stageBadge({ ...o, stage, lifecycle: o.lifecycle });
@@ -474,10 +421,7 @@
       dlg.el.querySelector('#verify-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         try {
-          await call(
-            `/dashboard/opportunities/${encodeURIComponent(current.id)}/verify`,
-            json('POST', { reason: new FormData(e.currentTarget).get('reason') }),
-          );
+          await call(`/dashboard/opportunities/${encodeURIComponent(current.id)}/verify`, json('POST', { reason: new FormData(e.currentTarget).get('reason') }));
           dlg.close();
           toast('Verification date updated.');
         } catch (error) {
@@ -488,19 +432,9 @@
     }
     if (['unpublish', 'unapprove', 'archive'].includes(action)) {
       const ok = await confirmBox({
-        title:
-          action === 'archive'
-            ? 'Archive this listing?'
-            : action === 'unpublish'
-              ? 'Unpublish this listing?'
-              : 'Remove approval?',
+        title: action === 'archive' ? 'Archive this listing?' : action === 'unpublish' ? 'Unpublish this listing?' : 'Remove approval?',
         message: 'It will be hidden from the website until it is approved and published again.',
-        confirmLabel:
-          action === 'archive'
-            ? 'Archive'
-            : action === 'unpublish'
-              ? 'Unpublish'
-              : 'Remove approval',
+        confirmLabel: action === 'archive' ? 'Archive' : action === 'unpublish' ? 'Unpublish' : 'Remove approval',
         danger: true,
       });
       if (!ok) return;
@@ -570,18 +504,7 @@
 
   function payload() {
     const data = Object.fromEntries(
-      [
-        'title',
-        'country',
-        'opportunityType',
-        'classification',
-        'priceText',
-        'summary',
-        'availability',
-        'seoTitle',
-        'seoDescription',
-        'bodyHtml',
-      ].map((name) => [name, val(name)]),
+      ['title', 'country', 'opportunityType', 'classification', 'priceText', 'summary', 'availability', 'seoTitle', 'seoDescription', 'bodyHtml'].map((name) => [name, val(name)]),
     );
     data.assignedBrokerId = val('assignedBrokerId') || null;
     data.labels = val('labels')
@@ -589,8 +512,7 @@
       .map((label) => label.trim())
       .filter(Boolean)
       .slice(0, 12);
-    if (isPublisher)
-      data.priceVisibility = Boolean(form.elements.namedItem('priceVisibility')?.checked);
+    if (isPublisher) data.priceVisibility = Boolean(form.elements.namedItem('priceVisibility')?.checked);
     return data;
   }
 
@@ -627,9 +549,7 @@
       const approved = await act(id, 'approve');
       if (!approved) return openEditor(id, true);
       const live = await act(id, 'publish');
-      toast(
-        live ? 'Saved and live on the website.' : 'Saved and approved. Publishing needs attention.',
-      );
+      toast(live ? 'Saved and live on the website.' : 'Saved and approved. Publishing needs attention.');
       await openEditor(id, true);
     } catch (error) {
       toast(error.message, 'error');
@@ -658,10 +578,7 @@
     const b = event.target.closest('[data-media]');
     if (!b || !current) return;
     try {
-      await call(
-        `/dashboard/opportunities/${encodeURIComponent(current.id)}/media/${encodeURIComponent(b.dataset.media)}`,
-        { method: 'DELETE' },
-      );
+      await call(`/dashboard/opportunities/${encodeURIComponent(current.id)}/media/${encodeURIComponent(b.dataset.media)}`, { method: 'DELETE' });
       toast('Image removed.');
       loadMedia();
     } catch (error) {
@@ -677,10 +594,7 @@
     data.append('file', file);
     data.append('altText', alt);
     try {
-      await call(`/dashboard/opportunities/${encodeURIComponent(current.id)}/media`, {
-        method: 'POST',
-        body: data,
-      });
+      await call(`/dashboard/opportunities/${encodeURIComponent(current.id)}/media`, { method: 'POST', body: data });
       $('op-media-file').value = '';
       $('op-media-alt').value = '';
       toast('Image uploaded.');
