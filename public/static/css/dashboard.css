@@ -2767,3 +2767,46 @@ a.dx-primary:hover {
 .dx-list small {
   display: block;
 }
+
+/* Stage 3 fix: the generic workspace link and button rules were overriding .dx-btn
+   colours (green text on a green button, so "New opportunity" and "Edit" looked empty).
+   These selectors are stronger than both, so the button text is always visible. */
+html .workspace-shell .workspace-content :is(a, button).dx-btn.dx-btn {
+  background: var(--ws-surface);
+  border-color: var(--ws-line-strong);
+  color: var(--ws-ink);
+  text-decoration: none;
+}
+html .workspace-shell .workspace-content :is(a, button).dx-btn.dx-btn:hover {
+  background: var(--ws-surface-2);
+  border-color: var(--ws-brand);
+  color: var(--ws-brand);
+}
+html .workspace-shell .workspace-content :is(a, button).dx-btn.dx-btn-primary {
+  background: var(--ws-brand);
+  border-color: var(--ws-brand);
+  color: var(--ws-brand-ink);
+}
+html .workspace-shell .workspace-content :is(a, button).dx-btn.dx-btn-primary:hover {
+  background: var(--ws-brand-hover);
+  border-color: var(--ws-brand-hover);
+  color: var(--ws-brand-ink);
+}
+html .workspace-shell .workspace-content :is(a, button).dx-btn.dx-btn-danger {
+  background: var(--ws-danger);
+  border-color: var(--ws-danger);
+  color: #fff;
+}
+html .workspace-shell .workspace-content :is(a, button).dx-btn.dx-btn-danger:hover {
+  background: var(--ws-danger);
+  border-color: var(--ws-danger);
+  color: #fff;
+  filter: brightness(0.92);
+}
+html .workspace-shell .workspace-content :is(a, button).dx-btn.dx-btn-ghost-danger {
+  color: var(--ws-danger);
+}
+html .workspace-shell .workspace-content :is(a, button).dx-btn.dx-btn-ghost-danger:hover {
+  border-color: var(--ws-danger);
+  color: var(--ws-danger);
+}

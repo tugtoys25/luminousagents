@@ -278,6 +278,76 @@
     }, 300),
   );
 
+  /* ---------- bulk publish (uses the same workflow endpoint as the row buttons) ---------- */
+  if (bulkBar && isPublisher && !bulkBar.querySelector('[data-bulk="publish"]')) {
+    bulkBar
+      .querySelector('[data-bulk="approved"]')
+      ?.insertAdjacentHTML(
+        'afterend',
+        '<button type="button" class="dx-btn dx-btn-sm dx-btn-primary" data-bulk="publish">Publish selected</button>',
+      );
+  }
+
+  function bulkPublish() {
+    const rows = state.rows.filter((r) => state.picked.has(r.id)).slice(0, 50);
+    const elsewhere = state.picked.size - rows.length;
+    if (!rows.length) return toast('Select listings on this page to publish.', 'error');
+    const dlg = modal(
+      `Publish ${rows.length} listing${rows.length === 1 ? '' : 's'}`,
+      `<form class="dx-form" id="bulk-publish-form"><div class="dx-note dx-note-warn">Published listings go live on the website straight away. Listings classified as private or confidential are skipped so they are never made public by accident. Publish those one at a time.</div>${
+        elsewhere > 0
+          ? `<div class="dx-note">${elsewhere} selected on other pages ${elsewhere === 1 ? 'is' : 'are'} not included.</div>`
+          : ''
+      }<label class="dx-check"><input type="checkbox" name="approveFirst"> <span>Also approve listings that are not approved yet</span></label><div class="dx-actions"><button type="button" class="dx-btn" data-close>Cancel</button><button type="submit" class="dx-btn dx-btn-primary">Publish</button></div></form>`,
+    );
+    dlg.el.querySelector('#bulk-publish-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const approveFirst = new FormData(e.currentTarget).get('approveFirst') === 'on';
+      const go = e.currentTarget.querySelector('[type="submit"]');
+      go.disabled = true;
+      const tally = { published: 0, live: 0, closed: 0, notApproved: 0, notPublic: 0, failed: 0 };
+      const workflow = (id, action) =>
+        call(`/dashboard/opportunities/${encodeURIComponent(id)}/workflow`, json('POST', { action }));
+      let done = 0;
+      for (const row of rows) {
+        go.textContent = `Publishing ${++done} of ${rows.length}…`;
+        if (row.stage === 'live') {
+          tally.live++;
+          continue;
+        }
+        if (row.stage === 'closed') {
+          tally.closed++;
+          continue;
+        }
+        const approved = row.reviewStatus === 'approved';
+        if (!approved && !approveFirst) {
+          tally.notApproved++;
+          continue;
+        }
+        try {
+          if (!approved) await workflow(row.id, 'approve');
+          await workflow(row.id, 'publish'); // no makePublic: non-public listings are refused
+          tally.published++;
+        } catch (error) {
+          if (error.code === 'NOT_PUBLIC') tally.notPublic++;
+          else if (error.code === 'NEEDS_APPROVAL') tally.notApproved++;
+          else if (error.code === 'LISTING_CLOSED') tally.closed++;
+          else tally.failed++;
+        }
+      }
+      const parts = [`${tally.published} published`];
+      if (tally.live) parts.push(`${tally.live} already live`);
+      if (tally.notApproved) parts.push(`${tally.notApproved} not approved`);
+      if (tally.notPublic) parts.push(`${tally.notPublic} skipped (not classified public)`);
+      if (tally.closed) parts.push(`${tally.closed} closed or archived`);
+      if (tally.failed) parts.push(`${tally.failed} failed`);
+      state.picked.clear();
+      dlg.close();
+      toast(`${parts.join(', ')}.`, tally.failed ? 'error' : undefined);
+      await loadList();
+    });
+  }
+
   bulkBar?.addEventListener('click', (event) => {
     const b = event.target.closest('[data-bulk]');
     if (!b) return;
@@ -285,6 +355,7 @@
       state.picked.clear();
       return renderTable();
     }
+    if (b.dataset.bulk === 'publish') return bulkPublish();
     const decision = b.dataset.bulk;
     const ids = [...state.picked].slice(0, 50);
     const dlg = modal(
