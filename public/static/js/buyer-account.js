@@ -20,7 +20,11 @@
       },
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error?.message || 'Request failed.');
+    if (!response.ok) {
+      if (payload.error?.code === 'PASSWORD_CHANGE_REQUIRED')
+        window.location.assign('/account/change-password');
+      throw new Error(payload.error?.message || 'Request failed.');
+    }
     return payload.data;
   }
   async function loadAccount() {

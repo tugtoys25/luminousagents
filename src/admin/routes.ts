@@ -52,6 +52,51 @@ const escapeHtml = (s: unknown) =>
     (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!,
   );
 
+const TEMP_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+/** 14 unambiguous characters from a CSPRNG (rejection sampling, no modulo bias). */
+function generateTemporaryPassword(): string {
+  const limit = 256 - (256 % TEMP_ALPHABET.length);
+  for (;;) {
+    let out = '';
+    while (out.length < 14) {
+      for (const byte of crypto.getRandomValues(new Uint8Array(32))) {
+        if (byte < limit && out.length < 14) out += TEMP_ALPHABET[byte % TEMP_ALPHABET.length];
+      }
+    }
+    if (/[a-z]/i.test(out) && /[2-9]/.test(out)) return out;
+  }
+}
+
+/** Sets a temporary password, forces a change at next sign-in and signs the person out everywhere. */
+async function issueTemporaryPassword(
+  c: Context<{ Bindings: Env; Variables: { requestId: string; staff: StaffIdentity } }>,
+  user: { id: string; email: string },
+  kind: 'staff' | 'buyer',
+  custom?: string,
+): Promise<{ password: string } | { problem: string }> {
+  if (custom) {
+    const problem = passwordPolicyError(custom, user.email);
+    if (problem) return { problem };
+  }
+  const password = custom || generateTemporaryPassword();
+  const timestamp = now();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      'UPDATE users SET password_hash = ?, password_updated_at = ?, must_change_password = 1, failed_login_count = 0, locked_until = NULL, updated_at = ? WHERE id = ? AND user_type = ?',
+    ).bind(await hashPassword(password), timestamp, timestamp, user.id, kind),
+    c.env.DB.prepare(
+      'UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL',
+    ).bind(timestamp, user.id),
+    c.env.DB.prepare(
+      'UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+    ).bind(timestamp, user.id),
+  ]);
+  await audit(c, `${kind}.temporary_password_issued`, 'user', user.id, {
+    generated: !custom,
+  });
+  return { password };
+}
+
 async function purgeOpportunityPublicCache(
   env: Env,
   slug: string,
@@ -737,13 +782,13 @@ admin.post(
 
 admin.get('/buyers/ui', requireRole('admin', 'super_admin'), async (c) =>
   c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buyer access · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Buyer registrations</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/admin/logout">Sign out</a></nav><p class="muted">New registrations remain invited until an administrator approves them. Activating an account allows email and password sign-in but does not grant confidential data-room access.</p><p id="notice" role="status"></p><section id="buyers">Loading registrations…</section></main><script src="/static/js/dashboard-buyers.js" defer></script></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buyer access · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Buyer access</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Approve new registrations, suspend access and reset passwords. Approving a buyer allows sign-in only; confidential data-room access still needs an approved NDA.</p><div class="dx-toolbar"><div class="dx-tabs" id="buyer-tabs" role="tablist"><button type="button" class="dx-tab" role="tab" data-tab="invited" aria-selected="false">Pending approval<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="active" aria-selected="false">Active<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="suspended" aria-selected="false">Suspended<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="all" aria-selected="false">All<span class="dx-count">0</span></button></div><input class="dx-search" id="buyer-search" type="search" placeholder="Search" aria-label="Search"><span class="dx-spacer"></span><button type="button" class="dx-btn dx-btn-primary" id="buyer-add">Add buyer</button></div><div id="buyers" class="dx-table-wrap">Loading…</div></main><script src="/static/js/dashboard-kit.js" defer></script><script src="/static/js/dashboard-buyers.js" defer></script></body></html>`,
   ),
 );
 
 admin.get('/buyers', requireRole('admin', 'super_admin'), async (c) => {
   const result = await c.env.DB.prepare(
-    "SELECT u.id, u.email, u.display_name AS displayName, u.status, u.created_at AS createdAt, p.company_name AS companyName, p.role_title AS roleTitle FROM users u LEFT JOIN buyer_profiles p ON p.user_id = u.id WHERE u.user_type = 'buyer' ORDER BY CASE u.status WHEN 'invited' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, u.created_at DESC LIMIT 300",
+    "SELECT u.id, u.email, u.display_name AS displayName, u.status, u.created_at AS createdAt, p.company_name AS companyName, p.role_title AS roleTitle, u.must_change_password AS mustChange, CASE WHEN u.password_hash IS NULL THEN 0 ELSE 1 END AS hasPassword FROM users u LEFT JOIN buyer_profiles p ON p.user_id = u.id WHERE u.user_type = 'buyer' ORDER BY CASE u.status WHEN 'invited' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, u.created_at DESC LIMIT 300",
   ).all();
   return c.json({ data: result.results ?? [] });
 });
@@ -783,6 +828,43 @@ admin.patch('/buyers/:id', requireRole('admin', 'super_admin'), async (c) => {
     ),
   ]);
   return c.json({ data: { id: user.id, status: parsed.data.status } });
+});
+
+admin.post('/buyers/:id/temporary-password', requireRole('admin', 'super_admin'), async (c) => {
+  const body = z
+    .object({ password: z.string().max(200).optional() })
+    .safeParse(await c.req.json().catch(() => ({})));
+  if (!body.success)
+    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid password.' } }, 422);
+  const user = await c.env.DB.prepare(
+    "SELECT id, email, status FROM users WHERE id = ? AND user_type = 'buyer'",
+  )
+    .bind(c.req.param('id'))
+    .first<{ id: string; email: string; status: string }>();
+  if (!user) return c.json({ error: { code: 'NOT_FOUND', message: 'Buyer not found.' } }, 404);
+  const result = await issueTemporaryPassword(c, user, 'buyer', body.data.password || undefined);
+  if ('problem' in result)
+    return c.json({ error: { code: 'WEAK_PASSWORD', message: result.problem } }, 422);
+  c.header('Cache-Control', 'no-store');
+  return c.json({
+    data: { email: user.email, temporaryPassword: result.password, status: user.status },
+  });
+});
+
+admin.post('/buyers/:id/reset-password', requireRole('admin', 'super_admin'), async (c) => {
+  const user = await c.env.DB.prepare(
+    "SELECT id, email FROM users WHERE id = ? AND user_type = 'buyer' AND status = 'active'",
+  )
+    .bind(c.req.param('id'))
+    .first<{ id: string; email: string }>();
+  if (!user)
+    return c.json(
+      { error: { code: 'NOT_FOUND', message: 'Active buyer account not found.' } },
+      404,
+    );
+  const emailQueued = Boolean(await issueResetToken(c.env, user, 'reset', 'buyer'));
+  await audit(c, 'buyer.password_reset_issued', 'user', user.id, { emailQueued });
+  return c.json({ data: { emailQueued } });
 });
 
 admin.post('/buyers/provision', requireRole('admin', 'super_admin'), async (c) => {
@@ -2691,16 +2773,21 @@ const staffRoles = ['super_admin', 'admin', 'editor', 'broker', 'publisher', 'au
 
 admin.get('/staff/ui', requireRole('super_admin'), async (c) =>
   c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff accounts · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Staff accounts</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/audit">Audit log</a></nav><p class="muted">Only super administrators can create staff, change roles or suspend access. Leave the temporary password blank to email the person a set-password link.</p><form id="staff-create" class="buyer-provision"><label>Full name <input name="displayName" minlength="2" maxlength="120" required></label><label>Work email <input name="email" type="email" maxlength="254" required></label><label>Role <select name="role"><option value="admin">admin</option><option value="editor">editor</option><option value="broker">broker</option><option value="publisher">publisher</option><option value="auditor">auditor</option><option value="super_admin">super_admin</option></select></label><label>Temporary password (optional, min 12 characters) <input name="temporaryPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200"></label><button type="submit">Create staff account</button></form><p id="notice" role="status"></p><section id="staff-list">Loading staff…</section></main><script src="/static/js/dashboard-staff.js" defer></script></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff accounts · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Staff accounts</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/audit">Audit log</a></nav><p class="muted">Only super administrators can create staff, edit names and emails, change roles, set temporary passwords or suspend access. A temporary password forces the person to choose a new one at first sign-in.</p><div class="dx-toolbar"><div class="dx-tabs" id="staff-tabs" role="tablist"><button type="button" class="dx-tab" role="tab" data-tab="all" aria-selected="false">All<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="active" aria-selected="false">Active<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="suspended" aria-selected="false">Suspended<span class="dx-count">0</span></button></div><input class="dx-search" id="staff-search" type="search" placeholder="Search" aria-label="Search"><span class="dx-spacer"></span><button type="button" class="dx-btn dx-btn-primary" id="staff-add">Add staff</button></div><div id="staff-list" class="dx-table-wrap">Loading…</div></main><script src="/static/js/dashboard-kit.js" defer></script><script src="/static/js/dashboard-staff.js" defer></script></body></html>`,
   ),
 );
 
 admin.get('/staff', requireRole('super_admin'), async (c) => {
   const result = await c.env.DB.prepare(
-    "SELECT id, email, display_name AS displayName, role, status, created_at AS createdAt, CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS hasPassword FROM users WHERE user_type = 'staff' ORDER BY created_at LIMIT 300",
+    "SELECT id, email, display_name AS displayName, role, status, created_at AS createdAt, CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS hasPassword, must_change_password AS mustChange FROM users WHERE user_type = 'staff' ORDER BY created_at LIMIT 300",
   ).all();
   return c.json({
-    data: (result.results ?? []).map((r) => ({ ...r, hasPassword: r['hasPassword'] === 1 })),
+    data: (result.results ?? []).map((r) => ({
+      ...r,
+      hasPassword: r['hasPassword'] === 1,
+      mustChange: r['mustChange'] === 1,
+      isSelf: r['id'] === c.get('staff').id,
+    })),
   });
 });
 
@@ -2768,48 +2855,105 @@ admin.patch('/staff/:id', requireRole('super_admin'), async (c) => {
     .object({
       role: z.enum(staffRoles).optional(),
       status: z.enum(['active', 'suspended']).optional(),
+      displayName: z.string().trim().min(2).max(120).optional(),
+      email: z.string().trim().email().max(254).optional(),
     })
-    .refine((v) => v.role || v.status)
+    .refine((v) => v.role || v.status || v.displayName || v.email)
     .safeParse(await c.req.json().catch(() => null));
   if (!parsed.success)
     return c.json(
-      { error: { code: 'VALIDATION_ERROR', message: 'Choose a role or status.' } },
+      { error: { code: 'VALIDATION_ERROR', message: 'Check the name, email, role and status.' } },
       422,
     );
   const target = c.req.param('id');
-  if (target === c.get('staff').id)
+  const isSelf = target === c.get('staff').id;
+  if (isSelf && (parsed.data.role || parsed.data.status || parsed.data.email))
     return c.json(
       {
         error: {
           code: 'SELF_CHANGE_BLOCKED',
-          message: 'You cannot change your own role or status.',
+          message:
+            'You can only change your own name here. Ask another super administrator for role, status or email changes.',
         },
       },
       409,
     );
   const user = await c.env.DB.prepare(
-    "SELECT id, role, status FROM users WHERE id = ? AND user_type = 'staff'",
+    "SELECT id, email, display_name AS displayName, role, status FROM users WHERE id = ? AND user_type = 'staff'",
   )
     .bind(target)
-    .first<{ id: string; role: string; status: string }>();
+    .first<{ id: string; email: string; displayName: string; role: string; status: string }>();
   if (!user)
     return c.json({ error: { code: 'NOT_FOUND', message: 'Staff account not found.' } }, 404);
   const role = parsed.data.role ?? user.role;
   const status = parsed.data.status ?? user.status;
+  const displayName = parsed.data.displayName ?? user.displayName;
+  const email = (parsed.data.email ?? user.email).toLowerCase();
+  if (email !== user.email.toLowerCase()) {
+    const taken = await c.env.DB.prepare(
+      'SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id != ?',
+    )
+      .bind(email, user.id)
+      .first();
+    if (taken)
+      return c.json(
+        {
+          error: { code: 'ACCOUNT_CONFLICT', message: 'Another account already uses that email.' },
+        },
+        409,
+      );
+  }
   const timestamp = now();
+  const securityChange =
+    status !== user.status || role !== user.role || email !== user.email.toLowerCase();
   await c.env.DB.batch([
     c.env.DB.prepare(
-      "UPDATE users SET role = ?, status = ?, updated_at = ? WHERE id = ? AND user_type = 'staff'",
-    ).bind(role, status, timestamp, user.id),
+      "UPDATE users SET role = ?, status = ?, display_name = ?, email = ?, updated_at = ? WHERE id = ? AND user_type = 'staff'",
+    ).bind(role, status, displayName, email, timestamp, user.id),
     c.env.DB.prepare(
-      'UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND (? != ? OR ? != ?)',
-    ).bind(timestamp, user.id, status, 'active', role, user.role),
+      'UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND ? = 1',
+    ).bind(timestamp, user.id, securityChange ? 1 : 0),
   ]);
   await audit(c, 'staff.updated', 'user', user.id, {
-    from: { role: user.role, status: user.status },
-    to: { role, status },
+    from: {
+      role: user.role,
+      status: user.status,
+      email: user.email,
+      displayName: user.displayName,
+    },
+    to: { role, status, email, displayName },
   });
-  return c.json({ data: { id: user.id, role, status } });
+  return c.json({ data: { id: user.id, role, status, displayName, email } });
+});
+
+admin.post('/staff/:id/temporary-password', requireRole('super_admin'), async (c) => {
+  const body = z
+    .object({ password: z.string().max(200).optional() })
+    .safeParse(await c.req.json().catch(() => ({})));
+  if (!body.success)
+    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid password.' } }, 422);
+  if (c.req.param('id') === c.get('staff').id)
+    return c.json(
+      {
+        error: {
+          code: 'SELF_CHANGE_BLOCKED',
+          message: 'Use Change password to update your own password.',
+        },
+      },
+      409,
+    );
+  const user = await c.env.DB.prepare(
+    "SELECT id, email FROM users WHERE id = ? AND user_type = 'staff'",
+  )
+    .bind(c.req.param('id'))
+    .first<{ id: string; email: string }>();
+  if (!user)
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Staff account not found.' } }, 404);
+  const result = await issueTemporaryPassword(c, user, 'staff', body.data.password || undefined);
+  if ('problem' in result)
+    return c.json({ error: { code: 'WEAK_PASSWORD', message: result.problem } }, 422);
+  c.header('Cache-Control', 'no-store');
+  return c.json({ data: { email: user.email, temporaryPassword: result.password } });
 });
 
 admin.post('/staff/:id/reset-password', requireRole('super_admin'), async (c) => {

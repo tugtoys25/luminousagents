@@ -31,15 +31,22 @@ async function buyerAuth(c: Context<BuyerApp>): Promise<Buyer | Response> {
   if (!token) return jsonError(c, 401, 'UNAUTHENTICATED', 'Buyer sign-in required.');
   const tokenHash = await digest(token);
   const row = await c.env.DB.prepare(
-    "SELECT u.id, u.email, u.display_name AS displayName, u.status, s.id AS sessionId FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.user_type = 'buyer' AND u.status = 'active' LIMIT 1",
+    "SELECT u.id, u.email, u.display_name AS displayName, u.status, u.must_change_password AS mustChange, s.id AS sessionId FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.user_type = 'buyer' AND u.status = 'active' LIMIT 1",
   )
     .bind(tokenHash, now())
-    .first<Buyer & { sessionId: string }>();
+    .first<Buyer & { sessionId: string; mustChange: number }>();
   if (!row) return jsonError(c, 401, 'UNAUTHENTICATED', 'Buyer session is invalid or expired.');
   await c.env.DB.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?')
     .bind(now(), row.sessionId)
     .run();
-  const { sessionId: _sessionId, ...buyer } = row;
+  if (row.mustChange === 1)
+    return jsonError(
+      c,
+      403,
+      'PASSWORD_CHANGE_REQUIRED',
+      'Change your temporary password before continuing.',
+    );
+  const { sessionId: _sessionId, mustChange: _mustChange, ...buyer } = row;
   return buyer;
 }
 async function requireBuyer(c: Context<BuyerApp>, next: () => Promise<void>) {

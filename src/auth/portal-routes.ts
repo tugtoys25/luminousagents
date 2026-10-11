@@ -449,7 +449,13 @@ function mountAuthApi(kind: Kind, base: string) {
         expiresAt: expires,
         mustChangePassword: mustChange,
         redirectTo:
-          kind === 'staff' ? (mustChange ? '/admin/change-password' : '/dashboard') : '/account',
+          kind === 'staff'
+            ? mustChange
+              ? '/admin/change-password'
+              : '/dashboard'
+            : mustChange
+              ? '/account/change-password'
+              : '/account',
       },
     });
   });
