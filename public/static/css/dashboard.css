@@ -2810,3 +2810,112 @@ html .workspace-shell .workspace-content :is(a, button).dx-btn.dx-btn-ghost-dang
   border-color: var(--ws-danger);
   color: var(--ws-danger);
 }
+
+/* Visual editors for menu links, homepage sections and form fields (replace raw JSON boxes). */
+.je {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 10px;
+}
+.je-intro p {
+  margin: 4px 0 0;
+}
+.je-help,
+.je-hint {
+  color: var(--ws-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.je-list {
+  display: grid;
+  gap: 10px;
+}
+.je-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: var(--ws-surface);
+}
+.je-item.je-bad {
+  border-color: var(--ws-danger);
+}
+.je-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.je-spacer {
+  flex: 1;
+}
+.je-item-body {
+  display: grid;
+  gap: 10px;
+}
+.je-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.je-field {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 13px;
+}
+.je-label {
+  font-weight: 650;
+}
+.je-field :is(input, select, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--ws-line-strong);
+  border-radius: 10px;
+  background: var(--ws-surface);
+  color: var(--ws-ink);
+  font: inherit;
+  font-size: 14px;
+}
+.je-field :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--ws-brand);
+  outline-offset: 1px;
+}
+.je-field :is(input, select, textarea)[aria-invalid='true'] {
+  border-color: var(--ws-danger);
+}
+.je-err {
+  color: var(--ws-danger);
+  font-size: 12px;
+}
+.je-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.je-adv summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--ws-muted);
+}
+.je-adv .je-field {
+  margin-top: 8px;
+}
+.je-empty {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--ws-line-strong);
+  border-radius: 12px;
+  color: var(--ws-muted);
+  font-size: 13px;
+}
+.je-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}

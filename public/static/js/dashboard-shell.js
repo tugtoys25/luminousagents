@@ -733,6 +733,17 @@
       f.addEventListener('input', upd);
       upd();
     }
+    // Fields that used to need JSON get visual editors (menu links, sections, form fields).
+    if (
+      content.querySelector(
+        'textarea[name$="_navigation"], textarea[name$="_sections"], textarea[name="fieldsJson"]',
+      )
+    ) {
+      const editorScript = document.createElement('script');
+      editorScript.src = '/static/js/dashboard-json-editors.js';
+      editorScript.defer = true;
+      document.head.append(editorScript);
+    }
     for (const f of content.querySelectorAll(
       'textarea[name$="_navigation"], textarea[name$="_sections"], textarea[name="fieldsJson"]',
     )) {
