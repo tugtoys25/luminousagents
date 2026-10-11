@@ -2464,7 +2464,7 @@ admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
 
 admin.get('/pages/ui', requireRole('admin', 'super_admin', 'editor'), (c) =>
   c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Managed pages</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><h1>Managed pages</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/logout">Sign out</a></nav><p>Create SEO-friendly content pages. Content is rendered as escaped plain text; HTML is not executed.</p><div class="cms-layout"><aside class="cms-list-panel" aria-label="Pages"><h2>Your pages</h2><ul id="managed-pages"></ul><h2>Built-in site pages</h2><p class="muted">Privacy, terms, About and similar pages ship with default text. Customise one, set it to Published, and your text replaces the default.</p><ul id="builtin-pages"></ul></aside><div class="cms-editor-col"><form id="managed-page-form" class="flow" data-flow data-serp-path="/pages/{slug}"><div class="flow-bar"><h2 id="page-form-title">New page</h2><span class="flow-state" aria-live="polite">All changes saved</span><button id="page-new" type="button">New page</button><button type="submit">Save page</button></div><input type="hidden" name="id"><fieldset class="flow-card"><legend data-step="1">The page</legend><div class="flow-grid"><label class="span-2">Title <input name="title" minlength="3" maxlength="180" required></label><label>Slug <input name="slug" pattern="[a-z0-9-]+" maxlength="100" required></label><label>Status <select name="status"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label><label class="span-2">Description <textarea name="description" maxlength="500"></textarea></label></div></fieldset><fieldset class="flow-card"><legend data-step="2">Content</legend><label>Body (plain text; HTML is not executed) <textarea name="bodyMarkdown" rows="12" maxlength="20000" required></textarea></label></fieldset><fieldset class="flow-card"><legend data-step="3">Search appearance</legend><div class="flow-grid"><label class="span-2">SEO title <input name="seoTitle" maxlength="180"></label><label class="span-2">SEO description <input name="seoDescription" maxlength="320"></label></div></fieldset></form><p id="page-notice" role="status"></p></div></div></main><script src="/static/js/dashboard-pages.js" defer></script></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pages · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Pages</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/admin/logout">Sign out</a></nav><section id="pages-list-view"><p class="muted">Edit the text of built-in pages (About, Services, FAQ, legal notices) or add your own pages. A built-in page always keeps its address, for example /legal/privacy. New pages live under /pages/.</p><div class="dx-toolbar"><div class="dx-tabs" id="pg-tabs" role="tablist"><button type="button" class="dx-tab" role="tab" data-tab="all" aria-selected="true">All<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="builtin" aria-selected="false">Built-in<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="custom" aria-selected="false">My pages<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="draft" aria-selected="false">Drafts<span class="dx-count">0</span></button></div><input class="dx-search" id="pg-search" type="search" placeholder="Search pages" aria-label="Search pages"><span class="dx-spacer"></span><button type="button" class="dx-btn dx-btn-primary" id="pg-new">New page</button></div><div id="pg-table" class="dx-table-wrap">Loading…</div></section><section id="pages-editor-view" hidden><div class="dx-editor-bar"><button type="button" class="dx-btn" id="pg-back">← All pages</button><h2 id="pg-heading">New page</h2><span class="dx-spacer"></span><a class="dx-btn" id="pg-view" target="_blank" rel="noopener" hidden>View live</a><button type="submit" form="pg-form" class="dx-btn dx-btn-primary">Save page</button></div><form id="pg-form" class="dx-editor"><input type="hidden" name="id"><div class="dx-editor-main"><div class="dx-card"><label class="dx-field">Title<input name="title" minlength="3" maxlength="180" required></label><label class="dx-field">Content<small>Plain text. Blank lines start a new paragraph. HTML is not executed.</small><textarea name="bodyMarkdown" rows="18" maxlength="20000" required></textarea></label></div><details class="dx-card"><summary>Search appearance (optional)</summary><div class="dx-form"><label class="dx-field">Page description<textarea name="description" maxlength="500" rows="2"></textarea></label><label class="dx-field">SEO title<input name="seoTitle" maxlength="180"></label><label class="dx-field">SEO description<input name="seoDescription" maxlength="320"></label></div></details></div><aside class="dx-editor-side"><div class="dx-card"><label class="dx-field">Status<select name="status"><option value="draft">Draft - not public</option><option value="published">Published - live</option><option value="archived">Archived - hidden</option></select></label><div class="dx-field"><span>Address</span><div id="pg-url" class="dx-url"></div><input name="slug" id="pg-slug" pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="100" required><small id="pg-url-note"></small></div></div></aside></form></section></main><script src="/static/js/dashboard-kit.js" defer></script><script src="/static/js/dashboard-pages.js" defer></script></body></html>`,
   ),
 );
 admin.get('/pages/defaults', requireRole('admin', 'super_admin', 'editor'), (c) =>
@@ -2481,8 +2481,15 @@ admin.get('/pages/defaults', requireRole('admin', 'super_admin', 'editor'), (c) 
 admin.get('/pages', requireRole('admin', 'super_admin', 'editor'), async (c) => {
   const r = await c.env.DB.prepare(
     'SELECT id,slug,title,description,body_markdown AS bodyMarkdown,status,seo_title AS seoTitle,seo_description AS seoDescription,updated_at AS updatedAt FROM managed_pages ORDER BY updated_at DESC LIMIT 200',
-  ).all();
-  return c.json({ data: r.results ?? [] });
+  ).all<{ slug: string }>();
+  const builtIn = new Map(STATIC_PAGES.map(([path]) => [staticPageSlug(path), path]));
+  return c.json({
+    data: (r.results ?? []).map((row) => ({
+      ...row,
+      isBuiltin: builtIn.has(row.slug),
+      publicPath: builtIn.get(row.slug) ?? `/pages/${row.slug}`,
+    })),
+  });
 });
 admin.post('/pages', requireRole('admin', 'super_admin', 'editor'), async (c) => {
   const p = z
@@ -2507,6 +2514,22 @@ admin.post('/pages', requireRole('admin', 'super_admin', 'editor'), async (c) =>
     staff = c.get('staff'),
     timestamp = now(),
     pageId = d.id ?? id();
+  const builtIn = new Map(STATIC_PAGES.map(([path]) => [staticPageSlug(path), path]));
+  if (d.id) {
+    const existing = await c.env.DB.prepare('SELECT slug FROM managed_pages WHERE id = ?')
+      .bind(d.id)
+      .first<{ slug: string }>();
+    if (existing && existing.slug !== d.slug && (builtIn.has(existing.slug) || builtIn.has(d.slug)))
+      return c.json(
+        {
+          error: {
+            code: 'SLUG_LOCKED',
+            message: 'The address of a built-in page cannot be changed.',
+          },
+        },
+        422,
+      );
+  }
   try {
     await c.env.DB.prepare(
       'INSERT INTO managed_pages (id,slug,title,description,body_markdown,status,seo_title,seo_description,created_by,updated_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,title=excluded.title,description=excluded.description,body_markdown=excluded.body_markdown,status=excluded.status,seo_title=excluded.seo_title,seo_description=excluded.seo_description,updated_by=excluded.updated_by,updated_at=excluded.updated_at',
@@ -2533,7 +2556,48 @@ admin.post('/pages', requireRole('admin', 'super_admin', 'editor'), async (c) =>
     );
   }
   await audit(c, 'managed_page.saved', 'managed_page', pageId, { slug: d.slug, status: d.status });
-  return c.json({ data: { id: pageId, slug: d.slug, status: d.status } });
+  return c.json({
+    data: {
+      id: pageId,
+      slug: d.slug,
+      status: d.status,
+      isBuiltin: builtIn.has(d.slug),
+      publicPath: builtIn.get(d.slug) ?? `/pages/${d.slug}`,
+    },
+  });
+});
+
+admin.patch('/pages/:id/status', requireRole('admin', 'super_admin', 'editor'), async (c) => {
+  const body = z
+    .object({ status: z.enum(['draft', 'published', 'archived']) })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!body.success)
+    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Choose a valid status.' } }, 422);
+  const page = await c.env.DB.prepare('SELECT id, slug FROM managed_pages WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ id: string; slug: string }>();
+  if (!page) return c.json({ error: { code: 'NOT_FOUND', message: 'Page not found.' } }, 404);
+  await c.env.DB.prepare(
+    'UPDATE managed_pages SET status = ?, updated_by = ?, updated_at = ? WHERE id = ?',
+  )
+    .bind(body.data.status, c.get('staff').id, now(), page.id)
+    .run();
+  await audit(c, 'managed_page.status_changed', 'managed_page', page.id, {
+    slug: page.slug,
+    status: body.data.status,
+  });
+  return c.json({ data: { id: page.id, status: body.data.status } });
+});
+
+/** Deletes a custom page, or resets a built-in page back to its default text. */
+admin.delete('/pages/:id', requireRole('admin', 'super_admin'), async (c) => {
+  const page = await c.env.DB.prepare('SELECT id, slug FROM managed_pages WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ id: string; slug: string }>();
+  if (!page) return c.json({ error: { code: 'NOT_FOUND', message: 'Page not found.' } }, 404);
+  await c.env.DB.prepare('DELETE FROM managed_pages WHERE id = ?').bind(page.id).run();
+  await audit(c, 'managed_page.deleted', 'managed_page', page.id, { slug: page.slug });
+  return c.json({ data: { id: page.id, deleted: true } });
 });
 
 admin.get('/forms/ui', requireRole('admin', 'super_admin', 'editor'), (c) =>

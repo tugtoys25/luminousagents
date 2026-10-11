@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../env';
+import { STATIC_PAGES, staticPageSlug } from './static-pages';
 
 const managed = new Hono<{ Bindings: Env; Variables: { requestId: string } }>();
 const escapeHtml = (s: string) =>
@@ -25,6 +26,9 @@ async function setting(env: Env, key: string): Promise<string> {
 }
 managed.get('/pages/:slug', async (c) => {
   const slug = c.req.param('slug');
+  // Built-in pages keep their own address; /pages/<builtin-slug> is never a second URL for them.
+  const builtInPath = STATIC_PAGES.find(([path]) => staticPageSlug(path) === slug)?.[0];
+  if (builtInPath) return c.redirect(builtInPath, 301);
   const page = await c.env.DB.prepare(
     "SELECT title,description,body_markdown AS bodyMarkdown,seo_title AS seoTitle,seo_description AS seoDescription FROM managed_pages WHERE slug=? AND status='published' LIMIT 1",
   )

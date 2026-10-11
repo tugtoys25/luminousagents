@@ -2538,3 +2538,73 @@ html[data-theme='midnight'] .serp-title {
     width: 100%;
   }
 }
+
+/* ===== Editor layout (separate "tab" view, no scrolling to a form below a list) ===== */
+.dx-editor-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0 0 18px;
+  padding: 12px 0;
+  background: var(--ws-bg);
+  border-bottom: 1px solid var(--ws-line);
+}
+.dx-editor-bar h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.dx-editor-bar .dx-spacer {
+  flex: 1;
+}
+.dx-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+  align-items: start;
+}
+.dx-editor-main,
+.dx-editor-side {
+  display: grid;
+  gap: 16px;
+}
+.dx-card {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius);
+  background: var(--ws-surface);
+  box-shadow: var(--ws-shadow);
+}
+details.dx-card > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+details.dx-card[open] > summary {
+  margin-bottom: 14px;
+}
+.dx-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.dx-url {
+  padding: 10px 12px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  background: var(--ws-surface-2);
+  color: var(--ws-muted);
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+@media (max-width: 900px) {
+  .dx-editor {
+    grid-template-columns: 1fr;
+  }
+  .dx-editor-side {
+    order: -1;
+  }
+}
