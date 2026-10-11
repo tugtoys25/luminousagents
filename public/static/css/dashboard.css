@@ -2650,3 +2650,120 @@ details.dx-card[open] > summary {
     order: -1;
   }
 }
+
+/* ===== Opportunities table and editor extras ===== */
+.admin [hidden] {
+  display: none !important;
+}
+.dx-bulkbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--ws-line-strong);
+  border-radius: 12px;
+  background: var(--ws-brand-soft);
+  font-size: 13px;
+  font-weight: 650;
+}
+.dx-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 0;
+  color: var(--ws-muted);
+  font-size: 13px;
+}
+.dx-pager .dx-spacer {
+  flex: 1;
+}
+.dx-col-check {
+  width: 36px;
+  padding-right: 0 !important;
+}
+a.dx-primary {
+  text-decoration: none;
+}
+a.dx-primary:hover {
+  color: var(--ws-brand);
+  text-decoration: underline;
+}
+.dx-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.dx-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ws-muted);
+  font-size: 13px;
+  font-weight: 650;
+  counter-increment: step;
+}
+.dx-steps li::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--ws-line-strong);
+  border-radius: 50%;
+  background: var(--ws-surface);
+  font-size: 12px;
+}
+.dx-steps li.is-done {
+  color: var(--ws-ink);
+}
+.dx-steps li.is-done::before {
+  content: '✓';
+  border-color: var(--ws-ok);
+  background: var(--ws-ok-soft);
+  color: var(--ws-ok);
+}
+.dx-stack {
+  display: grid;
+  gap: 8px;
+}
+.dx-stack .dx-btn {
+  justify-content: center;
+}
+.dx-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+}
+.dx-check input {
+  margin-top: 3px;
+}
+.dx-check small {
+  color: var(--ws-muted);
+}
+.dx-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dx-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.dx-list small {
+  display: block;
+}

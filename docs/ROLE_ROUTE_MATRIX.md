@@ -9,7 +9,7 @@ session. `yes` means the role is named in that route's `requireRole(...)`; `·` 
 This matrix describes route-level access only. Record-level rules (for example a broker seeing only
 assigned records) are enforced inside the handlers and are covered by their own tests.
 
-94 routes · 1 open to any signed-in staff role.
+96 routes · 1 open to any signed-in staff role.
 
 | Method | Path | super_admin | admin | editor | broker | publisher | auditor |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -66,6 +66,7 @@ assigned records) are enforced inside the handlers and are covered by their own 
 | GET | `/dashboard/notifications/ui` | yes | yes | · | · | · | yes |
 | GET | `/dashboard/opportunities` | yes | yes | yes | yes | yes | yes |
 | POST | `/dashboard/opportunities` | yes | yes | yes | yes | · | · |
+| DELETE | `/dashboard/opportunities/:id` | yes | yes | · | · | · | · |
 | GET | `/dashboard/opportunities/:id` | yes | yes | yes | yes | yes | yes |
 | PATCH | `/dashboard/opportunities/:id` | yes | yes | yes | yes | · | · |
 | POST | `/dashboard/opportunities/:id/documents` | yes | yes | yes | · | yes | · |
@@ -77,6 +78,7 @@ assigned records) are enforced inside the handlers and are covered by their own 
 | POST | `/dashboard/opportunities/:id/verify` | yes | yes | · | · | yes | · |
 | GET | `/dashboard/opportunities/:id/versions` | yes | yes | yes | yes | yes | · |
 | POST | `/dashboard/opportunities/:id/versions/:versionNumber/restore` | yes | yes | yes | yes | · | · |
+| POST | `/dashboard/opportunities/:id/workflow` | yes | yes | yes | yes | yes | · |
 | POST | `/dashboard/opportunities/bulk-review` | yes | yes | · | · | yes | · |
 | GET | `/dashboard/opportunities/export.csv` | yes | yes | · | · | · | · |
 | POST | `/dashboard/opportunities/import.csv` | yes | yes | · | · | · | · |
