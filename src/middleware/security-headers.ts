@@ -17,10 +17,12 @@ const CONTENT_SECURITY_POLICY = [
 ].join('; ');
 
 // Buyer account page: same-origin framing is needed for the in-page document preview.
+// object-src 'self' is required because Chromium applies the embedding page's object-src to the
+// built-in PDF viewer when a PDF is shown inside an iframe.
 const ACCOUNT_CONTENT_SECURITY_POLICY = CONTENT_SECURITY_POLICY.replace(
   'frame-src https://challenges.cloudflare.com',
   "frame-src 'self' https://challenges.cloudflare.com",
-);
+).replace("object-src 'none'", "object-src 'self'");
 // Preview responses (PDF / image / plain text only) may be framed by the buyer account page, nothing else.
 const PREVIEW_CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
