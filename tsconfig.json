@@ -37,6 +37,7 @@
     "test/unit/sprint29-staff-session-controls.test.ts",
     "test/unit/sprint30-buyer-session-controls.test.ts",
     "test/unit/sprint31-completion-hardening.test.ts",
-    "test/unit/sprint32-security-invariants.test.ts"
+    "test/unit/sprint32-security-invariants.test.ts",
+    "test/unit/scanner-service-security-invariants.test.ts"
   ]
 }

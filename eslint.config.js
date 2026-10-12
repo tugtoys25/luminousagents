@@ -48,4 +48,8 @@ export default tseslint.config(
     rules: { 'no-redeclare': ['error', { builtinGlobals: false }] },
   },
   { files: ['scripts/**/*.mjs'], languageOptions: { globals: node } },
+  {
+    files: ['scanner-service/**/*.mjs'],
+    languageOptions: { globals: { ...node, Buffer: 'readonly' } },
+  },
 );

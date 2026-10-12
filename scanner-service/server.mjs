@@ -25,7 +25,7 @@ function clamd(host, port, command, body) {
     socket.on('error', reject);
     socket.on('data', (data) => parts.push(data));
     socket.on('close', () =>
-      resolve(Buffer.concat(parts).toString('utf8').replace(/\0/g, '').trim()),
+      resolve(Buffer.concat(parts).toString('utf8').replaceAll('\0', '').trim()),
     );
     socket.on('connect', () => {
       socket.write(`z${command}\0`);

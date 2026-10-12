@@ -1,3 +1,4 @@
+/* global module, HTMLTextAreaElement */
 /*
  * Visual editors for the dashboard fields that used to need JSON.
  *

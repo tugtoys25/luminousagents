@@ -5,11 +5,18 @@ service and accepts only a **signed** "clean" answer. This folder is that servic
 ClamAV (free, open source) plus a small signed-result adapter. Nothing is sent to a
 third party.
 
-## 1. Install (once, inside Debian)
+## 1. Install (once)
 
-    apt update && apt install -y clamav clamav-freshclam openssl curl
+Best on a normal PC or server (Debian or Ubuntu):
 
-You need about 1.5 GB of free RAM while ClamAV runs.
+    sudo apt update && sudo apt install -y --no-install-recommends clamav-daemon clamav-freshclam openssl curl
+
+Check first what it will pull in: `apt-get -s install --no-install-recommends clamav-daemon clamav-freshclam`.
+You need about 2 GB of free RAM while ClamAV runs.
+
+Phones: Debian inside Termux often gets killed by Android when installing these
+packages or loading ClamAV. If that happens, use a spare PC or a free cloud server
+(for example an Oracle Cloud Always Free VM) instead. Everything below is the same.
 
 ## 2. Free public address (once)
 
@@ -23,7 +30,7 @@ Cloudflare must be able to reach the scanner over HTTPS. A free quick tunnel doe
 
 ## 3. Run the scanner
 
-    cd /data/data/com.termux/files/home/casinosofmayfair
+    cd casinosofmayfair        # the project folder on the machine running the scanner
     bash scanner-service/start.sh
 
 First run downloads virus definitions (a few minutes). Leave it running. It prints a
