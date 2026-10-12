@@ -16,11 +16,37 @@ const CONTENT_SECURITY_POLICY = [
   'upgrade-insecure-requests',
 ].join('; ');
 
+// Buyer account page: same-origin framing is needed for the in-page document preview.
+const ACCOUNT_CONTENT_SECURITY_POLICY = CONTENT_SECURITY_POLICY.replace(
+  'frame-src https://challenges.cloudflare.com',
+  "frame-src 'self' https://challenges.cloudflare.com",
+);
+// Preview responses (PDF / image / plain text only) may be framed by the buyer account page, nothing else.
+const PREVIEW_CONTENT_SECURITY_POLICY = [
+  "default-src 'none'",
+  "img-src 'self' data:",
+  "style-src 'unsafe-inline'",
+  "object-src 'self'",
+  "frame-ancestors 'self'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join('; ');
+const PREVIEW_PATH = /^\/api\/buyer\/documents\/[^/]+\/preview$/;
+
 export const securityHeadersMiddleware: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
   await next();
-  c.header('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+  const path = new URL(c.req.url).pathname;
+  const isPreview = PREVIEW_PATH.test(path);
+  c.header(
+    'Content-Security-Policy',
+    isPreview
+      ? PREVIEW_CONTENT_SECURITY_POLICY
+      : path === '/account'
+        ? ACCOUNT_CONTENT_SECURITY_POLICY
+        : CONTENT_SECURITY_POLICY,
+  );
   c.header('X-Content-Type-Options', 'nosniff');
-  c.header('X-Frame-Options', 'DENY');
+  c.header('X-Frame-Options', isPreview || path === '/account' ? 'SAMEORIGIN' : 'DENY');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   c.header('Cross-Origin-Opener-Policy', 'same-origin');
