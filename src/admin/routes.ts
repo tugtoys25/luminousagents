@@ -13,7 +13,13 @@ import {
 } from '../domain/opportunities/reconciliation';
 import { hashPassword, issueResetToken, passwordPolicyError, readCookie, sha256Hex } from '../auth/password';
 import { slugify } from '../domain/opportunities/slug';
-import { scanR2Document, ScannerError } from '../security/malware-scanner';
+import {
+  getScannerMode,
+  scanR2Document,
+  ScannerError,
+  SCANNER_MODE_KEY,
+  SCAN_SKIPPED_PROVIDER,
+} from '../security/malware-scanner';
 import { STATIC_PAGES, staticPageSlug } from '../web/static-pages';
 
 const admin = new Hono<{ Bindings: Env; Variables: { requestId: string; staff: StaffIdentity } }>();
@@ -2052,10 +2058,11 @@ admin.post(
     });
     const documentId = id();
     const timestamp = now();
+    const scanSkipped = (await getScannerMode(c.env)) === 'disabled';
     try {
       await c.env.DB.batch([
         c.env.DB.prepare(
-          "INSERT INTO documents (id, opportunity_id, r2_key, filename, content_type, byte_size, tier, uploaded_by, created_at, sha256, scan_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+          'INSERT INTO documents (id, opportunity_id, r2_key, filename, content_type, byte_size, tier, uploaded_by, created_at, sha256, scan_status, scan_provider, scan_job_id, scan_verdict, scan_digest, scanned_at, scan_engine_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         ).bind(
           documentId,
           c.req.param('id'),
@@ -2067,6 +2074,13 @@ admin.post(
           c.get('staff').id,
           timestamp,
           sha256,
+          scanSkipped ? 'clean' : 'pending',
+          scanSkipped ? SCAN_SKIPPED_PROVIDER : null,
+          scanSkipped ? `skipped-${documentId}` : null,
+          scanSkipped ? 'clean' : null,
+          scanSkipped ? sha256 : null,
+          scanSkipped ? timestamp : null,
+          scanSkipped ? 'scanner-disabled' : null,
         ),
         c.env.DB.prepare(
           "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'document.uploaded', 'document', ?, ?, ?, ?)",
@@ -2080,6 +2094,7 @@ admin.post(
             byteSize: upload.size,
             tier,
             contentType,
+            scanSkipped,
           }),
           timestamp,
         ),
@@ -2097,7 +2112,8 @@ admin.post(
           byteSize: upload.size,
           tier,
           createdAt: timestamp,
-          scanStatus: 'pending',
+          scanStatus: scanSkipped ? 'clean' : 'pending',
+          scanSkipped,
         },
       },
       201,
@@ -2421,7 +2437,7 @@ admin.delete(
 );
 
 admin.get('/documents/ui', requireRole('admin', 'editor', 'publisher', 'super_admin'), (c) => c.html(
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Data room documents · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">CONFIDENTIAL STAFF WORKSPACE</p><h1>Data room documents</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/documents/ui" aria-current="page">Data room documents</a><a href="/dashboard/audit/ui">Audit log</a></nav><p class="muted">Documents are stored in private R2. They are never publicly served. Files remain unavailable to buyers until a trusted scanner verifies the exact stored bytes as clean.</p><form id="document-upload" class="flow"><label>Opportunity <select name="opportunityId" id="document-opportunity" required><option value="">Loading opportunities…</option></select></label><label>Document tier <select name="tier"><option value="1">Tier 1 — basic confidential</option><option value="2" selected>Tier 2 — confidential</option><option value="3">Tier 3 — highest confidentiality (super administrator only)</option></select></label><label>File (PDF, JPEG, PNG, DOCX or XLSX; max 20 MiB)<input type="file" name="file" accept="application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label><button type="submit">Upload private document</button><p id="document-upload-notice" role="status" aria-live="polite"></p></form><hr><label>Filter by opportunity <select id="document-filter"><option value="">All opportunities</option></select></label><p id="document-notice" role="status" aria-live="polite">Loading documents…</p><div class="overflow-x-auto"><table><thead><tr><th>Document</th><th>Opportunity</th><th>Tier</th><th>Scan</th><th>Created</th><th>Actions</th></tr></thead><tbody id="document-rows"></tbody></table></div></main><script src="/static/js/dashboard-documents.js" defer></script></body></html>`
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Data room documents · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">CONFIDENTIAL STAFF WORKSPACE</p><h1>Data room documents</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunity CMS</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/dashboard/documents/ui" aria-current="page">Data room documents</a><a href="/dashboard/audit/ui">Audit log</a></nav><p class="muted">Documents are stored in private R2. They are never publicly served. Files remain unavailable to buyers until a trusted scanner verifies the exact stored bytes as clean.</p><section id="scanner-panel" class="flow-card"><h2>Malware scanner</h2><p id="scanner-state" role="status" aria-live="polite">Loading scanner status…</p><form id="scanner-form" class="flow" hidden><label>Reason for this change<input name="reason" minlength="5" maxlength="500" required placeholder="e.g. Scanner server is not ready yet"></label><label id="scanner-release-label"><input type="checkbox" name="releasePending"> Also release documents already waiting for a scan</label><button type="submit" id="scanner-toggle">Switch scanner off</button><p id="scanner-notice" role="status" aria-live="polite"></p></form></section><form id="document-upload" class="flow"><label>Opportunity <select name="opportunityId" id="document-opportunity" required><option value="">Loading opportunities…</option></select></label><label>Document tier <select name="tier"><option value="1">Tier 1 — basic confidential</option><option value="2" selected>Tier 2 — confidential</option><option value="3">Tier 3 — highest confidentiality (super administrator only)</option></select></label><label>File (PDF, JPEG, PNG, DOCX or XLSX; max 20 MiB)<input type="file" name="file" accept="application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label><button type="submit">Upload private document</button><p id="document-upload-notice" role="status" aria-live="polite"></p></form><hr><label>Filter by opportunity <select id="document-filter"><option value="">All opportunities</option></select></label><p id="document-notice" role="status" aria-live="polite">Loading documents…</p><div class="overflow-x-auto"><table><thead><tr><th>Document</th><th>Opportunity</th><th>Tier</th><th>Scan</th><th>Created</th><th>Actions</th></tr></thead><tbody id="document-rows"></tbody></table></div></main><script src="/static/js/dashboard-documents.js" defer></script></body></html>`
 ));
 
 admin.get('/documents', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
@@ -2437,6 +2453,96 @@ admin.get('/documents', requireRole('admin', 'editor', 'publisher', 'super_admin
   ).bind(opportunityId, opportunityId).all();
   c.header('Cache-Control', 'private, no-store');
   return c.json({ data: rows.results ?? [], limit: 200 });
+});
+
+admin.get(
+  '/scanner-settings',
+  requireRole('admin', 'editor', 'publisher', 'super_admin'),
+  async (c) => {
+    const row = await c.env.DB.prepare(
+      'SELECT updated_at AS updatedAt FROM platform_settings WHERE setting_key = ?',
+    )
+      .bind(SCANNER_MODE_KEY)
+      .first<{ updatedAt: string }>();
+    c.header('Cache-Control', 'private, no-store');
+    return c.json({
+      data: {
+        mode: await getScannerMode(c.env),
+        scannerConfigured: Boolean(
+          c.env.MALWARE_SCANNER_API_URL &&
+            c.env.MALWARE_SCANNER_API_TOKEN &&
+            c.env.MALWARE_SCANNER_SIGNING_SECRET,
+        ),
+        updatedAt: row?.updatedAt ?? null,
+      },
+    });
+  },
+);
+
+admin.put('/scanner-settings', requireRole('admin', 'super_admin'), async (c) => {
+  const parsed = z
+    .object({
+      mode: z.enum(['enforced', 'disabled']),
+      reason: z.string().trim().min(5).max(500),
+      releasePending: z.boolean().optional().default(false),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Choose a scanner mode and give a reason of at least 5 characters.',
+        },
+      },
+      422,
+    );
+  const staff = c.get('staff');
+  const previous = await getScannerMode(c.env);
+  const timestamp = now();
+  const releasePending = parsed.data.mode === 'disabled' && parsed.data.releasePending;
+  const pending = releasePending
+    ? await c.env.DB.prepare("SELECT COUNT(*) AS total FROM documents WHERE scan_status = 'pending'").first<{
+        total: number;
+      }>()
+    : null;
+  const statements = [
+    c.env.DB.prepare(
+      'INSERT INTO platform_settings (setting_key,value_json,updated_by,updated_at) VALUES (?,?,?,?) ON CONFLICT(setting_key) DO UPDATE SET value_json=excluded.value_json,updated_by=excluded.updated_by,updated_at=excluded.updated_at',
+    ).bind(SCANNER_MODE_KEY, JSON.stringify(parsed.data.mode), staff.id, timestamp),
+  ];
+  if (releasePending)
+    statements.push(
+      c.env.DB.prepare(
+        "UPDATE documents SET scan_status = 'clean', scan_provider = ?, scan_job_id = 'skipped-' || id, scan_verdict = 'clean', scan_digest = sha256, scanned_at = ?, scan_engine_version = 'scanner-disabled' WHERE scan_status = 'pending'",
+      ).bind(SCAN_SKIPPED_PROVIDER, timestamp),
+    );
+  statements.push(
+    c.env.DB.prepare(
+      "INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,'staff','platform.scanner_mode_changed','platform_settings',?,?,?,?)",
+    ).bind(
+      id(),
+      staff.id,
+      SCANNER_MODE_KEY,
+      c.get('requestId'),
+      JSON.stringify({
+        from: previous,
+        to: parsed.data.mode,
+        reason: parsed.data.reason,
+        releasedPending: releasePending ? (pending?.total ?? 0) : 0,
+      }),
+      timestamp,
+    ),
+  );
+  await c.env.DB.batch(statements);
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({
+    data: {
+      mode: parsed.data.mode,
+      updatedAt: timestamp,
+      releasedPending: releasePending ? (pending?.total ?? 0) : 0,
+    },
+  });
 });
 
 admin.post('/documents/:id/scan', requireRole('admin', 'super_admin'), async (c) => {
@@ -2521,6 +2627,7 @@ admin.post('/documents/:id/scan', requireRole('admin', 'super_admin'), async (c)
       scannedAt: result.scannedAt,
       engineVersion: result.engineVersion,
       opportunityId: document.opportunityId,
+      scanSkipped: result.provider === SCAN_SKIPPED_PROVIDER,
     }),
     timestamp,
     document.id,

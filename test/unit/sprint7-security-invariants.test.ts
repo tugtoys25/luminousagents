@@ -13,7 +13,15 @@ describe('Sprint 7 document security invariants', () => {
 
   it('stores SHA-256 and pending status for new uploads', () => {
     const source = read('src/admin/routes.ts');
-    expect(source).toMatch(/sha256, scan_status\) VALUES \([\s\S]*?'pending'\)/);
+    expect(source).toMatch(/sha256, scan_status, scan_provider[\s\S]*?scanSkipped \? 'clean' : 'pending'/);
+  });
+
+  it('only switches the scanner off through the audited admin endpoint', () => {
+    const source = read('src/admin/routes.ts');
+    expect(source).toContain("admin.put('/scanner-settings', requireRole('admin', 'super_admin')");
+    expect(source).toContain('platform.scanner_mode_changed');
+    expect(source).toMatch(/VERIFIED_SCAN_REQUIRED/);
+    expect(read('src/security/malware-scanner.ts')).toMatch(/=== 'disabled' \? 'disabled' : 'enforced'/);
   });
 
   it('only permits a clean release through the verified scanner adapter', () => {
