@@ -434,7 +434,7 @@ admin.get(
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) =>
     c.html(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opportunities · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin" data-role="${c.get('staff').role}"><p class="eyebrow">STAFF WORKSPACE</p><h1>Opportunities</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/review-queue/ui">Needs review</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/admin/logout">Sign out</a></nav><section id="op-list-view"><p class="muted">Every listing moves through three simple steps: <strong>Draft</strong>, <strong>Approved</strong>, <strong>Live</strong>. Use the buttons in each row, or open a listing to edit it.</p><div class="dx-toolbar"><div class="dx-tabs" id="op-tabs" role="tablist"><button type="button" class="dx-tab" role="tab" data-tab="all" aria-selected="false">All<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="live" aria-selected="false">Live<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="ready" aria-selected="false">Ready to publish<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="review" aria-selected="false">In review<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="draft" aria-selected="false">Drafts<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="closed" aria-selected="false">Closed<span class="dx-count">0</span></button></div><input class="dx-search" id="op-search" type="search" maxlength="100" placeholder="Search title, country or address" aria-label="Search opportunities"><span class="dx-spacer"></span>${['admin','super_admin'].includes(c.get('staff').role) ? '<a class="dx-btn" href="/dashboard/opportunities/export.csv">Export CSV</a><button type="button" class="dx-btn" id="op-import">Import CSV</button><input type="file" id="op-import-file" accept="text/csv,.csv" hidden>' : ''}<a class="dx-btn dx-btn-primary" href="#new" id="op-new">New opportunity</a></div><div class="dx-bulkbar" id="op-bulk" hidden><span id="op-bulk-count"></span><button type="button" class="dx-btn dx-btn-sm dx-btn-primary" data-bulk="approved">Approve selected</button><button type="button" class="dx-btn dx-btn-sm dx-btn-ghost-danger" data-bulk="rejected">Reject selected</button><button type="button" class="dx-btn dx-btn-sm" data-bulk="clear">Clear</button></div><div id="op-table" class="dx-table-wrap">Loading…</div><div class="dx-pager" id="op-pager"></div></section><section id="op-editor-view" hidden><div class="dx-editor-bar"><a class="dx-btn" href="#list" id="op-back">← All opportunities</a><h2 id="op-heading">New opportunity</h2><span id="op-stage-badge"></span><span class="dx-spacer"></span><a class="dx-btn" id="op-view-live" target="_blank" rel="noopener" hidden>View live</a><button type="submit" form="op-form" class="dx-btn dx-btn-primary" id="op-save">Save draft</button><button type="button" class="dx-btn" id="op-save-publish" hidden>Save &amp; publish</button></div><p class="dx-note dx-note-warn" id="op-live-warning" hidden>This listing is live. Saving sends it back for approval and takes it off the website until it is published again. Publishers can use <strong>Save &amp; publish</strong> to keep it live.</p><form id="op-form" class="dx-editor"><input type="hidden" name="id"><div class="dx-editor-main"><div class="dx-card"><h3>The opportunity</h3><label class="dx-field">Title<input name="title" minlength="3" maxlength="180" required></label><div class="dx-row"><label class="dx-field">Country or region<input name="country" maxlength="100"></label><label class="dx-field">Type<select name="opportunityType"><option value="casino-hotel">Casino &amp; hotel</option><option value="casino">Casino</option><option value="hotel">Hotel</option><option value="resort">Resort</option><option value="gaming-venue">Gaming venue</option><option value="other">Other</option></select></label></div><div class="dx-row"><label class="dx-field">Price<input name="priceText" maxlength="180" placeholder="e.g. EUR 12,500,000"></label><label class="dx-field">Availability<input name="availability" maxlength="300" placeholder="e.g. Available now"></label></div><label class="dx-check"><input type="checkbox" name="priceVisibility"> Show the price publicly <small>(publishers only; otherwise it reads &quot;Price on request&quot;)</small></label></div><div class="dx-card"><h3>Description</h3><label class="dx-field">Short summary<small>Shown on the listing card. Up to 1,000 characters.</small><textarea name="summary" maxlength="1000" rows="4"></textarea></label><label class="dx-field">Highlights<small>Separate with commas, up to 12. Example: Freehold, Resort, Premium.</small><input name="labels" maxlength="400"></label><label class="dx-field">Full description<small>HTML allowed. Staff-only editing.</small><textarea name="bodyHtml" maxlength="20000" rows="12"></textarea></label></div><details class="dx-card"><summary>Search appearance (optional)</summary><div class="dx-form"><label class="dx-field">SEO title<input name="seoTitle" maxlength="180"></label><label class="dx-field">SEO description<textarea name="seoDescription" maxlength="320" rows="2"></textarea></label></div></details></div><aside class="dx-editor-side"><div class="dx-card" id="op-publish-card" hidden><h3>Publishing</h3><ol class="dx-steps" id="op-steps"><li data-step="draft">Draft saved</li><li data-step="approved">Approved</li><li data-step="live">Live on website</li></ol><p class="dx-secondary" id="op-publish-help"></p><div class="dx-stack" id="op-publish-actions"></div></div><div class="dx-card"><h3>Settings</h3><label class="dx-field">Visibility class<select name="classification"><option value="confidential">Confidential</option><option value="public">Public</option><option value="off_market">Off market</option><option value="under_offer">Under offer</option><option value="on_hold">On hold</option><option value="sold">Sold</option></select><small>Only Public listings can appear on the website.</small></label><label class="dx-field">Assigned broker<select name="assignedBrokerId"><option value="">Unassigned</option></select></label></div><div class="dx-card" id="op-media-card" hidden><h3>Images</h3><p class="dx-secondary">JPG or PNG up to 8 MiB. The first image is the cover.</p><div class="dx-form" id="op-media-form"><label class="dx-field">Image<input type="file" id="op-media-file" accept="image/jpeg,image/png"></label><label class="dx-field">Describe the image<input id="op-media-alt" maxlength="240" placeholder="e.g. Hotel exterior at dusk"></label><button type="button" class="dx-btn" id="op-media-upload">Upload image</button></div><ul class="dx-list" id="op-media-list"></ul></div><details class="dx-card" id="op-history-card" hidden><summary>Version history</summary><ul class="dx-list" id="op-history-list"></ul></details></aside></form></section></main><script src="/static/js/dashboard-kit.js" defer></script><script src="/static/js/dashboard-opportunities.js" defer></script></body></html>`,
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opportunities · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin" data-role="${c.get('staff').role}"><p class="eyebrow">STAFF WORKSPACE</p><h1>Opportunities</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/review-queue/ui">Needs review</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/admin/logout">Sign out</a></nav><section id="op-list-view"><p class="muted">Every listing moves through three simple steps: <strong>Draft</strong>, <strong>Approved</strong>, <strong>Live</strong>. Use the buttons in each row, or open a listing to edit it.</p><div class="dx-toolbar"><div class="dx-tabs" id="op-tabs" role="tablist"><button type="button" class="dx-tab" role="tab" data-tab="all" aria-selected="false">All<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="live" aria-selected="false">Live<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="ready" aria-selected="false">Ready to publish<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="review" aria-selected="false">In review<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="draft" aria-selected="false">Drafts<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="closed" aria-selected="false">Closed<span class="dx-count">0</span></button></div><input class="dx-search" id="op-search" type="search" maxlength="100" placeholder="Search title, country or address" aria-label="Search opportunities"><span class="dx-spacer"></span>${['admin','super_admin'].includes(c.get('staff').role) ? '<a class="dx-btn" href="/dashboard/opportunities/export.csv">Export CSV</a><button type="button" class="dx-btn" id="op-import">Import CSV</button><input type="file" id="op-import-file" accept="text/csv,.csv" hidden>' : ''}<a class="dx-btn dx-btn-primary" href="#new" id="op-new">New opportunity</a></div><div class="dx-bulkbar" id="op-bulk" hidden><span id="op-bulk-count"></span><button type="button" class="dx-btn dx-btn-sm dx-btn-primary" data-bulk="approved">Approve selected</button><button type="button" class="dx-btn dx-btn-sm dx-btn-ghost-danger" data-bulk="rejected">Reject selected</button><button type="button" class="dx-btn dx-btn-sm" data-bulk="clear">Clear</button></div><div id="op-table" class="dx-table-wrap">Loading…</div><div class="dx-pager" id="op-pager"></div></section><section id="op-editor-view" hidden><div class="dx-editor-bar"><a class="dx-btn" href="#list" id="op-back">← All opportunities</a><h2 id="op-heading">New opportunity</h2><span id="op-stage-badge"></span><span class="dx-spacer"></span><a class="dx-btn" id="op-view-live" target="_blank" rel="noopener" hidden>View live</a><button type="submit" form="op-form" class="dx-btn dx-btn-primary" id="op-save">Save draft</button><button type="button" class="dx-btn" id="op-save-publish" hidden>Save &amp; publish</button></div><p class="dx-note dx-note-warn" id="op-live-warning" hidden>This listing is live. Saving sends it back for approval and takes it off the website until it is published again. Publishers can use <strong>Save &amp; publish</strong> to keep it live.</p><form id="op-form" class="dx-editor"><input type="hidden" name="id"><div class="dx-editor-main"><div class="dx-card"><h3>The opportunity</h3><label class="dx-field">Title<input name="title" minlength="3" maxlength="180" required></label><div class="dx-row"><label class="dx-field">Country or region<input name="country" maxlength="100"></label><label class="dx-field">Type<select name="opportunityType"><option value="casino-hotel">Casino &amp; hotel</option><option value="casino">Casino</option><option value="hotel">Hotel</option><option value="resort">Resort</option><option value="gaming-venue">Gaming venue</option><option value="other">Other</option></select></label></div><div class="dx-row"><label class="dx-field">Price<input name="priceText" maxlength="180" placeholder="e.g. EUR 12,500,000"></label><label class="dx-field">Availability<input name="availability" maxlength="300" placeholder="e.g. Available now"></label></div><label class="dx-check"><input type="checkbox" name="priceVisibility"> Show the price publicly <small>(publishers only; otherwise it reads &quot;Price on request&quot;)</small></label></div><div class="dx-card"><h3>Description</h3><label class="dx-field">Short summary<small>Shown on the listing card. Up to 1,000 characters.</small><textarea name="summary" maxlength="1000" rows="4"></textarea></label><label class="dx-field">Highlights<small>Separate with commas, up to 12. Example: Freehold, Resort, Premium.</small><input name="labels" maxlength="400"></label><label class="dx-field">Full description<small>HTML allowed. Staff-only editing.</small><textarea name="bodyHtml" maxlength="20000" rows="12"></textarea></label></div><details class="dx-card"><summary>Search appearance (optional)</summary><div class="dx-form"><label class="dx-field">SEO title<input name="seoTitle" maxlength="180"></label><label class="dx-field">SEO description<textarea name="seoDescription" maxlength="320" rows="2"></textarea></label></div></details></div><aside class="dx-editor-side"><div class="dx-card" id="op-publish-card" hidden><h3>Publishing</h3><ol class="dx-steps" id="op-steps"><li data-step="draft">Draft saved</li><li data-step="approved">Approved</li><li data-step="live">Live on website</li></ol><p class="dx-secondary" id="op-publish-help"></p><div class="dx-stack" id="op-publish-actions"></div></div><div class="dx-card"><h3>Settings</h3><label class="dx-field">Visibility class<select name="classification"><option value="confidential">Confidential</option><option value="public">Public</option><option value="off_market">Off market</option><option value="under_offer">Under offer</option><option value="on_hold">On hold</option><option value="sold">Sold</option></select><small>Only Public listings can appear on the website.</small></label><label class="dx-field">Assigned broker<select name="assignedBrokerId"><option value="">Unassigned</option></select></label></div><div class="dx-card" id="op-media-card" hidden><h3>Images</h3><p class="dx-secondary">JPG or PNG up to 8 MiB. The first image is the cover.</p><div class="dx-form" id="op-media-form"><label class="dx-field">Image<input type="file" id="op-media-file" accept="image/jpeg,image/png"></label><label class="dx-field">Short description (for accessibility)<input id="op-alt-text" data-no-media-picker maxlength="240" placeholder="e.g. Hotel exterior at dusk"></label><button type="button" class="dx-btn" id="op-media-upload">Upload from this device</button></div><button type="button" class="dx-btn" id="op-media-library">Choose from media library</button><ul class="dx-list" id="op-media-list"></ul></div><details class="dx-card" id="op-history-card" hidden><summary>Version history</summary><ul class="dx-list" id="op-history-list"></ul></details></aside></form></section></main><script src="/static/js/dashboard-kit.js" defer></script><script src="/static/js/dashboard-opportunities.js" defer></script></body></html>`,
     ),
 );
 
@@ -2244,6 +2244,109 @@ admin.post(
       },
       201,
     );
+  },
+);
+
+admin.post(
+  '/opportunities/:id/media/from-library',
+  requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
+  async (c) => {
+    const opportunityId = c.req.param('id');
+    const opportunity = await c.env.DB.prepare(
+      'SELECT id, slug, country, assigned_broker_id AS assignedBrokerId FROM opportunities WHERE id = ?',
+    )
+      .bind(opportunityId)
+      .first<{ id: string; slug: string; country: string | null; assignedBrokerId: string | null }>();
+    if (
+      !opportunity ||
+      (c.get('staff').role === 'broker' && opportunity.assignedBrokerId !== c.get('staff').id)
+    )
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
+    const body = z
+      .object({
+        assetId: z.string().trim().min(1).max(80),
+        altText: z.string().trim().max(240).optional(),
+      })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!body.success)
+      return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Choose an image from the library.' } }, 422);
+    const asset = await c.env.DB.prepare(
+      'SELECT id, r2_key AS r2Key, content_type AS contentType, byte_size AS byteSize, alt_text AS altText, visibility FROM media_assets WHERE id = ?',
+    )
+      .bind(body.data.assetId)
+      .first<{
+        id: string;
+        r2Key: string;
+        contentType: string;
+        byteSize: number;
+        altText: string | null;
+        visibility: string;
+      }>();
+    if (!asset) return c.json({ error: { code: 'NOT_FOUND', message: 'That library image no longer exists.' } }, 404);
+    if (asset.visibility !== 'public')
+      return c.json(
+        { error: { code: 'NOT_PUBLIC', message: 'Publish this image in the Media library before using it on a listing.' } },
+        409,
+      );
+    const altText = (body.data.altText || asset.altText || '').trim();
+    if (altText.length < 3 || altText.length > 240)
+      return c.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'Describe the image in 3 to 240 characters.' } },
+        422,
+      );
+    if (!['image/jpeg', 'image/png'].includes(asset.contentType) || asset.byteSize > 8 * 1024 * 1024)
+      return c.json(
+        { error: { code: 'UNSUPPORTED_IMAGE', message: 'Only JPG or PNG images up to 8 MiB can be added to a listing.' } },
+        415,
+      );
+    const object = await c.env.PRIVATE_FILES.get(asset.r2Key);
+    if (!object)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'The image file is missing from storage.' } }, 404);
+    const bytes = new Uint8Array(await object.arrayBuffer());
+    const jpeg =
+      asset.contentType === 'image/jpeg' && bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    const png =
+      asset.contentType === 'image/png' &&
+      bytes.length >= 8 &&
+      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value);
+    if (!jpeg && !png)
+      return c.json({ error: { code: 'INVALID_FILE_SIGNATURE', message: 'Image bytes do not match JPEG or PNG.' } }, 415);
+    const hash = await crypto.subtle.digest('SHA-256', bytes);
+    const sha256 = [...new Uint8Array(hash)].map((value) => value.toString(16).padStart(2, '0')).join('');
+    const mediaId = id();
+    const key = `opportunities/${opportunityId}/media/${mediaId}.${jpeg ? 'jpg' : 'png'}`;
+    const timestamp = now();
+    await c.env.PRIVATE_FILES.put(key, bytes.buffer as ArrayBuffer, {
+      httpMetadata: { contentType: asset.contentType, cacheControl: 'private, no-store' },
+      customMetadata: { sha256, mediaId, libraryAssetId: asset.id },
+    });
+    const order = await c.env.DB.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM opportunity_media WHERE opportunity_id = ?',
+    )
+      .bind(opportunityId)
+      .first<{ next: number }>();
+    try {
+      await c.env.DB.batch([
+        // Same rule as an upload: changing the pictures of a live listing sends it back for approval.
+        c.env.DB.prepare(
+          "UPDATE opportunities SET content_review_status = 'pending', public_visibility = 0, updated_at = ? WHERE id = ? AND public_visibility = 1",
+        ).bind(timestamp, opportunityId),
+        c.env.DB.prepare(
+          'INSERT INTO opportunity_media (id, opportunity_id, r2_key, alt_text, sort_order, created_at, content_type, byte_size, sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ).bind(mediaId, opportunityId, key, altText, order?.next ?? 0, timestamp, asset.contentType, bytes.length, sha256),
+      ]);
+    } catch (error) {
+      await c.env.PRIVATE_FILES.delete(key);
+      throw error;
+    }
+    await audit(c, 'opportunity.media_added_from_library', 'opportunity_media', mediaId, {
+      opportunityId,
+      libraryAssetId: asset.id,
+      byteSize: bytes.length,
+      sha256,
+    });
+    const cachePurge = await purgeOpportunityPublicCache(c.env, opportunity.slug, opportunity.country);
+    return c.json({ data: { id: mediaId, opportunityId, altText, sortOrder: order?.next ?? 0, cachePurge } }, 201);
   },
 );
 

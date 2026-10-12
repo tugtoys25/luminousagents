@@ -8,6 +8,8 @@
     return `${el.name || ''} ${el.id || ''} ${label?.innerText || ''}`.toLowerCase();
   };
   const fieldKind = (el) => {
+    // Fields that only describe an image (alt text) or are handled by their own screen opt out.
+    if (el.hasAttribute('data-no-media-picker')) return null;
     // Native file inputs and other non-text inputs are never URL fields.
     if (el instanceof HTMLInputElement && !['url', 'text', 'search'].includes(el.type)) return null;
     const key = labelFor(el);
