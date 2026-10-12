@@ -675,59 +675,31 @@
     }
   });
 
-  /* ---------- choose an existing image from the Media library ---------- */
-  $('op-media-library').addEventListener('click', async () => {
+  /* ---------- add an image chosen with the shared Media picker (same one used for the site logo) ---------- */
+  $('op-lib-add').addEventListener('click', async () => {
     if (!current) return toast('Save the listing before adding images.', 'error');
-    const dlg = modal(
-      'Choose from media library',
-      '<div class="dx-form"><input class="dx-search" id="lib-search" data-no-media-picker type="search" placeholder="Search by file name" aria-label="Search the media library"><div class="dx-lib-grid" id="lib-grid"><p class="dx-secondary">Loading…</p></div></div>',
-      { wide: true },
-    );
-    const grid = dlg.el.querySelector('#lib-grid');
-    const searchBox = dlg.el.querySelector('#lib-search');
-    let shown = [];
-    async function loadLibrary() {
-      try {
-        const params = new URLSearchParams({ type: 'image', visibility: 'public', limit: '100' });
-        if (searchBox.value.trim()) params.set('q', searchBox.value.trim());
-        const r = await call(`/dashboard/media?${params}`);
-        shown = (r.data || []).filter((m) => ['image/jpeg', 'image/png'].includes(m.contentType) && m.url);
-        grid.innerHTML = shown.length
-          ? shown
-              .map(
-                (m) =>
-                  `<button type="button" class="dx-lib-item" data-asset="${esc(m.id)}"><img src="${esc(m.url)}" alt="" loading="lazy"><span>${esc(m.filename)}</span></button>`,
-              )
-              .join('')
-          : '<p class="dx-secondary">No public JPG or PNG images found. Upload one in the Media library and make it public first.</p>';
-      } catch (error) {
-        grid.innerHTML = `<p class="dx-secondary">${esc(error.message)}</p>`;
-      }
+    const url = $('op-lib-url').value.trim();
+    const alt = $('op-lib-alt').value.trim();
+    if (!url) return toast('Choose an image with "Choose from Media" first.', 'error');
+    if (alt.length < 3) return toast('Describe the image in at least 3 characters.', 'error');
+    const button = $('op-lib-add');
+    button.disabled = true;
+    try {
+      await call(
+        `/dashboard/opportunities/${encodeURIComponent(current.id)}/media/from-library`,
+        json('POST', { mediaUrl: url, altText: alt }),
+      );
+      const field = $('op-lib-url');
+      field.value = '';
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      $('op-lib-alt').value = '';
+      toast('Image added to the listing.');
+      await openEditor(current.id, true);
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      button.disabled = false;
     }
-    searchBox.addEventListener('input', debounce(loadLibrary, 250));
-    grid.addEventListener('click', (event) => {
-      const tile = event.target.closest('[data-asset]');
-      if (!tile) return;
-      const asset = shown.find((m) => m.id === tile.dataset.asset);
-      if (!asset) return;
-      dlg.el.querySelector('h2').textContent = 'Add this image';
-      dlg.el.querySelector('.dx-dialog-body').innerHTML = `<form class="dx-form" id="lib-add"><img class="dx-lib-preview" src="${esc(asset.url)}" alt=""><label class="dx-field">Short description (for accessibility)<input name="alt" id="lib-alt" data-no-media-picker minlength="3" maxlength="240" required value="${esc(asset.altText || '')}" placeholder="e.g. Hotel exterior at dusk"></label><div class="dx-note">If this listing is live, adding a picture sends it back for approval.</div><div class="dx-actions"><button type="button" class="dx-btn" data-close>Cancel</button><button type="submit" class="dx-btn dx-btn-primary">Add to listing</button></div></form>`;
-      dlg.el.querySelector('#lib-add').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        try {
-          await call(
-            `/dashboard/opportunities/${encodeURIComponent(current.id)}/media/from-library`,
-            json('POST', { assetId: asset.id, altText: new FormData(e.currentTarget).get('alt') }),
-          );
-          dlg.close();
-          toast('Image added to the listing.');
-          await openEditor(current.id, true);
-        } catch (error) {
-          toast(error.message, 'error');
-        }
-      });
-    });
-    loadLibrary();
   });
 
   /* ---------- version history ---------- */

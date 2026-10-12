@@ -2963,3 +2963,30 @@ html .workspace-shell .workspace-content :is(a, button).dx-btn.dx-btn-ghost-dang
   border-radius: 10px;
   background: var(--ws-surface-2);
 }
+
+/* Shared Media picker controls inside the opportunity Images card */
+.dx-picker-block .ml-field-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.dx-picker-block .ml-field-tools button {
+  padding: 7px 11px;
+  border: 1px solid var(--ws-line-strong);
+  border-radius: 8px;
+  background: var(--ws-surface);
+  color: var(--ws-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.dx-picker-block .ml-field-preview {
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: var(--ws-surface-2);
+}
