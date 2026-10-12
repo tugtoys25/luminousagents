@@ -213,7 +213,7 @@ buyers.get('/api/buyer/nda-requests', requireBuyer, async (c) => {
 
 buyers.get('/api/buyer/opportunities/:id/documents', requireBuyer, async (c) => {
   const opp = await c.env.DB.prepare(
-    "SELECT id FROM opportunities WHERE id = ? AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1",
+    "SELECT id FROM opportunities WHERE id = ? AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public'",
   )
     .bind(c.req.param('id'))
     .first();

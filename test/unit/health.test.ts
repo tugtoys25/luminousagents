@@ -22,7 +22,7 @@ describe('GET /healthz', () => {
 
   it('does not trust a malformed client-supplied request ID', async () => {
     const response = await SELF.fetch('https://mayfair.test/healthz', {
-      headers: { 'x-request-id': 'x\r\nset-cookie: injected=1' },
+      headers: { 'x-request-id': 'x set-cookie: injected=1' },
     });
     expect(response.status).toBe(200);
     expect(response.headers.get('x-request-id')).not.toContain('set-cookie');

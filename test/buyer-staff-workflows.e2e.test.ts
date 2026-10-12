@@ -33,7 +33,7 @@ describe('Buyer and staff confidentiality workflows (Worker E2E)', () => {
       .run();
     cookie = `mayfair_buyer_session=${token}`;
     await env.DB.prepare(
-      "INSERT INTO opportunities (id,slug,title,lifecycle,content_review_status,public_visibility,created_at,updated_at) VALUES (?,?,'E2E Confidential Opportunity','published','approved',1,?,?)",
+      "INSERT INTO opportunities (id,slug,title,lifecycle,content_review_status,public_visibility,classification,created_at,updated_at) VALUES (?,?,'E2E Confidential Opportunity','published','approved',1,'public',?,?)",
     )
       .bind(opportunityId, `e2e-${opportunityId}`, timestamp, timestamp)
       .run();
