@@ -282,6 +282,17 @@
     sidebar.setAttribute('aria-label', 'Workspace navigation');
     sidebar.innerHTML =
       '<a class="workspace-brand" href="/dashboard"><span class="workspace-brand-mark">M</span><span><strong>Mayfair</strong><small>STAFF WORKSPACE</small></span></a>';
+    const logoMeta = document.querySelector('meta[name="mf-logo"]');
+    if (logoMeta && logoMeta.content) {
+      const mark = sidebar.querySelector('.workspace-brand-mark');
+      if (mark) {
+        const logo = document.createElement('img');
+        logo.src = logoMeta.content;
+        logo.alt = logoMeta.dataset.alt || '';
+        logo.className = 'brand-logo-image';
+        mark.replaceWith(logo);
+      }
+    }
     const searchWrap = el(
       'label',
       'workspace-search',

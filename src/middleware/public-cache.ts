@@ -16,6 +16,15 @@ export const publicCacheMiddleware: MiddlewareHandler<{ Bindings: Env }> = async
     path === '/forgot-password' ||
     path === '/reset-password' ||
     path === '/healthz';
+  // Public media handlers set their own revalidating policy and an ETag (derived from the stored SHA-256),
+  // so repeat views are answered with 304. Anything else under /media/ stays no-store as before.
+  if (
+    method === 'GET' &&
+    path.startsWith('/media/') &&
+    (c.res.status === 200 || c.res.status === 304) &&
+    c.res.headers.has('ETag')
+  )
+    return;
   if (
     method === 'GET' &&
     !privatePath &&

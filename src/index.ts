@@ -6,6 +6,16 @@ import { securityHeadersMiddleware } from './middleware/security-headers';
 import { publicCacheMiddleware } from './middleware/public-cache';
 import { sameOriginMutationMiddleware } from './middleware/origin-check';
 import publicPages from './web/pages/public';
+import brandingRoutes from './web/branding-routes';
+import {
+  applyBrand,
+  brandFromSettings,
+  emailFabHtml,
+  emailWidgetAddress,
+  whatsappDigits,
+  whatsappFabHtml,
+} from './web/branding';
+import { SVG_SANDBOX_CSP } from './security/svg-sanitizer';
 import managedContentRoutes from './web/managed-content';
 import adminRoutes from './admin/routes';
 import enquiryRoutes from './enquiries/routes';
@@ -63,6 +73,22 @@ app.use('/dashboard*', async (c, next) => {
 app.get('/media/:id', async (c) => {
   const asset = await c.env.DB.prepare('SELECT r2_key AS r2Key, content_type AS contentType, filename, byte_size AS byteSize, sha256 FROM media_assets WHERE (id = ? OR public_slug = ?) AND visibility = \'public\'').bind(c.req.param('id'), c.req.param('id')).first<{ r2Key: string; contentType: string; filename: string; byteSize: number; sha256: string }>();
   if (!asset) return c.notFound();
+  // Validator from the stored SHA-256: a repeat view is answered with 304 before any storage read or re-hash.
+  // Visibility was already checked above, so an unpublished file still returns 404.
+  const etag = asset.sha256 ? `"${asset.sha256.toLowerCase()}"` : '';
+  if (etag) {
+    const candidates = (c.req.header('If-None-Match') ?? '').split(',').map((v) => v.trim().replace(/^W\//, ''));
+    if (candidates.includes(etag) || candidates.includes('*')) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          ETag: etag,
+          'Cache-Control': 'public, max-age=0, s-maxage=0, must-revalidate',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
+  }
   const object = await c.env.PRIVATE_FILES.get(asset.r2Key);
   if (!object || object.size !== asset.byteSize || object.size > 25 * 1024 * 1024) return c.notFound();
   const bytes = await object.arrayBuffer();
@@ -75,6 +101,9 @@ app.get('/media/:id', async (c) => {
   headers.set('Content-Length', String(bytes.byteLength));
   headers.set('Cache-Control', 'public, max-age=0, s-maxage=0, must-revalidate');
   headers.set('X-Content-Type-Options', 'nosniff');
+  if (etag) headers.set('ETag', etag);
+  // An SVG opened directly may never run script or load anything.
+  if (asset.contentType === 'image/svg+xml') headers.set('Content-Security-Policy', SVG_SANDBOX_CSP);
   headers.set('Content-Disposition', `${isImage ? 'inline' : 'attachment'}; filename="${asset.filename.replace(/["\\\r\n]/g, '_')}"`);
   return new Response(bytes, { headers });
 });
@@ -84,13 +113,9 @@ app.get('/healthz', (c) => {
 
 app.use('*', async (c, next) => {
   await next();
-  if (
-    c.req.path.startsWith('/admin') ||
-    c.req.path.startsWith('/dashboard') ||
-    c.req.path.startsWith('/api/') ||
-    c.req.path.startsWith('/static/')
-  )
-    return;
+  if (c.req.path.startsWith('/api/') || c.req.path.startsWith('/static/')) return;
+  // Staff and sign-in pages get the brand pass only (logo, icons); never navigation, widgets or the cookie banner.
+  const isShellPage = c.req.path.startsWith('/admin') || c.req.path.startsWith('/dashboard');
   const contentType = c.res.headers.get('content-type') ?? '';
   if (!contentType.includes('text/html') || c.res.status >= 400) return;
   try {
@@ -116,9 +141,6 @@ app.use('*', async (c, next) => {
     const faviconSvg = get('favicon_svg_url');
     const ga4 = get('ga4_id');
     const whatsapp = get('whatsapp_number').replace(/[^0-9]/g, '');
-    const whatsappMessage = encodeURIComponent(
-      get('whatsapp_message', 'Hello, I would like to enquire about Casinos of Mayfair.'),
-    );
     const primary = /^#[0-9a-fA-F]{6}$/.test(get('primary_color')) ? get('primary_color') : '';
     const accent = /^#[0-9a-fA-F]{6}$/.test(get('accent_color')) ? get('accent_color') : '';
     const background = /^#[0-9a-fA-F]{6}$/.test(get('background_color'))
@@ -143,16 +165,32 @@ app.use('*', async (c, next) => {
             )
             .slice(0, 20)
         : [];
-    const navHtml = (items: { label: string; url: string }[]) =>
+    const navHtml = (items: { label: string; url: string }[], keepCta = false) =>
       items
         .map((item) => {
           const url = item.url.trim();
           if (!(url.startsWith('/') && !url.startsWith('//')) && !/^https:\/\//i.test(url))
             return '';
-          return `<a href="${escape(url)}">${escape(item.label.slice(0, 80))}</a>`;
+          // A managed header link to /contact keeps the call-to-action style.
+          const cta = keepCta && url === '/contact' ? ' class="nav-cta"' : '';
+          return `<a${cta} href="${escape(url)}">${escape(item.label.slice(0, 80))}</a>`;
         })
         .join('');
     let html = await c.res.text();
+    if (isShellPage) {
+      html = applyBrand(html, brandFromSettings(get), {
+        includeFavicons: true,
+        dashboard: c.req.path.startsWith('/dashboard'),
+      });
+      const shellHeaders = new Headers(c.res.headers);
+      shellHeaders.delete('content-length');
+      c.res = new Response(html, {
+        status: c.res.status,
+        statusText: c.res.statusText,
+        headers: shellHeaders,
+      });
+      return;
+    }
     if (siteName)
       html = html
         .replace(/Casinos of Mayfair/g, () => escape(siteName))
@@ -179,7 +217,13 @@ app.use('*', async (c, next) => {
     if (headerItems.length)
       html = html.replace(
         /<nav aria-label="Main navigation" class="main-nav">[\s\S]*?<\/nav>/,
-        `<nav aria-label="Main navigation" class="main-nav">${navHtml(headerItems)}</nav>`,
+        `<nav aria-label="Main navigation" class="main-nav">${navHtml(headerItems, true)}</nav>`,
+      );
+    const exploreItems = navItems('footer_explore_navigation');
+    if (exploreItems.length)
+      html = html.replace(
+        /<div>\s*<strong>Explore<\/strong>[\s\S]*?<\/div>/,
+        () => `<div><strong>Explore</strong>${navHtml(exploreItems)}</div>`,
       );
     const footerItems = navItems('footer_navigation');
     if (footerItems.length)
@@ -224,11 +268,21 @@ app.use('*', async (c, next) => {
     if (/^G-[A-Z0-9]+$/.test(ga4))
       head += `<script src="/static/js/analytics-consent.js" data-ga4="${ga4}" data-days="${Math.min(730, Math.max(1, Number.parseInt(get('cookie_consent_days'), 10) || 180))}" defer></script>`;
     if (head) html = html.replace('</head>', `${head}</head>`);
-    if (whatsapp.length >= 8 && whatsapp.length <= 15)
-      html = html.replace(
-        '</body>',
-        `<a class="mayfair-whatsapp" href="https://wa.me/${whatsapp}?text=${whatsappMessage}" target="_blank" rel="noopener noreferrer" aria-label="Contact us on WhatsApp">WhatsApp&nbsp; ↗</a></body>`,
+    html = applyBrand(html, brandFromSettings(get), { includeFavicons: false });
+    const waDigits = whatsappDigits(whatsapp);
+    let widgets = '';
+    if (waDigits)
+      widgets += whatsappFabHtml(
+        waDigits,
+        get('whatsapp_message', 'Hello, I would like to enquire about Casinos of Mayfair.'),
       );
+    if (get('email_widget_enabled', 'on').toLowerCase() !== 'off')
+      widgets += emailFabHtml(
+        emailWidgetAddress(get('email_widget_address'), get('contact_email')),
+        get('email_widget_subject'),
+        waDigits !== '',
+      );
+    if (widgets) html = html.replace('</body>', () => `${widgets}</body>`);
     if (get('cookie_banner_enabled', 'on') !== 'off') {
       const safeLink = (value: string, fallback: string) =>
         (value.startsWith('/') && !value.startsWith('//')) || /^https:\/\//i.test(value)
@@ -259,6 +313,7 @@ app.use('*', async (c, next) => {
   }
 });
 
+app.route('/', brandingRoutes);
 app.route('/', portalRoutes);
 app.route('/', managedContentRoutes);
 app.route('/', publicPages);

@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../env';
+import { SVG_SANDBOX_CSP } from '../security/svg-sanitizer';
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -39,13 +40,17 @@ export const securityHeadersMiddleware: MiddlewareHandler<{ Bindings: Env }> = a
   await next();
   const path = new URL(c.req.url).pathname;
   const isPreview = PREVIEW_PATH.test(path);
+  // An SVG served directly (logos, favicons) gets a sandboxing policy: no script, no network.
+  const isSvg = (c.res.headers.get('content-type') ?? '').toLowerCase().startsWith('image/svg+xml');
   c.header(
     'Content-Security-Policy',
-    isPreview
-      ? PREVIEW_CONTENT_SECURITY_POLICY
-      : path === '/account'
-        ? ACCOUNT_CONTENT_SECURITY_POLICY
-        : CONTENT_SECURITY_POLICY,
+    isSvg
+      ? SVG_SANDBOX_CSP
+      : isPreview
+        ? PREVIEW_CONTENT_SECURITY_POLICY
+        : path === '/account'
+          ? ACCOUNT_CONTENT_SECURITY_POLICY
+          : CONTENT_SECURITY_POLICY,
   );
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('X-Frame-Options', isPreview || path === '/account' ? 'SAMEORIGIN' : 'DENY');

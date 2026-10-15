@@ -15,7 +15,7 @@
     const key = labelFor(el);
     const documentField = /(document|pdf|attachment|nda|download|policy|terms|privacy|brochure|catalogue|catalog|file[_-]?(url|uri|src|path|link)|\bfile\b)/i.test(key);
     if (documentField && /(url|uri|src|document|pdf|attachment|nda|download|policy|terms|privacy|brochure|catalogue|catalog|file[_-]?(url|uri|src|path|link)|\bfile\b)/i.test(key)) return 'document';
-    if (!/(image|picture|photo|logo|favicon|og|featured|cover|background|avatar|thumbnail|media|hero)/i.test(key)) return null;
+    if (!/(image|picture|photo|logo|favicon|icon|og|featured|cover|background|avatar|thumbnail|media|hero)/i.test(key)) return null;
     if (el instanceof HTMLInputElement && !['url', 'text', 'search'].includes(el.type)) return null;
     return 'image';
   };
@@ -72,7 +72,7 @@
     active = input; kind = mediaKind; query = ''; rows = [];
     overlay = document.createElement('div');
     overlay.className = 'ml-picker-overlay';
-    overlay.innerHTML = `<section class="ml-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="ml-picker-title"><header class="ml-picker-head"><div><p class="eyebrow">MEDIA LIBRARY</p><h2 id="ml-picker-title">Choose ${kind === 'image' ? 'an image' : 'a document'}</h2></div><button type="button" class="ml-picker-close" aria-label="Close media picker">Close ×</button></header><div class="ml-picker-controls"><input type="search" class="ml-picker-search" placeholder="Search public media" aria-label="Search public media"><label class="ml-upload">Upload<input class="ml-picker-upload" type="file" multiple accept="${kind === 'image' ? 'image/jpeg,image/png,image/webp,image/gif' : 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}"></label><a href="/dashboard/media/ui" target="_blank" rel="noopener">Manage library ↗</a></div><p class="ml-picker-notice" role="status"></p><div class="ml-picker-grid"></div></section>`;
+    overlay.innerHTML = `<section class="ml-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="ml-picker-title"><header class="ml-picker-head"><div><p class="eyebrow">MEDIA LIBRARY</p><h2 id="ml-picker-title">Choose ${kind === 'image' ? 'an image' : 'a document'}</h2></div><button type="button" class="ml-picker-close" aria-label="Close media picker">Close ×</button></header><div class="ml-picker-controls"><input type="search" class="ml-picker-search" placeholder="Search public media" aria-label="Search public media"><label class="ml-upload">Upload<input class="ml-picker-upload" type="file" multiple accept="${kind === 'image' ? 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml,image/x-icon,.svg,.ico' : 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}"></label><a href="/dashboard/media/ui" target="_blank" rel="noopener">Manage library ↗</a></div><p class="ml-picker-notice" role="status"></p><div class="ml-picker-grid"></div></section>`;
     document.body.appendChild(overlay);
     overlay.querySelector('.ml-picker-close').addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });

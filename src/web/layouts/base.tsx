@@ -1,6 +1,13 @@
 import type { Child } from 'hono/jsx';
+import { raw } from 'hono/html';
+import { socialRowHtml } from '../branding';
 import { FAQS } from '../content/site-content';
-import { DEFAULT_CONTACT, telHref, type ContactSettings } from '../site-settings';
+import {
+  DEFAULT_CONTACT,
+  socialInputs,
+  telHref,
+  type ContactSettings,
+} from '../site-settings';
 import {
   DEFAULT_SHARE_IMAGE,
   breadcrumbLd,
@@ -55,6 +62,10 @@ export function BaseLayout({
   })();
   const shareAlt = imageAlt || (image ? title : 'Casino roulette wheel - Casinos of Mayfair');
   const trail = crumbs ?? crumbsFromPath(canonicalPath);
+  const footerSocial = socialRowHtml(
+    socialInputs(contact, contact.chairmanEmail),
+    'social-row footer-social',
+  );
   const breadcrumbSchema = breadcrumbLd(baseUrl, trail);
   return (
     <html lang="en">
@@ -125,6 +136,7 @@ export function BaseLayout({
         <meta name="twitter:image" content={shareImage} />
         <meta name="twitter:image:alt" content={shareAlt} />
         <link rel="stylesheet" href="/static/css/site.css" />
+        <link rel="stylesheet" href="/static/css/social.css" />
         <script src="/static/js/site-nav.js"></script>
       </head>
       <body class="has-footer">
@@ -245,6 +257,7 @@ export function BaseLayout({
                 </span>
               </a>
               <p>Confidential brokerage for casino and hospitality investment opportunities.</p>
+              {footerSocial && raw(footerSocial)}
             </div>
             <div>
               <strong>Explore</strong>
