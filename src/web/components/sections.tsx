@@ -1,5 +1,7 @@
+import { raw } from 'hono/html';
 import type { ContactSettings } from '../site-settings';
-import { telHref } from '../site-settings';
+import { chairmanImage, DEFAULT_CHAIRMAN, socialInputs, telHref } from '../site-settings';
+import { socialRowHtml } from '../branding';
 import { FAQS, MARKETS, OFFICES, SERVICES, STATS } from '../content/site-content';
 
 export function StatsBand() {
@@ -50,35 +52,52 @@ export function ServicesSection() {
 }
 
 export function ChairmanSection({ contact }: { contact: ContactSettings }) {
+  const name = contact.chairmanName || DEFAULT_CHAIRMAN.name;
+  const title = contact.chairmanTitle || DEFAULT_CHAIRMAN.title;
+  const paragraphs = (contact.chairmanBio || DEFAULT_CHAIRMAN.bio)
+    .replace(/\r\n/g, '\n')
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const facts = (contact.chairmanExpertise || '')
+    .split(/[\r\n,;]+/)
+    .map((part) => part.trim())
+    .filter((part) => part && part.length <= 80);
+  const languages = contact.chairmanLanguages || '';
+  const alt = contact.chairmanImageAlt || `${name}, Chairman`;
+  const social = socialRowHtml(
+    socialInputs(contact, contact.chairmanEmail),
+    'social-row chairman-social',
+    name,
+  );
   return (
     <section class="section section-muted" id="chairman">
       <div class="container chairman">
         <figure class="chairman-profile">
-          <img
-            src="/static/img/brian-minister.png"
-            alt="Brian Minister, Chairman"
-            width="202"
-            height="202"
-            loading="lazy"
-          />
+          <img src={chairmanImage(contact)} alt={alt} width="202" height="202" loading="lazy" />
           <figcaption>
-            <strong>Brian Minister</strong>
-            <small>Chairman, Casinos of Mayfair International Ltd</small>
+            <strong>{name}</strong>
+            <small>{title}</small>
           </figcaption>
         </figure>
         <div class="chairman-copy">
           <span class="eyebrow">WELCOME FROM THE CHAIRMAN</span>
           <h2>Personal, discreet and confidential.</h2>
-          <p>
-            We opened our first office in London in 1994 with only two casinos for sale. Today we
-            present a worldwide portfolio of land-based casino and casino-hotel opportunities, with
-            prices from under $1 million to over $1 billion.
-          </p>
-          <p>
-            If you wish to discuss any casino for sale or casino hotel personally, please contact me
-            directly. Every enquiry is treated in strict confidence, and opportunities are
-            advertised in a way that protects the identity and location of the property.
-          </p>
+          {paragraphs.map((text) => (
+            <p>{text}</p>
+          ))}
+          {facts.length > 0 && (
+            <ul class="chairman-facts" aria-label="Areas of expertise">
+              {facts.map((fact) => (
+                <li>{fact}</li>
+              ))}
+            </ul>
+          )}
+          {languages && (
+            <p class="chairman-meta">
+              <strong>Languages:</strong> {languages}
+            </p>
+          )}
           <div class="chairman-actions">
             <a class="button button-primary" href={telHref(contact.phoneMobile)}>
               Call {contact.phoneMobile}
@@ -87,6 +106,7 @@ export function ChairmanSection({ contact }: { contact: ContactSettings }) {
               Email the Chairman
             </a>
           </div>
+          {social && raw(social)}
         </div>
       </div>
     </section>
@@ -155,25 +175,29 @@ export function FaqSection() {
 }
 
 export function ContactLines({ contact }: { contact: ContactSettings }) {
+  const social = socialRowHtml(socialInputs(contact, contact.chairmanEmail));
   return (
-    <ul class="contact-lines">
-      <li>
-        <small>Chairman mobile</small>
-        <a href={telHref(contact.phoneMobile)}>{contact.phoneMobile}</a>
-      </li>
-      <li>
-        <small>Telephone</small>
-        <a href={telHref(contact.phoneOffice)}>{contact.phoneOffice}</a>
-      </li>
-      <li>
-        <small>Email</small>
-        <a href={`mailto:${contact.email}`}>{contact.email}</a>
-      </li>
-      <li>
-        <small>Chairman&apos;s email</small>
-        <a href={`mailto:${contact.chairmanEmail}`}>{contact.chairmanEmail}</a>
-      </li>
-    </ul>
+    <div class="contact-card">
+      <ul class="contact-lines">
+        <li>
+          <small>Chairman mobile</small>
+          <a href={telHref(contact.phoneMobile)}>{contact.phoneMobile}</a>
+        </li>
+        <li>
+          <small>Telephone</small>
+          <a href={telHref(contact.phoneOffice)}>{contact.phoneOffice}</a>
+        </li>
+        <li>
+          <small>Email</small>
+          <a href={`mailto:${contact.email}`}>{contact.email}</a>
+        </li>
+        <li>
+          <small>Chairman&apos;s email</small>
+          <a href={`mailto:${contact.chairmanEmail}`}>{contact.chairmanEmail}</a>
+        </li>
+      </ul>
+      {social && raw(social)}
+    </div>
   );
 }
 

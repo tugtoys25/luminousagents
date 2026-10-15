@@ -208,9 +208,14 @@
       heading: 'Top menu links',
       help: 'The links across the top of every page. Leave this empty to keep the standard menu.',
     },
+    footer_explore_navigation: {
+      kind: 'links',
+      heading: 'Footer "Explore" links',
+      help: 'The "Explore" links in the footer. Leave this empty to keep the standard links.',
+    },
     footer_navigation: {
       kind: 'links',
-      heading: 'Footer links',
+      heading: 'Footer "Information" links',
       help: 'The "Information" links in the footer. Leave this empty to keep the standard links.',
     },
     homepage_sections: {

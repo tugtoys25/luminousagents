@@ -10,6 +10,7 @@
         payload[key] = [
           'header_navigation',
           'footer_navigation',
+          'footer_explore_navigation',
           'geo_sections',
           'homepage_sections',
         ].includes(key)

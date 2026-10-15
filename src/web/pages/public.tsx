@@ -645,6 +645,8 @@ publicPages.get('/opportunities/:slug', async (c) => {
               src={item.coverMediaPath}
               alt={item.coverMediaAlt}
               loading="eager"
+              decoding="async"
+              {...{ fetchpriority: 'high' }}
             />
           )}
           <div class="detail-meta">
@@ -1032,6 +1034,24 @@ publicPages.get('/media/opportunities/:opportunityId/:mediaId', async (c) => {
     .bind(c.req.param('mediaId'), c.req.param('opportunityId'))
     .first<{ r2Key: string; contentType: string; byteSize: number; sha256: string }>();
   if (!media) return c.notFound();
+  // ETag from the stored SHA-256: a repeat view is answered before any storage read. Publication state was
+  // already checked by the query above, so an unpublished listing image still returns 404.
+  const etag = media.sha256 ? `"${media.sha256.toLowerCase()}"` : '';
+  if (etag) {
+    const candidates = (c.req.header('If-None-Match') ?? '')
+      .split(',')
+      .map((value) => value.trim().replace(/^W\//, ''));
+    if (candidates.includes(etag) || candidates.includes('*')) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          ETag: etag,
+          'Cache-Control': 'public, max-age=300',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
+  }
   const file = await c.env.PRIVATE_FILES.get(media.r2Key);
   if (!file || file.size !== media.byteSize || file.size > 8 * 1024 * 1024) return c.notFound();
   const bytes = await file.arrayBuffer();
@@ -1042,6 +1062,7 @@ publicPages.get('/media/opportunities/:opportunityId/:mediaId', async (c) => {
   if (!media.sha256 || actual !== media.sha256) return c.notFound();
   c.header('Content-Type', media.contentType);
   c.header('Cache-Control', 'public, max-age=300');
+  if (etag) c.header('ETag', etag);
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Content-Length', String(bytes.byteLength));
   return c.body(bytes, 200);

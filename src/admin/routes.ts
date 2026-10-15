@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Env } from '../env';
+import { hasIcoSignature, isSafeSvg, MAX_SVG_BYTES } from '../security/svg-sanitizer';
+import { brandUrl, instagramUrl, linkedinUrl } from '../web/branding';
 import { staffAuth, requireRole, type StaffIdentity, STAFF_COOKIE } from '../auth/staff-session';
 import { checkLifecycleTransition, transitionMatrix } from '../domain/opportunities/lifecycle';
 import {
@@ -230,8 +232,27 @@ async function audit(
     .run();
 }
 
+/** Browsers label .ico and .svg files inconsistently; settle the type from the extension for those two. */
+function normalizeMediaType(name: string, declared: string): string {
+  const lower = name.toLowerCase();
+  const type = declared.toLowerCase();
+  if (
+    lower.endsWith('.ico') &&
+    ['', 'application/octet-stream', 'image/x-ico', 'image/vnd.microsoft.icon', 'image/x-icon'].includes(type)
+  )
+    return 'image/x-icon';
+  if (
+    lower.endsWith('.svg') &&
+    ['', 'image/svg+xml', 'text/xml', 'text/plain', 'application/xml'].includes(type)
+  )
+    return 'image/svg+xml';
+  return type;
+}
+
 const mediaMimeExtensions = new Map<string, string>([
   ['image/jpeg', '.jpg'], ['image/png', '.png'], ['image/webp', '.webp'], ['image/gif', '.gif'],
+  // Logos and favicons (PHP-edition parity): SVG is screened by isSafeSvg(); ICO by its header.
+  ['image/svg+xml', '.svg'], ['image/x-icon', '.ico'],
   ['application/pdf', '.pdf'],
   ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
   ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'],
@@ -242,13 +263,15 @@ function mediaSignatureMatches(type: string, b: Uint8Array): boolean {
   if (type === 'image/png') return starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
   if (type === 'image/gif') return new TextDecoder().decode(b.slice(0, 6)).match(/^GIF8[79]a$/) !== null;
   if (type === 'image/webp') return b.length >= 12 && new TextDecoder().decode(b.slice(0, 4)) === 'RIFF' && new TextDecoder().decode(b.slice(8, 12)) === 'WEBP';
+  if (type === 'image/x-icon') return hasIcoSignature(b);
+  if (type === 'image/svg+xml') return isSafeSvg(b);
   if (type === 'application/pdf') return new TextDecoder().decode(b.slice(0, 5)) === '%PDF-';
   if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return starts(0x50, 0x4b, 0x03, 0x04) || starts(0x50, 0x4b, 0x05, 0x06) || starts(0x50, 0x4b, 0x07, 0x08);
   return false;
 }
 
 admin.get('/media/ui', requireRole('admin', 'editor', 'publisher', 'super_admin'), (c) => c.html(
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Media library · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"><link rel="stylesheet" href="/static/css/dashboard-media.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Media library</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunities</a><a href="/dashboard/media/ui" aria-current="page">Media library</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Manage images and documents in one place. Public files are available to website pages; private files remain staff-only. Changing a file to public should only be done when you have rights to publish it and it contains no confidential information.</p><section class="ml-toolbar"><input id="ml-search" type="search" placeholder="Search filenames, captions or alt text" aria-label="Search media"><select id="ml-kind" aria-label="File type"><option value="all">All file types</option><option value="image">Images</option><option value="document">Documents</option></select><select id="ml-visibility" aria-label="Visibility"><option value="">All visibility</option><option value="public">Public</option><option value="private">Private</option></select><button id="ml-refresh" type="button">Refresh</button><label class="ml-upload">Upload files<input id="ml-upload" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label></section><p id="ml-notice" role="status" aria-live="polite"></p><section id="ml-grid" class="ml-grid" aria-live="polite"><p>Loading media…</p></section><dialog id="ml-edit" class="ml-edit"><form id="ml-edit-form" method="dialog"><h2>Edit media details</h2><input type="hidden" name="id"><label>Filename<input name="filename" maxlength="180" required></label><label>Alternative text (images)<input name="altText" maxlength="240"></label><label>Caption / notes<textarea name="caption" maxlength="500"></textarea></label><label>Folder<input name="folder" maxlength="80" pattern="[a-zA-Z0-9 _-]+" required></label><label>Custom public URL slug (optional)<input name="publicSlug" maxlength="100" pattern="[a-zA-Z0-9-]+" placeholder="e.g. london-casino-exterior"></label><label>Visibility<select name="visibility"><option value="private">Private — staff only</option><option value="public">Public — website accessible</option></select></label><p class="muted">Public URLs can be embedded in public pages. Do not publish confidential deal-room documents.</p><div class="ml-actions"><button type="button" id="ml-edit-cancel">Cancel</button><button type="submit">Save changes</button></div></form></dialog></main><script src="/static/js/dashboard-media.js" defer></script></body></html>`
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Media library · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"><link rel="stylesheet" href="/static/css/dashboard-media.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Media library</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/ui">Opportunities</a><a href="/dashboard/media/ui" aria-current="page">Media library</a><a href="/dashboard/settings/ui">Settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/admin/logout">Sign out</a></nav><p class="muted">Manage images and documents in one place. Public files are available to website pages; private files remain staff-only. Changing a file to public should only be done when you have rights to publish it and it contains no confidential information.</p><section class="ml-toolbar"><input id="ml-search" type="search" placeholder="Search filenames, captions or alt text" aria-label="Search media"><select id="ml-kind" aria-label="File type"><option value="all">All file types</option><option value="image">Images</option><option value="document">Documents</option></select><select id="ml-visibility" aria-label="Visibility"><option value="">All visibility</option><option value="public">Public</option><option value="private">Private</option></select><button id="ml-refresh" type="button">Refresh</button><label class="ml-upload">Upload files<input id="ml-upload" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,image/x-icon,.svg,.ico,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label></section><p id="ml-notice" role="status" aria-live="polite"></p><section id="ml-grid" class="ml-grid" aria-live="polite"><p>Loading media…</p></section><dialog id="ml-edit" class="ml-edit"><form id="ml-edit-form" method="dialog"><h2>Edit media details</h2><input type="hidden" name="id"><label>Filename<input name="filename" maxlength="180" required></label><label>Alternative text (images)<input name="altText" maxlength="240"></label><label>Caption / notes<textarea name="caption" maxlength="500"></textarea></label><label>Folder<input name="folder" maxlength="80" pattern="[a-zA-Z0-9 _-]+" required></label><label>Custom public URL slug (optional)<input name="publicSlug" maxlength="100" pattern="[a-zA-Z0-9-]+" placeholder="e.g. london-casino-exterior"></label><label>Visibility<select name="visibility"><option value="private">Private — staff only</option><option value="public">Public — website accessible</option></select></label><p class="muted">Public URLs can be embedded in public pages. Do not publish confidential deal-room documents.</p><div class="ml-actions"><button type="button" id="ml-edit-cancel">Cancel</button><button type="submit">Save changes</button></div></form></dialog></main><script src="/static/js/dashboard-media.js" defer></script></body></html>`
 ));
 
 admin.get('/media', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
@@ -276,10 +299,12 @@ admin.post('/media/upload', requireRole('admin', 'editor', 'publisher', 'super_a
   const uploaded: Record<string, unknown>[] = [];
   for (const file of files) {
     if (file.size > 25 * 1024 * 1024) return c.json({ error: { code: 'FILE_TOO_LARGE', message: `${file.name} exceeds 25 MiB.` } }, 413);
-    const type = file.type.toLowerCase();
+    const type = normalizeMediaType(file.name, file.type);
     const ext = mediaMimeExtensions.get(type);
-    if (!ext) return c.json({ error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: `${file.name}: allowed types are JPEG, PNG, WebP, GIF, PDF, DOCX and XLSX.` } }, 415);
+    if (type === 'image/svg+xml' && file.size > MAX_SVG_BYTES) return c.json({ error: { code: 'FILE_TOO_LARGE', message: `${file.name}: SVG files are limited to 512 KiB.` } }, 413);
+    if (!ext) return c.json({ error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: `${file.name}: allowed types are JPEG, PNG, WebP, GIF, SVG, ICO, PDF, DOCX and XLSX.` } }, 415);
     const bytes = new Uint8Array(await file.arrayBuffer());
+    if (type === 'image/svg+xml' && !isSafeSvg(bytes)) return c.json({ error: { code: 'UNSAFE_SVG', message: `${file.name}: the SVG contains scripts, event handlers, external references, embedded documents or animation, which are not allowed.` } }, 415);
     if (!mediaSignatureMatches(type, bytes)) return c.json({ error: { code: 'INVALID_FILE_SIGNATURE', message: `${file.name}: file contents do not match the declared file type.` } }, 415);
     const mediaId = id();
     const timestamp = now();
@@ -440,7 +465,7 @@ admin.get(
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) =>
     c.html(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opportunities · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin" data-role="${c.get('staff').role}"><p class="eyebrow">STAFF WORKSPACE</p><h1>Opportunities</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/review-queue/ui">Needs review</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/admin/logout">Sign out</a></nav><section id="op-list-view"><p class="muted">Every listing moves through three simple steps: <strong>Draft</strong>, <strong>Approved</strong>, <strong>Live</strong>. Use the buttons in each row, or open a listing to edit it.</p><div class="dx-toolbar"><div class="dx-tabs" id="op-tabs" role="tablist"><button type="button" class="dx-tab" role="tab" data-tab="all" aria-selected="false">All<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="live" aria-selected="false">Live<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="ready" aria-selected="false">Ready to publish<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="review" aria-selected="false">In review<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="draft" aria-selected="false">Drafts<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="closed" aria-selected="false">Closed<span class="dx-count">0</span></button></div><input class="dx-search" id="op-search" type="search" maxlength="100" placeholder="Search title, country or address" aria-label="Search opportunities"><span class="dx-spacer"></span>${['admin','super_admin'].includes(c.get('staff').role) ? '<a class="dx-btn" href="/dashboard/opportunities/export.csv">Export CSV</a><button type="button" class="dx-btn" id="op-import">Import CSV</button><input type="file" id="op-import-file" accept="text/csv,.csv" hidden>' : ''}<a class="dx-btn dx-btn-primary" href="#new" id="op-new">New opportunity</a></div><div class="dx-bulkbar" id="op-bulk" hidden><span id="op-bulk-count"></span><button type="button" class="dx-btn dx-btn-sm dx-btn-primary" data-bulk="approved">Approve selected</button><button type="button" class="dx-btn dx-btn-sm dx-btn-ghost-danger" data-bulk="rejected">Reject selected</button><button type="button" class="dx-btn dx-btn-sm" data-bulk="clear">Clear</button></div><div id="op-table" class="dx-table-wrap">Loading…</div><div class="dx-pager" id="op-pager"></div></section><section id="op-editor-view" hidden><div class="dx-editor-bar"><a class="dx-btn" href="#list" id="op-back">← All opportunities</a><h2 id="op-heading">New opportunity</h2><span id="op-stage-badge"></span><span class="dx-spacer"></span><a class="dx-btn" id="op-view-live" target="_blank" rel="noopener" hidden>View live</a><button type="submit" form="op-form" class="dx-btn dx-btn-primary" id="op-save">Save draft</button><button type="button" class="dx-btn" id="op-save-publish" hidden>Save &amp; publish</button></div><p class="dx-note dx-note-warn" id="op-live-warning" hidden>This listing is live. Saving sends it back for approval and takes it off the website until it is published again. Publishers can use <strong>Save &amp; publish</strong> to keep it live.</p><form id="op-form" class="dx-editor"><input type="hidden" name="id"><div class="dx-editor-main"><div class="dx-card"><h3>The opportunity</h3><label class="dx-field">Title<input name="title" minlength="3" maxlength="180" required></label><div class="dx-row"><label class="dx-field">Country or region<input name="country" maxlength="100"></label><label class="dx-field">Type<select name="opportunityType"><option value="casino-hotel">Casino &amp; hotel</option><option value="casino">Casino</option><option value="hotel">Hotel</option><option value="resort">Resort</option><option value="gaming-venue">Gaming venue</option><option value="other">Other</option></select></label></div><div class="dx-row"><label class="dx-field">Price<input name="priceText" maxlength="180" placeholder="e.g. EUR 12,500,000"></label><label class="dx-field">Availability<input name="availability" maxlength="300" placeholder="e.g. Available now"></label></div><label class="dx-check"><input type="checkbox" name="priceVisibility"> Show the price publicly <small>(publishers only; otherwise it reads &quot;Price on request&quot;)</small></label></div><div class="dx-card"><h3>Description</h3><label class="dx-field">Short summary<small>Shown on the listing card. Up to 1,000 characters.</small><textarea name="summary" maxlength="1000" rows="4"></textarea></label><label class="dx-field">Highlights<small>Separate with commas, up to 12. Example: Freehold, Resort, Premium.</small><input name="labels" maxlength="400"></label><label class="dx-field">Full description<small>HTML allowed. Staff-only editing.</small><textarea name="bodyHtml" maxlength="20000" rows="12"></textarea></label></div><details class="dx-card"><summary>Search appearance (optional)</summary><div class="dx-form"><label class="dx-field">SEO title<input name="seoTitle" maxlength="180"></label><label class="dx-field">SEO description<textarea name="seoDescription" maxlength="320" rows="2"></textarea></label></div></details></div><aside class="dx-editor-side"><div class="dx-card" id="op-publish-card" hidden><h3>Publishing</h3><ol class="dx-steps" id="op-steps"><li data-step="draft">Draft saved</li><li data-step="approved">Approved</li><li data-step="live">Live on website</li></ol><p class="dx-secondary" id="op-publish-help"></p><div class="dx-stack" id="op-publish-actions"></div></div><div class="dx-card"><h3>Settings</h3><label class="dx-field">Visibility class<select name="classification"><option value="confidential">Confidential</option><option value="public">Public</option><option value="off_market">Off market</option><option value="under_offer">Under offer</option><option value="on_hold">On hold</option><option value="sold">Sold</option></select><small>Only Public listings can appear on the website.</small></label><label class="dx-field">Assigned broker<select name="assignedBrokerId"><option value="">Unassigned</option></select></label></div><div class="dx-card" id="op-media-card" hidden><h3>Images</h3><p class="dx-secondary">JPG or PNG up to 8 MiB. The first image is the cover.</p><div class="dx-form" id="op-media-form"><label class="dx-field">Image<input type="file" id="op-media-file" accept="image/jpeg,image/png"></label><label class="dx-field">Short description (for accessibility)<input id="op-alt-text" data-no-media-picker maxlength="240" placeholder="e.g. Hotel exterior at dusk"></label><button type="button" class="dx-btn" id="op-media-upload">Upload from this device</button></div><div class="dx-form dx-picker-block" id="op-lib-block"><label class="dx-field">Image from the Media library<input id="op-lib-url" readonly placeholder="No image chosen yet"></label><label class="dx-field">Short description (for accessibility)<input id="op-lib-alt" data-no-media-picker maxlength="240" placeholder="e.g. Hotel exterior at dusk"></label><button type="button" class="dx-btn" id="op-lib-add">Add chosen image to listing</button></div><ul class="dx-list" id="op-media-list"></ul></div><details class="dx-card" id="op-history-card" hidden><summary>Version history</summary><ul class="dx-list" id="op-history-list"></ul></details></aside></form></section></main><script src="/static/js/dashboard-kit.js" defer></script><script src="/static/js/dashboard-opportunities.js" defer></script></body></html>`,
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opportunities · Casinos of Mayfair</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin" data-role="${c.get('staff').role}"><p class="eyebrow">STAFF WORKSPACE</p><h1>Opportunities</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/opportunities/review-queue/ui">Needs review</a><a href="/dashboard/buyers/ui">Buyer access</a><a href="/dashboard/nda-requests/ui">NDA requests</a><a href="/dashboard/access-grants/ui">Access grants</a><a href="/admin/logout">Sign out</a></nav><section id="op-list-view"><p class="muted">Every listing moves through three simple steps: <strong>Draft</strong>, <strong>Approved</strong>, <strong>Live</strong>. Use the buttons in each row, or open a listing to edit it.</p><div class="dx-toolbar"><div class="dx-tabs" id="op-tabs" role="tablist"><button type="button" class="dx-tab" role="tab" data-tab="all" aria-selected="false">All<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="live" aria-selected="false">Live<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="ready" aria-selected="false">Ready to publish<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="review" aria-selected="false">In review<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="draft" aria-selected="false">Drafts<span class="dx-count">0</span></button><button type="button" class="dx-tab" role="tab" data-tab="closed" aria-selected="false">Closed<span class="dx-count">0</span></button></div><input class="dx-search" id="op-search" type="search" maxlength="100" placeholder="Search title, country or address" aria-label="Search opportunities"><span class="dx-spacer"></span>${['admin','super_admin'].includes(c.get('staff').role) ? '<a class="dx-btn" href="/dashboard/opportunities/export.csv">Export CSV</a><button type="button" class="dx-btn" id="op-import">Import CSV</button><input type="file" id="op-import-file" accept="text/csv,.csv" hidden>' : ''}<a class="dx-btn dx-btn-primary" href="#new" id="op-new">New opportunity</a></div><div class="dx-bulkbar" id="op-bulk" hidden><span id="op-bulk-count"></span><button type="button" class="dx-btn dx-btn-sm dx-btn-primary" data-bulk="approved">Approve selected</button><button type="button" class="dx-btn dx-btn-sm dx-btn-ghost-danger" data-bulk="rejected">Reject selected</button><button type="button" class="dx-btn dx-btn-sm" data-bulk="clear">Clear</button></div><div id="op-table" class="dx-table-wrap">Loading…</div><div class="dx-pager" id="op-pager"></div></section><section id="op-editor-view" hidden><div class="dx-editor-bar"><a class="dx-btn" href="#list" id="op-back">← All opportunities</a><h2 id="op-heading">New opportunity</h2><span id="op-stage-badge"></span><span class="dx-spacer"></span><a class="dx-btn" id="op-view-live" target="_blank" rel="noopener" hidden>View live</a><button type="submit" form="op-form" class="dx-btn dx-btn-primary" id="op-save">Save draft</button><button type="button" class="dx-btn" id="op-save-publish" hidden>Save &amp; publish</button></div><p class="dx-note dx-note-warn" id="op-live-warning" hidden>This listing is live. Saving sends it back for approval and takes it off the website until it is published again. Publishers can use <strong>Save &amp; publish</strong> to keep it live.</p><form id="op-form" class="dx-editor"><input type="hidden" name="id"><div class="dx-editor-main"><div class="dx-card"><h3>The opportunity</h3><label class="dx-field">Title<input name="title" minlength="3" maxlength="180" required></label><div class="dx-row"><label class="dx-field">Country or region<input name="country" maxlength="100"></label><label class="dx-field">Type<select name="opportunityType"><option value="casino-hotel">Casino &amp; hotel</option><option value="casino">Casino</option><option value="hotel">Hotel</option><option value="resort">Resort</option><option value="gaming-venue">Gaming venue</option><option value="other">Other</option></select></label></div><div class="dx-row"><label class="dx-field">Price<input name="priceText" maxlength="180" placeholder="e.g. EUR 12,500,000"></label><label class="dx-field">Availability<input name="availability" maxlength="300" placeholder="e.g. Available now"></label></div><label class="dx-check"><input type="checkbox" name="priceVisibility"> Show the price publicly <small>(publishers only; otherwise it reads &quot;Price on request&quot;)</small></label></div><div class="dx-card"><h3>Description</h3><label class="dx-field">Short summary<small>Shown on the listing card. Up to 1,000 characters.</small><textarea name="summary" maxlength="1000" rows="4"></textarea></label><label class="dx-field">Highlights<small>Separate with commas, up to 12. Example: Freehold, Resort, Premium.</small><input name="labels" maxlength="400"></label><label class="dx-field">Full description<small>HTML allowed. Staff-only editing.</small><textarea name="bodyHtml" maxlength="20000" rows="12"></textarea></label></div><details class="dx-card"><summary>Search appearance (optional)</summary><div class="dx-form"><label class="dx-field">SEO title<input name="seoTitle" maxlength="180"></label><label class="dx-field">SEO description<textarea name="seoDescription" maxlength="320" rows="2"></textarea></label></div></details></div><aside class="dx-editor-side"><div class="dx-card" id="op-publish-card" hidden><h3>Publishing</h3><ol class="dx-steps" id="op-steps"><li data-step="draft">Draft saved</li><li data-step="approved">Approved</li><li data-step="live">Live on website</li></ol><p class="dx-secondary" id="op-publish-help"></p><div class="dx-stack" id="op-publish-actions"></div></div><div class="dx-card"><h3>Settings</h3><label class="dx-field">Visibility class<select name="classification"><option value="confidential">Confidential</option><option value="public">Public</option><option value="off_market">Off market</option><option value="under_offer">Under offer</option><option value="on_hold">On hold</option><option value="sold">Sold</option></select><small>Only Public listings can appear on the website.</small></label><label class="dx-field">Assigned broker<select name="assignedBrokerId"><option value="">Unassigned</option></select></label></div><div class="dx-card" id="op-media-card" hidden><h3>Images</h3><p class="dx-secondary">JPG, PNG, WebP or GIF up to 8 MiB. The first image is the cover.</p><div class="dx-form" id="op-media-form"><label class="dx-field">Image<input type="file" id="op-media-file" accept="image/jpeg,image/png,image/webp,image/gif"></label><label class="dx-field">Short description (for accessibility)<input id="op-alt-text" data-no-media-picker maxlength="240" placeholder="e.g. Hotel exterior at dusk"></label><button type="button" class="dx-btn" id="op-media-upload">Upload from this device</button></div><div class="dx-form dx-picker-block" id="op-lib-block"><label class="dx-field">Image from the Media library<input id="op-lib-url" readonly placeholder="No image chosen yet"></label><label class="dx-field">Short description (for accessibility)<input id="op-lib-alt" data-no-media-picker maxlength="240" placeholder="e.g. Hotel exterior at dusk"></label><button type="button" class="dx-btn" id="op-lib-add">Add chosen image to listing</button></div><ul class="dx-list" id="op-media-list"></ul></div><details class="dx-card" id="op-history-card" hidden><summary>Version history</summary><ul class="dx-list" id="op-history-list"></ul></details></aside></form></section></main><script src="/static/js/dashboard-kit.js" defer></script><script src="/static/js/dashboard-opportunities.js" defer></script></body></html>`,
     ),
 );
 
@@ -2157,7 +2182,7 @@ admin.post(
         {
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'Choose a JPG or PNG up to 8 MiB and provide descriptive alternative text.',
+            message: 'Choose a JPG, PNG, WebP or GIF up to 8 MiB and provide descriptive alternative text.',
           },
         },
         422,
@@ -2165,24 +2190,20 @@ admin.post(
 
     const contentType = upload.type;
     const bytes = new Uint8Array(await upload.arrayBuffer());
-    const jpeg =
-      contentType === 'image/jpeg' &&
-      bytes.length >= 3 &&
-      bytes[0] === 0xff &&
-      bytes[1] === 0xd8 &&
-      bytes[2] === 0xff;
-    const png =
-      contentType === 'image/png' &&
-      bytes.length >= 8 &&
-      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every(
-        (value, index) => bytes[index] === value,
-      );
-    if (!jpeg && !png)
+    // JPEG, PNG, WebP and GIF (PHP-edition parity); signatures are checked against the declared type.
+    const listingImageExt: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+    };
+    const imageExt = listingImageExt[contentType];
+    if (!imageExt || !mediaSignatureMatches(contentType, bytes))
       return c.json(
         {
           error: {
             code: 'INVALID_FILE_SIGNATURE',
-            message: 'Image bytes do not match JPEG or PNG.',
+            message: 'Image bytes do not match JPEG, PNG, WebP or GIF.',
           },
         },
         415,
@@ -2193,7 +2214,7 @@ admin.post(
       .map((value) => value.toString(16).padStart(2, '0'))
       .join('');
     const mediaId = id();
-    const key = `opportunities/${opportunityId}/media/${mediaId}.${jpeg ? 'jpg' : 'png'}`;
+    const key = `opportunities/${opportunityId}/media/${mediaId}.${imageExt}`;
     const timestamp = now();
     await c.env.PRIVATE_FILES.put(key, bytes.buffer as ArrayBuffer, {
       httpMetadata: { contentType, cacheControl: 'private, no-store' },
@@ -2325,27 +2346,23 @@ admin.post(
         { error: { code: 'VALIDATION_ERROR', message: 'Describe the image in 3 to 240 characters.' } },
         422,
       );
-    if (!['image/jpeg', 'image/png'].includes(asset.contentType) || asset.byteSize > 8 * 1024 * 1024)
+    const attachExt: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+    const attachImageExt = attachExt[asset.contentType];
+    if (!attachImageExt || asset.byteSize > 8 * 1024 * 1024)
       return c.json(
-        { error: { code: 'UNSUPPORTED_IMAGE', message: 'Only JPG or PNG images up to 8 MiB can be added to a listing.' } },
+        { error: { code: 'UNSUPPORTED_IMAGE', message: 'Only JPG, PNG, WebP or GIF images up to 8 MiB can be added to a listing.' } },
         415,
       );
     const object = await c.env.PRIVATE_FILES.get(asset.r2Key);
     if (!object)
       return c.json({ error: { code: 'NOT_FOUND', message: 'The image file is missing from storage.' } }, 404);
     const bytes = new Uint8Array(await object.arrayBuffer());
-    const jpeg =
-      asset.contentType === 'image/jpeg' && bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-    const png =
-      asset.contentType === 'image/png' &&
-      bytes.length >= 8 &&
-      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value);
-    if (!jpeg && !png)
-      return c.json({ error: { code: 'INVALID_FILE_SIGNATURE', message: 'Image bytes do not match JPEG or PNG.' } }, 415);
+    if (!mediaSignatureMatches(asset.contentType, bytes))
+      return c.json({ error: { code: 'INVALID_FILE_SIGNATURE', message: 'Image bytes do not match JPEG, PNG, WebP or GIF.' } }, 415);
     const hash = await crypto.subtle.digest('SHA-256', bytes);
     const sha256 = [...new Uint8Array(hash)].map((value) => value.toString(16).padStart(2, '0')).join('');
     const mediaId = id();
-    const key = `opportunities/${opportunityId}/media/${mediaId}.${jpeg ? 'jpg' : 'png'}`;
+    const key = `opportunities/${opportunityId}/media/${mediaId}.${attachImageExt}`;
     const timestamp = now();
     await c.env.PRIVATE_FILES.put(key, bytes.buffer as ArrayBuffer, {
       httpMetadata: { contentType: asset.contentType, cacheControl: 'private, no-store' },
@@ -3165,6 +3182,31 @@ const platformSettingKeys = [
   'font_heading',
   'font_body',
   'logo_alt',
+  // Branding, social, chairman profile and e-mail widget (PHP-edition parity).
+  'apple_touch_icon_url',
+  'icon_192_url',
+  'icon_512_url',
+  'og_image_url',
+  'chairman_image_url',
+  'chairman_image_alt',
+  'email_widget_enabled',
+  'email_widget_address',
+  'email_widget_subject',
+  'chairman_name',
+  'chairman_title',
+  'chairman_bio',
+  'chairman_expertise',
+  'chairman_languages',
+  'instagram_url',
+  'linkedin_url',
+  'footer_explore_navigation',
+];
+const brandImageKeys = [
+  'apple_touch_icon_url',
+  'icon_192_url',
+  'icon_512_url',
+  'og_image_url',
+  'chairman_image_url',
 ];
 admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (c) => {
   const rows = await c.env.DB.prepare(
@@ -3180,6 +3222,7 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
   }
   const structuredKeys = [
     'header_navigation',
+    'footer_explore_navigation',
     'footer_navigation',
     'geo_sections',
     'homepage_sections',
@@ -3199,6 +3242,18 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
       ],
     ],
     [
+      'Icons, sharing image and chairman photo',
+      'Home-screen icons, the picture shown when a page is shared, and the Chairman photo. Choose a file from the media library (PNG, JPEG, WebP, SVG or ICO) or paste a site path or HTTPS address. Anything left empty keeps the built-in default.',
+      [
+        'apple_touch_icon_url',
+        'icon_192_url',
+        'icon_512_url',
+        'og_image_url',
+        'chairman_image_url',
+        'chairman_image_alt',
+      ],
+    ],
+    [
       'Contact and analytics',
       'Where enquiries go and how traffic is measured.',
       [
@@ -3209,7 +3264,23 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
         'contact_email_chairman',
         'whatsapp_number',
         'whatsapp_message',
+        'email_widget_enabled',
+        'email_widget_address',
+        'email_widget_subject',
         'ga4_id',
+      ],
+    ],
+    [
+      'Chairman profile and social links',
+      'The Chairman card on the home and About pages, plus the Instagram and LinkedIn icons shown with the WhatsApp and email icons on the Chairman card, the contact card and the footer. An icon appears only when its link is filled in. For Instagram you can paste the profile address or just the handle (for example @name).',
+      [
+        'chairman_name',
+        'chairman_title',
+        'chairman_bio',
+        'chairman_expertise',
+        'chairman_languages',
+        'instagram_url',
+        'linkedin_url',
       ],
     ],
     [
@@ -3243,10 +3314,20 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
     [
       'Navigation and homepage structure',
       'Add, edit, reorder and remove items with the buttons below. Changes go live when you save.',
-      ['header_navigation', 'footer_navigation', 'homepage_sections', 'geo_sections'],
+      [
+        'header_navigation',
+        'footer_explore_navigation',
+        'footer_navigation',
+        'homepage_sections',
+        'geo_sections',
+      ],
     ],
   ];
   const selectFields: Record<string, Array<[string, string]>> = {
+    email_widget_enabled: [
+      ['on', 'On - show the email icon above the WhatsApp icon'],
+      ['off', 'Off - hide the email icon'],
+    ],
     cookie_banner_enabled: [
       ['on', 'On - show the banner'],
       ['off', 'Off - hide the banner'],
@@ -3258,10 +3339,27 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
     ],
   };
   const selectDefaults: Record<string, string> = {
+    email_widget_enabled: 'on',
     cookie_banner_enabled: 'on',
     cookie_banner_position: 'bottom-left',
   };
   const placeholders: Record<string, string> = {
+    logo_url: 'Empty = default M mark. PNG, WebP or SVG, transparent background recommended',
+    apple_touch_icon_url: 'Empty = none. 180 x 180 PNG (iPhone and iPad home screen)',
+    icon_192_url: 'Empty = none. 192 x 192 PNG (Android and web app)',
+    icon_512_url: 'Empty = none. 512 x 512 PNG (Android and web app)',
+    og_image_url: 'Empty = built-in image. 1200 x 630 JPEG or PNG',
+    chairman_image_url: 'Empty = built-in photo. Square image, 400 x 400 or larger',
+    chairman_image_alt: 'Empty = Brian Minister, Chairman',
+    instagram_url: 'Empty = icon hidden. https://www.instagram.com/yourname/ or @yourname',
+    linkedin_url: 'Empty = icon hidden. https://www.linkedin.com/in/...',
+    chairman_name: 'Brian Minister',
+    chairman_title: 'Chairman, Casinos of Mayfair International Ltd',
+    chairman_bio: 'Empty = built-in welcome text. Leave a blank line between paragraphs.',
+    chairman_expertise: 'Optional. One item per line or comma separated, shown as small tags under the bio.',
+    chairman_languages: 'Optional, for example English, Spanish',
+    email_widget_address: 'Empty = use the contact email',
+    email_widget_subject: 'Enquiry from the Casinos of Mayfair website',
     cookie_banner_title: 'Your privacy matters',
     cookie_banner_text:
       'We use essential cookies to run this site. With your consent we also use analytics cookies to understand how it is used.',
@@ -3288,9 +3386,9 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
         .join('')}</select></label>`;
     }
     const longText =
-      structured || ['site_description', 'whatsapp_message', 'cookie_banner_text'].includes(key);
+      structured || ['site_description', 'whatsapp_message', 'cookie_banner_text', 'chairman_bio', 'chairman_expertise'].includes(key);
     const placeholder = placeholders[key] ? ` placeholder="${escapeHtml(placeholders[key])}"` : '';
-    return `<label class="setting-field"${longText ? ' data-wide' : ''}><span>${label}</span><textarea name="${key}" rows="${structured ? 6 : key === 'cookie_banner_text' ? 4 : 2}"${placeholder}>${escapeHtml(rendered)}</textarea></label>`;
+    return `<label class="setting-field"${longText ? ' data-wide' : ''}><span>${label}</span><textarea name="${key}" rows="${structured ? 6 : ['cookie_banner_text', 'chairman_bio'].includes(key) ? 4 : 2}"${placeholder}>${escapeHtml(rendered)}</textarea></label>`;
   };
   const grouped = new Set(settingGroups.flatMap(([, , keys]) => keys));
   const leftovers = platformSettingKeys.filter((key) => !grouped.has(key));
@@ -3325,7 +3423,7 @@ admin.get('/settings', requireRole('admin', 'super_admin', 'editor'), async (c) 
 });
 admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length > 60)
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length > 80)
     return c.json(
       { error: { code: 'VALIDATION_ERROR', message: 'Provide a settings object.' } },
       422,
@@ -3346,7 +3444,7 @@ admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
         422,
       );
     if (
-      ['header_navigation', 'footer_navigation', 'geo_sections', 'homepage_sections'].includes(
+      ['header_navigation', 'footer_explore_navigation', 'footer_navigation', 'geo_sections', 'homepage_sections'].includes(
         key,
       ) &&
       (!Array.isArray(value) || value.length > 50)
@@ -3429,7 +3527,7 @@ admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
         422,
       );
     if (
-      ['contact_email', 'contact_email_chairman'].includes(key) &&
+      ['contact_email', 'contact_email_chairman', 'email_widget_address'].includes(key) &&
       value &&
       (typeof value !== 'string' || !z.string().email().safeParse(value).success)
     )
@@ -3469,6 +3567,43 @@ admin.put('/settings', requireRole('admin', 'super_admin'), async (c) => {
         { error: { code: 'INVALID_URL', message: `${key} must be a site-relative or HTTPS URL.` } },
         422,
       );
+    if (brandImageKeys.includes(key) && value && (typeof value !== 'string' || !brandUrl(value)))
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_URL',
+            message: `${key} must be a site path starting with / (for example /media/12) or an https:// address, with no spaces or quotes.`,
+          },
+        },
+        422,
+      );
+    if (['logo_alt', 'chairman_image_alt'].includes(key) && typeof value === 'string' && value.length > 160)
+      return c.json({ error: { code: 'VALUE_TOO_LONG', message: `${key} is limited to 160 characters.` } }, 422);
+    if (key === 'instagram_url' && value && (typeof value !== 'string' || !instagramUrl(value)))
+      return c.json(
+        { error: { code: 'INVALID_INSTAGRAM_URL', message: 'Use an https://www.instagram.com/... address or a handle such as @yourname.' } },
+        422,
+      );
+    if (key === 'linkedin_url' && value && (typeof value !== 'string' || !linkedinUrl(value)))
+      return c.json(
+        { error: { code: 'INVALID_LINKEDIN_URL', message: 'Use an https://www.linkedin.com/... address.' } },
+        422,
+      );
+    if (
+      ['chairman_name', 'chairman_title', 'chairman_languages'].includes(key) &&
+      typeof value === 'string' &&
+      value.length > 200
+    )
+      return c.json({ error: { code: 'VALUE_TOO_LONG', message: `${key} is limited to 200 characters.` } }, 422);
+    if (['chairman_bio', 'chairman_expertise'].includes(key) && typeof value === 'string' && value.length > 4000)
+      return c.json({ error: { code: 'VALUE_TOO_LONG', message: `${key} is limited to 4000 characters.` } }, 422);
+    if (key === 'email_widget_enabled' && value && !['on', 'off'].includes(String(value)))
+      return c.json(
+        { error: { code: 'INVALID_EMAIL_WIDGET_SETTING', message: 'The email button must be on or off.' } },
+        422,
+      );
+    if (key === 'email_widget_subject' && typeof value === 'string' && value.length > 120)
+      return c.json({ error: { code: 'VALUE_TOO_LONG', message: 'The email subject is limited to 120 characters.' } }, 422);
     statements.push(
       c.env.DB.prepare(
         'INSERT INTO platform_settings (setting_key,value_json,updated_by,updated_at) VALUES (?,?,?,?) ON CONFLICT(setting_key) DO UPDATE SET value_json=excluded.value_json,updated_by=excluded.updated_by,updated_at=excluded.updated_at',

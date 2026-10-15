@@ -24,7 +24,7 @@ export function OpportunityCard({ item, variant = 'live' }: CardProps) {
   const media = (
     <>
       {item.coverMediaPath ? (
-        <img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" />
+        <img src={item.coverMediaPath} alt={item.coverMediaAlt} loading="lazy" decoding="async" />
       ) : (
         <span class="opp-fallback" aria-hidden="true">
           <span class="opp-monogram">M</span>
