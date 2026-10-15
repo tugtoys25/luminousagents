@@ -1,0 +1,35 @@
+name: Create missing production resources (one-time)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type create-production-resources to proceed
+        required: true
+permissions:
+  contents: read
+jobs:
+  provision:
+    if: inputs.confirm == 'create-production-resources'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Create resources
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          pnpm exec wrangler d1 create mayfair-platform-production || echo "d1: not created (exists or failed)"
+          pnpm exec wrangler kv namespace create mayfair-platform-cache-production || echo "kv: not created (exists or failed)"
+          pnpm exec wrangler queues create mayfair-notifications-production-dlq || echo "dlq: not created (exists or failed)"
+          pnpm exec wrangler r2 bucket create mayfair-backups-production || echo "backups bucket: not created (exists or failed)"
+          echo "---- inventory after ----"
+          pnpm exec wrangler d1 list
+          pnpm exec wrangler kv namespace list
