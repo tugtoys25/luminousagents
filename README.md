@@ -179,7 +179,7 @@ Super administrators can review active buyer sessions and revoke an individual s
 
 ## Sprint 31 cumulative completion hardening
 
-The Sprint 30 cumulative source has additional implementation for buyer profile/requirements, review queue and verification dates, safe media reference handling, public media hash verification, public directory sorting, tier-3 access controls, signed NDA PDF upload/scanning, and a private data-room document management UI. See `SPRINT_31_HANDOFF.txt`, `docs/SPRINT_30_RELEASE_RUNBOOK.md`, and run `pnpm preflight:sprint31`. These source changes are not a production certification; follow the full staging, external-provider and restore gates before deployment.
+The Sprint 30 cumulative source has additional implementation for buyer profile/requirements, review queue and verification dates, safe media reference handling, public media hash verification, public directory sorting, tier-3 access controls, signed NDA PDF upload/scanning, and a private data-room document management UI. See `docs/handoffs/SPRINT_31_HANDOFF.txt`, `docs/SPRINT_30_RELEASE_RUNBOOK.md`, and run `pnpm preflight:sprint31`. These source changes are not a production certification; follow the full staging, external-provider and restore gates before deployment.
 
 ## Sprint 32 — completion hardening (staging candidate, not certified production)
 
