@@ -5,7 +5,11 @@ const config = readFileSync(configPath, 'utf8');
 const issues = [];
 if (!existsSync('pnpm-lock.yaml'))
   issues.push('pnpm-lock.yaml is missing; generate it with the pinned pnpm version and commit it.');
-for (const id of config.matchAll(/"(?:database_id|id)"\s*:\s*"([0-9a-f-]{16,})"/gi)) {
+// The top-level block holds local-dev defaults, which are placeholders by design. Only the staging and
+// production environment blocks are release targets, so only they are checked for placeholder IDs.
+const envStart = config.indexOf('"env"');
+const targetConfig = envStart >= 0 ? config.slice(envStart) : config;
+for (const id of targetConfig.matchAll(/"(?:database_id|id)"\s*:\s*"([0-9a-f-]{16,})"/gi)) {
   if (/^0+$/.test(id[1].replaceAll('-', '')))
     issues.push('wrangler.jsonc contains a placeholder Cloudflare resource ID.');
 }

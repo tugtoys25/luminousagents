@@ -117,7 +117,7 @@
         {
           "binding": "DB",
           "database_name": "mayfair-platform-production",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "4504a11e-cff9-44fb-86b5-93442e52e72e",
           "migrations_dir": "migrations",
         },
       ],
@@ -130,7 +130,7 @@
       "kv_namespaces": [
         {
           "binding": "CACHE",
-          "id": "00000000000000000000000000000000",
+          "id": "0e2dbff3feea48f395dccdd585af9ca9",
         },
       ],
       "queues": {
