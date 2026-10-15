@@ -51,7 +51,7 @@ setting is filled in.
 | MySQL job queue, dead-letter table, cron worker | Replaced here by Cloudflare Queues with a DLQ. |
 | `bin/check-*.php`, `invariants.json`, `.htaccess`, private-folder layout | cPanel deployment tooling. |
 | Legacy listing editor, Homepage-sections manager, Navigation manager | Retired in the PHP edition itself; superseded here by the opportunity CMS and Platform settings. |
-| Seeded default header/footer menus | Empty lists already keep the standard links; seeding would only freeze today's links. |
+| Seeded default header/footer menus | Originally skipped (empty lists already keep the standard links). Now included in the optional seed at the owner's request; see the trade-off in the seed file. |
 | `promote-super-admin.php` | `scripts/provision-staff.sql.example` covers staff provisioning. |
 
 ## Applying
@@ -86,3 +86,7 @@ Independent audit of the delivered build against `casinosofmayfair-php-staging-f
   foreignObject, ENTITY, protocol-relative use, non-SVG root): all rejected; a clean SVG accepted.
 * Still Unverified: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `prettier --check`, live Worker (no dependencies or
   network here). Run `pnpm check` before pushing.
+
+* Seed extended: `scripts/seed-php-parity-content.sql` now also seeds `header_navigation`, `footer_explore_navigation`
+  and `footer_navigation` with the links the site already shows. `geo_sections` ("Our markets") is not seeded:
+  the PHP edition never shipped content for it either, and none exists to port.

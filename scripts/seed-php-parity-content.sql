@@ -1,4 +1,5 @@
--- OPTIONAL content seed: Chairman profile, social links, e-mail widget defaults and the "More from Mayfair" blocks.
+-- OPTIONAL content seed: Chairman profile, social links, e-mail widget defaults, the "More from Mayfair" blocks
+-- and the standard header / footer menus.
 --
 -- Ported from the PHP edition (sql/updates/0012 and 0013). This is NOT a numbered migration on purpose:
 --   * it is public marketing copy that someone should approve before it goes live, and
@@ -30,3 +31,20 @@ INSERT OR IGNORE INTO platform_settings (setting_key, value_json, updated_by, up
 
 UPDATE platform_settings SET value_json = '[{"title": "Over fifty years in the casino industry", "body": "Our Chairman, Brian Minister, has served the casino industry for more than 50 years. Casinos of Mayfair International Ltd was established in London in 1994 to fill a niche in the sale of casinos worldwide.", "url": "/about", "linkText": "About the Chairman"}, {"title": "Casino brokerage, management and recruitment", "body": "Beyond casino sales and purchases, we provide casino management, recruitment and staff training, and consulting for owners, buyers and investors evaluating gaming opportunities.", "url": "/services", "linkText": "Our services"}, {"title": "A worldwide investor network", "body": "Our brokerage department works with a database of almost 3,000 investors and presents more than 50 casinos for sale from owners worldwide, from stand-alone casinos from $1 million to major casino groups.", "url": "/casinos-for-sale", "linkText": "View opportunities"}]', updated_at = '2026-10-15T00:00:00.000Z'
  WHERE setting_key = 'homepage_sections' AND value_json IN ('', '[]', '""');
+
+-- ---------------------------------------------------------------------------------------------
+-- Standard menus (PHP v5.1 seeded these). The values are exactly the links the site already shows by
+-- default, so nothing changes visually; they simply appear ready to edit in Platform settings.
+-- Trade-off: once a menu is saved, a link added to the built-in default later will not appear on its own.
+-- INSERT OR IGNORE keeps any menu you have already saved; the UPDATEs only fill a menu that is still empty.
+INSERT OR IGNORE INTO platform_settings (setting_key, value_json, updated_by, updated_at) VALUES
+  ('header_navigation', '[{"label":"Opportunities","url":"/casinos-for-sale"},{"label":"Services","url":"/services"},{"label":"About","url":"/about"},{"label":"FAQ","url":"/faq"},{"label":"Contact our team","url":"/contact"}]', NULL, '2026-10-15T00:00:00.000Z'),
+  ('footer_explore_navigation', '[{"label":"Opportunities","url":"/casinos-for-sale"},{"label":"Services","url":"/services"},{"label":"About us","url":"/about"}]', NULL, '2026-10-15T00:00:00.000Z'),
+  ('footer_navigation', '[{"label":"FAQ","url":"/faq"},{"label":"Contact","url":"/contact"},{"label":"Privacy","url":"/legal/privacy"},{"label":"Terms","url":"/legal/terms"},{"label":"Cookies","url":"/legal/cookies"},{"label":"AML / KYC","url":"/legal/aml-kyc"},{"label":"Sanctions","url":"/legal/sanctions"},{"label":"Anti-bribery","url":"/legal/anti-bribery"},{"label":"Listing disclaimer","url":"/legal/disclaimer"},{"label":"Complaints","url":"/legal/complaints"}]', NULL, '2026-10-15T00:00:00.000Z');
+
+UPDATE platform_settings SET value_json = '[{"label":"Opportunities","url":"/casinos-for-sale"},{"label":"Services","url":"/services"},{"label":"About","url":"/about"},{"label":"FAQ","url":"/faq"},{"label":"Contact our team","url":"/contact"}]', updated_at = '2026-10-15T00:00:00.000Z'
+ WHERE setting_key = 'header_navigation' AND value_json IN ('', '[]', '""', 'null');
+UPDATE platform_settings SET value_json = '[{"label":"Opportunities","url":"/casinos-for-sale"},{"label":"Services","url":"/services"},{"label":"About us","url":"/about"}]', updated_at = '2026-10-15T00:00:00.000Z'
+ WHERE setting_key = 'footer_explore_navigation' AND value_json IN ('', '[]', '""', 'null');
+UPDATE platform_settings SET value_json = '[{"label":"FAQ","url":"/faq"},{"label":"Contact","url":"/contact"},{"label":"Privacy","url":"/legal/privacy"},{"label":"Terms","url":"/legal/terms"},{"label":"Cookies","url":"/legal/cookies"},{"label":"AML / KYC","url":"/legal/aml-kyc"},{"label":"Sanctions","url":"/legal/sanctions"},{"label":"Anti-bribery","url":"/legal/anti-bribery"},{"label":"Listing disclaimer","url":"/legal/disclaimer"},{"label":"Complaints","url":"/legal/complaints"}]', updated_at = '2026-10-15T00:00:00.000Z'
+ WHERE setting_key = 'footer_navigation' AND value_json IN ('', '[]', '""', 'null');
