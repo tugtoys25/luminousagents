@@ -20,12 +20,9 @@ const SAFE_DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=
 
 export function isSafeSvg(bytes: Uint8Array): boolean {
   if (bytes.length === 0 || bytes.length > MAX_SVG_BYTES || bytes.includes(0)) return false;
-  let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
-    return false;
-  }
+  // Workers typings do not expose `fatal`; invalid UTF-8 decodes to U+FFFD, which is rejected instead.
+  const text = new TextDecoder('utf-8').decode(bytes);
+  if (text.includes('\uFFFD')) return false;
   const source = text.replace(/^\uFEFF/, '').trimStart();
   if (!STRUCTURE.test(source)) return false;
   if (FORBIDDEN_ELEMENTS.test(source)) return false;
