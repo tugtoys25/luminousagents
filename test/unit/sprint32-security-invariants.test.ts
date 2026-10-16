@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { readAdminSources } from '../../scripts/lib/admin-sources.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 // Static source guards. They run in plain Node (vitest.node.config.ts) because they read repository files.
-const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+const read = (path: string) =>
+  path === 'src/admin/routes.ts'
+    ? readAdminSources()
+    : readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('Sprint 32 static guards', () => {
   it('buyer email-code request returns the generic response object, not a call to it', () => {
@@ -67,9 +71,9 @@ describe('Sprint 32 static guards', () => {
   it('ships the generated role matrix and the offline audit scripts', () => {
     for (const path of [
       'docs/ROLE_ROUTE_MATRIX.md',
-      'scripts/sprint32-role-matrix.mjs',
-      'scripts/sprint32-leak-audit.mjs',
-      'scripts/sprint32-reconcile.mjs',
+      'scripts/role-matrix.mjs',
+      'scripts/leak-audit.mjs',
+      'scripts/reconcile.mjs',
       'src/domain/opportunities/lifecycle.ts',
       'src/domain/opportunities/redaction.ts',
       'src/domain/opportunities/reconciliation.ts',

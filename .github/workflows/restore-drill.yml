@@ -1,0 +1,49 @@
+name: Restore drill (verify latest encrypted backup)
+# Manual. Downloads the newest encrypted D1 backup from private R2, decrypts it on the runner,
+# loads it into throw-away in-memory SQLite and runs scripts/restore-verify.mjs.
+# Record the result in docs/BACKUPS_AND_RESTORE.md (date, snapshot key, duration, operator).
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: staging or production-backup
+        type: choice
+        required: true
+        default: staging
+        options: [staging, production-backup]
+permissions:
+  contents: read
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Fetch, decrypt and verify the newest snapshot
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+          TARGET: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          test -n "$BACKUP_ENCRYPTION_PASSPHRASE" || { echo 'BACKUP_ENCRYPTION_PASSPHRASE is required'; exit 1; }
+          if [ "$TARGET" = "staging" ]; then NAME=staging; else NAME=production; fi
+          BUCKET="mayfair-backups-$NAME"
+          WORK="$(mktemp -d)"
+          trap 'rm -rf "$WORK"' EXIT
+          echo "Listing newest snapshot in $BUCKET ..."
+          KEY="$(pnpm exec wrangler r2 object list "$BUCKET" --prefix "backups/$NAME/" --json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const o=JSON.parse(s);const a=(Array.isArray(o)?o:o.objects||[]).map(x=>x.key).sort();console.log(a.at(-1)||"")})')"
+          test -n "$KEY" || { echo "No snapshot found in $BUCKET. Run the backup workflow first."; exit 1; }
+          echo "Snapshot: $KEY"
+          pnpm exec wrangler r2 object get "$BUCKET/$KEY" --file "$WORK/snap.sql.gpg" --remote
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" --decrypt --output "$WORK/snap.sql" "$WORK/snap.sql.gpg"
+          node --no-warnings scripts/restore-verify.mjs "$WORK/snap.sql"

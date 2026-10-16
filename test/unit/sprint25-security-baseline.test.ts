@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { readAdminSources } from '../../scripts/lib/admin-sources.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { serializeOpportunity, type OpportunityRow } from '../../src/domain/opportunities/serialize';
 import { resolve } from 'node:path';
-const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+const read = (path: string) =>
+  path === 'src/admin/routes.ts'
+    ? readAdminSources()
+    : readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('Sprint 25 security baseline', () => {
   it('redacts prices for public viewers unless price visibility is explicitly enabled', () => {

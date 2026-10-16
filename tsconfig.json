@@ -40,6 +40,8 @@
     "test/unit/sprint32-security-invariants.test.ts",
     "test/unit/scanner-service-security-invariants.test.ts",
     "test/unit/buyer-dashboard-security-invariants.test.ts",
-    "test/unit/php-parity-security-invariants.test.ts"
+    "test/unit/php-parity-security-invariants.test.ts",
+    "test/unit/turnstile-security-invariants.test.ts",
+    "test/unit/staff-mfa-security-invariants.test.ts"
   ]
 }

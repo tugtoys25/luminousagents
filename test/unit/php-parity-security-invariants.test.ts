@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { readAdminSources } from '../../scripts/lib/admin-sources.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+const read = (path: string) =>
+  path === 'src/admin/routes.ts'
+    ? readAdminSources()
+    : readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('PHP-edition parity: wiring and security invariants', () => {
   const index = read('src/index.ts');

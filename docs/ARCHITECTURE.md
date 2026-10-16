@@ -44,3 +44,9 @@ safe or deployable until each resource has been provisioned and the real IDs/nam
 
 Seller portal, full deal pipeline, e-signature/Workflows, advanced analytics, AI search/matching, mobile
 apps, real-time chat, microservices and multi-tenancy are outside the initial MVP scope.
+
+## P0 additions
+
+Admin routes are split per domain under `src/admin/routes/` with shared helpers in `src/admin/shared.ts`. Staff MFA lives in `src/auth/` (`totp`, `mfa-repo`, `mfa`, `mfa-routes`) and gates `staffAuth`. Turnstile is a single middleware (`src/security/turnstile.ts`) mounted for `TURNSTILE_PROTECTED_POSTS`. Logging goes through `src/lib/logger.ts`. The structure guard keeps the layering from regressing.
+
+Permissions: `src/permissions/permissions.ts` is the single role→permission map; `requirePermission()` wraps `requireRole`. Existing routes still use the shared role lists, which a test proves equal the map.

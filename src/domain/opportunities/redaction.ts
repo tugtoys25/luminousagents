@@ -10,7 +10,7 @@
  * over-redacted rather than under-redacted, and staff always see the original text.
  *
  * This is a safety net, not a substitute for editorial review. Each listing still needs a
- * human review before publication (see docs/SPRINT_32_COMPLETION.md).
+ * human review before publication (see docs/history/SPRINT_32_COMPLETION.md).
  */
 
 export const AMOUNT_WITHHELD = '[amount withheld]';

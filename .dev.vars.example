@@ -28,3 +28,9 @@
 
 # Sprint 12/14: set only for the one-time first super-administrator setup (/admin/setup); use a random secret of at least 32 characters.
 # ADMIN_BOOTSTRAP_TOKEN=replace-with-a-long-random-one-time-token
+
+# P0 hardening
+# TURNSTILE_ENFORCEMENT=log-only          (temporary rollout switch only)
+# MFA_ENCRYPTION_KEY=base64-encoded-32-random-bytes   (optional; falls back to OTP_ENCRYPTION_KEY)
+# STAFF_MFA_REQUIRED_ROLES=super_admin,admin
+# LOG_LEVEL=info

@@ -50,3 +50,20 @@ fully operational.
 `src/security/malware-scanner.ts` does not embed an antivirus engine. It requires a trusted HTTPS scanner service that accepts the exact raw R2 bytes at `POST /v1/scans` and returns a signed result. Configure `MALWARE_SCANNER_API_URL`, `MALWARE_SCANNER_API_TOKEN`, `MALWARE_SCANNER_SIGNING_SECRET`, and optionally `MALWARE_SCANNER_PROVIDER`. The HMAC canonical string is `reference`, lowercase SHA-256, status, verdict, engine version, and scan timestamp joined by newline characters. Only a verified `completed` result for the exact recomputed digest can move a pending document to clean. Scanner errors, object deletion/change, bad signatures, unsupported verdicts and audit failures fail closed.
 
 Do not send confidential documents to a third-party provider without approved privacy/data-processing terms. The endpoint, provider, HMAC protocol and failure behaviour must be tested against a real scanner in staging.
+
+## Staff MFA (P0)
+
+- TOTP (RFC 6238, SHA-1, 30 s, 6 digits, ±1 step) plus 10 single-use recovery codes (salted SHA-256, spent by compare-and-set).
+- Secrets are AES-GCM encrypted with the user id as AAD; replay of a used step is rejected; failed attempts are throttled in KV.
+- Required for `super_admin` and `admin` by default (`STAFF_MFA_REQUIRED_ROLES`). It is enforced only when an encryption key exists, so a missing key cannot lock everyone out. A required but unverified session is redirected to `/admin/mfa` (HTML) or receives `403 MFA_REQUIRED` (API).
+- `sessions.mfa_at` records verification per session; a new sign-in always needs a fresh code.
+- Reset: a super admin can reset another user's MFA from `/admin/mfa`. Break-glass: `DELETE FROM staff_mfa WHERE user_id = '<id>'` through D1 and record it in the incident log.
+- Known limits: enrolment shows the manual key and `otpauth://` link (no QR image yet); step-up re-authentication for sensitive actions is not implemented.
+
+## Turnstile (P0)
+
+Verified server-side on admin and buyer sign-in, forgot-password, buyer code request, buyer registration, managed forms and enquiries. Outside dev a missing secret fails closed (503); a bad token returns 422 `CHALLENGE_FAILED`. Widgets are injected by `public/static/js/turnstile-forms.js` from `GET /api/public/turnstile`. `TURNSTILE_ENFORCEMENT=log-only` is a temporary rollout switch that logs `turnstile_bypassed`.
+
+## Structure guard
+
+`scripts/check-structure.mjs` caps files at 400 lines and allows `.prepare(` only in `*repo.ts`. Legacy exceptions are listed in `scripts/structure-allowlist.json` and may only shrink (`--update` after refactoring). Extracted so far: public enquiries (`src/enquiries/repo.ts`), admin audit, notifications, settings, overview, access grants, tasks, sessions, pages, forms, staff and admin enquiries (`src/admin/repos/`; `scripts/lib/admin-sources.mjs` includes them for static checks). Remaining large files: `auth/portal-routes.ts`, `buyers/routes.ts`, `web/pages/public.tsx`, plus SQL still inline in routes.

@@ -27,3 +27,11 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - name: Structure guard
+        run: node scripts/check-structure.mjs
+      - name: Role/route matrix is current
+        run: node scripts/role-matrix.mjs --check
+      - name: Leak audit
+        run: node --no-warnings scripts/leak-audit.mjs
+      - name: Reconcile
+        run: node --no-warnings scripts/reconcile.mjs

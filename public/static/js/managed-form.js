@@ -20,6 +20,8 @@
       n.textContent = 'Thank you. Your request has been received.';
     } catch (err) {
       n.textContent = err.message || 'Could not submit the form.';
+    } finally {
+      if (window.mayfairResetTurnstile) window.mayfairResetTurnstile(f);
     }
   });
 })();
