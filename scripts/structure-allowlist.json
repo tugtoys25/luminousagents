@@ -1,0 +1,90 @@
+{
+  "src/admin/routes/buyers.ts": {
+    "maxLines": 400,
+    "maxSql": 13
+  },
+  "src/admin/routes/documents.ts": {
+    "maxLines": 400,
+    "maxSql": 15
+  },
+  "src/admin/routes/media.ts": {
+    "maxLines": 400,
+    "maxSql": 16
+  },
+  "src/admin/routes/nda.ts": {
+    "maxLines": 400,
+    "maxSql": 16
+  },
+  "src/admin/routes/opportunities.ts": {
+    "maxLines": 400,
+    "maxSql": 15
+  },
+  "src/admin/routes/opportunity-documents.ts": {
+    "maxLines": 400,
+    "maxSql": 3
+  },
+  "src/admin/routes/opportunity-lifecycle.ts": {
+    "maxLines": 400,
+    "maxSql": 24
+  },
+  "src/admin/routes/opportunity-media.ts": {
+    "maxLines": 400,
+    "maxSql": 18
+  },
+  "src/admin/routes/opportunity-queue.ts": {
+    "maxLines": 400,
+    "maxSql": 16
+  },
+  "src/admin/routes/settings-ui.ts": {
+    "maxLines": 400,
+    "maxSql": 1
+  },
+  "src/admin/shared.ts": {
+    "maxLines": 400,
+    "maxSql": 4
+  },
+  "src/auth/password.ts": {
+    "maxLines": 400,
+    "maxSql": 3
+  },
+  "src/auth/portal-routes.ts": {
+    "maxLines": 913,
+    "maxSql": 43
+  },
+  "src/auth/staff-session.ts": {
+    "maxLines": 400,
+    "maxSql": 2
+  },
+  "src/buyers/routes.ts": {
+    "maxLines": 754,
+    "maxSql": 32
+  },
+  "src/index.ts": {
+    "maxLines": 400,
+    "maxSql": 2
+  },
+  "src/operations/queue.ts": {
+    "maxLines": 400,
+    "maxSql": 16
+  },
+  "src/security/malware-scanner.ts": {
+    "maxLines": 400,
+    "maxSql": 1
+  },
+  "src/web/branding-routes.ts": {
+    "maxLines": 400,
+    "maxSql": 1
+  },
+  "src/web/managed-content.ts": {
+    "maxLines": 400,
+    "maxSql": 8
+  },
+  "src/web/pages/public.tsx": {
+    "maxLines": 1179,
+    "maxSql": 14
+  },
+  "src/web/site-settings.ts": {
+    "maxLines": 400,
+    "maxSql": 1
+  }
+}

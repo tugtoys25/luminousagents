@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { readAdminSources } from '../../scripts/lib/admin-sources.mjs';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+const read = (path: string) =>
+  path === 'src/admin/routes.ts'
+    ? readAdminSources()
+    : readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('Sprint 10 security invariants', () => {
   it('uses an explicit broker ownership column and migration', () => {
@@ -12,7 +16,8 @@ describe('Sprint 10 security invariants', () => {
   });
 
   it('assigns opportunity enquiries, creates a one-working-day task, and queues broker notice', () => {
-    const enquiries = read('src/enquiries/routes.ts');
+    // SQL moved to the repository in the P0 restructure; the behaviour contract spans both files.
+    const enquiries = `${read('src/enquiries/routes.ts')}\n${read('src/enquiries/repo.ts')}`;
     expect(enquiries).toMatch(/assigned_broker_id AS assignedBrokerId/);
     expect(enquiries).toMatch(/oneWorkingDayLater/);
     expect(enquiries).toMatch(/Review new website enquiry/);

@@ -139,10 +139,17 @@ const optionalPasswordFields = () =>
   field('password', 'Password (optional — leave blank to use email codes)', 'name="password" type="password" autocomplete="new-password" minlength="12" maxlength="200" aria-describedby="pw-hint"') +
   field('confirm', 'Confirm password (if setting one)', 'name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200"') +
   '<p id="pw-hint" class="fine">You may leave both password fields blank and sign in using a one-time code sent to your email.</p>';
+// Forms whose endpoint is Turnstile-protected server-side (see security/turnstile.ts).
+const TURNSTILE_FORM_ENDPOINTS = new Set<string>([
+  '/api/admin/auth/login',
+  '/api/admin/auth/forgot-password',
+  '/api/buyer/auth/forgot-password',
+  '/api/buyer/register',
+]);
 const formTag = (id: string, endpoint: string, extra = '') =>
-  `<form id="${id}" data-auth-form data-endpoint="${endpoint}" ${extra} novalidate>`;
+  `<form id="${id}" data-auth-form data-endpoint="${endpoint}"${TURNSTILE_FORM_ENDPOINTS.has(endpoint) ? ' data-turnstile' : ''} ${extra} novalidate>`;
 const formEnd = (button: string) =>
-  `<button type="submit">${button}</button><p class="notice" role="status" aria-live="polite"></p></form><script src="/static/js/auth-forms.js" defer></script>`;
+  `<button type="submit">${button}</button><p class="notice" role="status" aria-live="polite"></p></form><script src="/static/js/turnstile-forms.js" defer></script><script src="/static/js/auth-forms.js" defer></script>`;
 
 const staffLinks = (extra = '') => `${extra}<a href="/">Public website</a>`;
 

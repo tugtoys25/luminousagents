@@ -29,6 +29,17 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - name: Release gates (structure, role matrix, leak audit)
+        run: |
+          node scripts/check-structure.mjs
+          node scripts/role-matrix.mjs --check
+          node --no-warnings scripts/leak-audit.mjs
+      - name: Apply D1 migrations first (code assumes the new schema)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply mayfair-platform-production --remote --env production
       - name: Deploy tagged release to Cloudflare production
         uses: cloudflare/wrangler-action@v3
         with:

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { readAdminSources } from '../../scripts/lib/admin-sources.mjs';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { serializeOpportunity, type OpportunityRow } from '../../src/domain/opportunities/serialize';
-const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+const read = (path: string) =>
+  path === 'src/admin/routes.ts'
+    ? readAdminSources()
+    : readFileSync(resolve(process.cwd(), path), 'utf8');
 const base: OpportunityRow = {
   id: 'opp-1', slug: 'confidential-opportunity', title: 'Confidential casino', country: 'UK',
   opportunity_type: 'casino-hotel', price_text: '£45 million', price_visibility: 0,

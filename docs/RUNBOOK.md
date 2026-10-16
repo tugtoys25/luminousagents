@@ -20,3 +20,10 @@ Restrict access, preserve audit logs, notify the incident owner and legal/privac
 ## Backup/restore
 
 Nightly workflow exports staging D1 only. Production backup, R2 object backup, retention, encryption, and restore are separate operational requirements. Conduct a restore drill in an isolated environment and record duration, row/object counts and integrity checks before production launch.
+
+## P0 operations
+
+- **Locked-out admin:** another super admin resets MFA at `/admin/mfa`; if none, run `DELETE FROM staff_mfa WHERE user_id = '<id>'` on D1 and log it.
+- **Turnstile outage or misconfiguration (login/forms returning 503/422):** fix the keys; as a short-lived measure set `TURNSTILE_ENFORCEMENT=log-only`, deploy, then remove it and confirm no `turnstile_bypassed` events.
+- **Bad release:** redeploy the previous Worker version; leave migrations applied (additive).
+- **Tracing an error:** find `request_failed` in Workers Logs, search by `requestId`.

@@ -8,7 +8,13 @@ export interface Env {
   IP_HASH_SECRET?: string;
   TURNSTILE_SECRET_KEY?: string;
   TURNSTILE_SITE_KEY?: string;
+  /** Temporary rollout switch. Leave unset (enforce). `log-only` logs and allows failed checks. */
+  TURNSTILE_ENFORCEMENT?: string;
   OTP_ENCRYPTION_KEY?: string;
+  /** Optional dedicated 32-byte base64 key for MFA secrets; falls back to OTP_ENCRYPTION_KEY. */
+  MFA_ENCRYPTION_KEY?: string;
+  /** Comma list of roles that must use MFA. Unset = super_admin,admin. Empty string = none. */
+  STAFF_MFA_REQUIRED_ROLES?: string;
   ADMIN_BOOTSTRAP_TOKEN?: string;
   RESEND_API_KEY?: string;
   MALWARE_SCANNER_API_URL?: string;

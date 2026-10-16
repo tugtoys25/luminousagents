@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from './env';
+import { loggerFor } from './lib/logger';
 import { toSafeErrorResponse } from './lib/errors';
 import { requestIdMiddleware } from './middleware/request-id';
 import { securityHeadersMiddleware } from './middleware/security-headers';
@@ -21,7 +22,13 @@ import adminRoutes from './admin/routes';
 import enquiryRoutes from './enquiries/routes';
 import buyerRoutes from './buyers/routes';
 import portalRoutes from './auth/portal-routes';
+import mfaRoutes from './auth/mfa-routes';
 import { consumeNotifications, recoverNotificationJobs } from './operations/queue';
+import {
+  requireTurnstile,
+  TURNSTILE_PROTECTED_POSTS,
+  turnstileConfigRoutes,
+} from './security/turnstile';
 
 const app = new Hono<{ Bindings: Env; Variables: { requestId: string } }>();
 
@@ -31,6 +38,8 @@ app.use('*', publicCacheMiddleware);
 app.use('/api/buyer/*', sameOriginMutationMiddleware);
 app.use('/api/admin/*', sameOriginMutationMiddleware);
 app.use('/dashboard/*', sameOriginMutationMiddleware);
+// Server-side Turnstile on every public form and authentication entry point.
+app.on('POST', [...TURNSTILE_PROTECTED_POSTS], requireTurnstile);
 const escapeAttr = (value: unknown): string =>
   String(value ?? '').replace(
     /[&<>"']/g,
@@ -313,7 +322,9 @@ app.use('*', async (c, next) => {
   }
 });
 
+app.route('/', turnstileConfigRoutes);
 app.route('/', brandingRoutes);
+app.route('/', mfaRoutes);
 app.route('/', portalRoutes);
 app.route('/', managedContentRoutes);
 app.route('/', publicPages);
@@ -327,8 +338,10 @@ app.onError((error, c) => {
   const safe = toSafeErrorResponse(error, c.get('requestId'));
   if (safe.status >= 500) {
     // Avoid logging request bodies, secrets, or raw exception messages.
-    console.error('request_failed', {
+    loggerFor(c.env).error('request_failed', {
       requestId: c.get('requestId'),
+      method: c.req.method,
+      path: new URL(c.req.url).pathname,
       status: safe.status,
       errorType: error instanceof Error ? error.name : 'UnknownError',
     });
@@ -340,6 +353,14 @@ export default {
   fetch: app.fetch,
   queue: consumeNotifications,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(recoverNotificationJobs(env));
+    ctx.waitUntil(
+      recoverNotificationJobs(env).catch((error: unknown) => {
+        loggerFor(env).error('scheduled_recovery_failed', {
+          cron: _controller.cron,
+          errorType: error instanceof Error ? error.name : 'UnknownError',
+        });
+        throw error;
+      }),
+    );
   },
 };

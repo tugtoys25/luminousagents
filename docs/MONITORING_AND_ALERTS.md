@@ -18,6 +18,19 @@ deliberately triggering it. Assign a named owner and a backup to every row befor
 | Publication invariants | `GET /dashboard/opportunities/reconciliation` returns `blockers` | Any blocker (a public record that is not approved, verified or published) | | |
 | Certificates and domain | TLS expiry and DNS | Expiry within 21 days | | |
 
+## Structured log events
+
+Logs are one JSON line per event (`src/lib/logger.ts`: `level`, `event`, `ts`, `env`, plus fields). Keys that look
+sensitive (password, token, email, ip, message, cookie, session, otp, mfa) are redacted and strings are truncated;
+error messages are never logged, only the error name. Filter in Workers Logs by `event`:
+
+| Event | Meaning | Action |
+| --- | --- | --- |
+| `request_failed` | An unhandled 5xx (fields: requestId, method, path, status, errorType) | Alert on rate; trace by requestId |
+| `scheduled_recovery_failed` | The 5-minute cron could not recover queued notifications | Alert on any occurrence |
+| `notification_delivery_failed`, `notification_recovery_enqueue_failed` | Email or queue problems | Check Resend and the DLQ |
+| `turnstile_bypassed` | `TURNSTILE_ENFORCEMENT=log-only` let a failed challenge through | Must be zero once rollout ends |
+
 ## How to check the database signals
 
 Run these read-only against the environment's D1 (for example with `wrangler d1 execute <db> --remote --command "..."`):

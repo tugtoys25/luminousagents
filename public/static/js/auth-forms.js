@@ -42,6 +42,8 @@ document.querySelectorAll('form[data-auth-form]').forEach((form) => {
       say(error instanceof Error ? error.message : 'Something went wrong. Please try again.');
     } finally {
       button.disabled = false;
+      // A Turnstile token is single use: get a fresh one for the next attempt.
+      if (window.mayfairResetTurnstile) window.mayfairResetTurnstile(form);
     }
   });
 });

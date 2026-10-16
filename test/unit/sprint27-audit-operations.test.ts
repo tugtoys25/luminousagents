@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { readAdminSources } from '../../scripts/lib/admin-sources.mjs';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+const read = (path: string) =>
+  path === 'src/admin/routes.ts'
+    ? readAdminSources()
+    : readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('Sprint 27 audit operations', () => {
   it('adds indexes for common audit filters', () => {
