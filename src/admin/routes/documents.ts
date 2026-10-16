@@ -8,6 +8,7 @@ import {
 } from '../../security/malware-scanner';
 import { z } from 'zod';
 import { Hono } from 'hono';
+import { changeScannerMode, countPendingDocuments, listDocuments, settingUpdatedAt } from '../repos/documents-repo';
 import { type AdminApp, audit, id, now } from '../shared';
 
 const admin = new Hono<AdminApp>();
@@ -18,28 +19,16 @@ admin.get('/documents/ui', requireRole('admin', 'editor', 'publisher', 'super_ad
 
 admin.get('/documents', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
   const opportunityId = (c.req.query('opportunityId') ?? '').trim().slice(0, 100);
-  const rows = await c.env.DB.prepare(
-    `SELECT d.id, d.opportunity_id AS opportunityId, d.filename, d.content_type AS contentType,
-      d.byte_size AS byteSize, d.tier, d.scan_status AS scanStatus, d.sha256,
-      d.scan_provider AS scanProvider, d.scanned_at AS scannedAt, d.created_at AS createdAt,
-      o.title AS opportunityTitle
-     FROM documents d JOIN opportunities o ON o.id = d.opportunity_id
-     WHERE (? = '' OR d.opportunity_id = ?)
-     ORDER BY d.created_at DESC LIMIT 200`,
-  ).bind(opportunityId, opportunityId).all();
+  const rows = await listDocuments(c.env.DB, opportunityId);
   c.header('Cache-Control', 'private, no-store');
-  return c.json({ data: rows.results ?? [], limit: 200 });
+  return c.json({ data: rows, limit: 200 });
 });
 
 admin.get(
   '/scanner-settings',
   requireRole('admin', 'editor', 'publisher', 'super_admin'),
   async (c) => {
-    const row = await c.env.DB.prepare(
-      'SELECT updated_at AS updatedAt FROM platform_settings WHERE setting_key = ?',
-    )
-      .bind(SCANNER_MODE_KEY)
-      .first<{ updatedAt: string }>();
+    const updatedAt = await settingUpdatedAt(c.env.DB, SCANNER_MODE_KEY);
     c.header('Cache-Control', 'private, no-store');
     return c.json({
       data: {
@@ -49,7 +38,7 @@ admin.get(
             c.env.MALWARE_SCANNER_API_TOKEN &&
             c.env.MALWARE_SCANNER_SIGNING_SECRET,
         ),
-        updatedAt: row?.updatedAt ?? null,
+        updatedAt,
       },
     });
   },
@@ -77,46 +66,29 @@ admin.put('/scanner-settings', requireRole('admin', 'super_admin'), async (c) =>
   const previous = await getScannerMode(c.env);
   const timestamp = now();
   const releasePending = parsed.data.mode === 'disabled' && parsed.data.releasePending;
-  const pending = releasePending
-    ? await c.env.DB.prepare("SELECT COUNT(*) AS total FROM documents WHERE scan_status = 'pending'").first<{
-        total: number;
-      }>()
-    : null;
-  const statements = [
-    c.env.DB.prepare(
-      'INSERT INTO platform_settings (setting_key,value_json,updated_by,updated_at) VALUES (?,?,?,?) ON CONFLICT(setting_key) DO UPDATE SET value_json=excluded.value_json,updated_by=excluded.updated_by,updated_at=excluded.updated_at',
-    ).bind(SCANNER_MODE_KEY, JSON.stringify(parsed.data.mode), staff.id, timestamp),
-  ];
-  if (releasePending)
-    statements.push(
-      c.env.DB.prepare(
-        "UPDATE documents SET scan_status = 'clean', scan_provider = ?, scan_job_id = 'skipped-' || id, scan_verdict = 'clean', scan_digest = sha256, scanned_at = ?, scan_engine_version = 'scanner-disabled' WHERE scan_status = 'pending'",
-      ).bind(SCAN_SKIPPED_PROVIDER, timestamp),
-    );
-  statements.push(
-    c.env.DB.prepare(
-      "INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,'staff','platform.scanner_mode_changed','platform_settings',?,?,?,?)",
-    ).bind(
-      id(),
-      staff.id,
-      SCANNER_MODE_KEY,
-      c.get('requestId'),
-      JSON.stringify({
-        from: previous,
-        to: parsed.data.mode,
-        reason: parsed.data.reason,
-        releasedPending: releasePending ? (pending?.total ?? 0) : 0,
-      }),
-      timestamp,
-    ),
-  );
-  await c.env.DB.batch(statements);
+  const pendingTotal = releasePending ? await countPendingDocuments(c.env.DB) : 0;
+  await changeScannerMode(c.env.DB, {
+    settingKey: SCANNER_MODE_KEY,
+    mode: parsed.data.mode,
+    staffId: staff.id,
+    timestamp,
+    releasePending,
+    skipProvider: SCAN_SKIPPED_PROVIDER,
+    auditId: id(),
+    requestId: c.get('requestId'),
+    auditDetails: {
+      from: previous,
+      to: parsed.data.mode,
+      reason: parsed.data.reason,
+      releasedPending: pendingTotal,
+    },
+  });
   c.header('Cache-Control', 'private, no-store');
   return c.json({
     data: {
       mode: parsed.data.mode,
       updatedAt: timestamp,
-      releasedPending: releasePending ? (pending?.total ?? 0) : 0,
+      releasedPending: pendingTotal,
     },
   });
 });

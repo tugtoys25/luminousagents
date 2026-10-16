@@ -1,6 +1,7 @@
 import { requireRole } from '../../auth/staff-session';
 import { getScannerMode, SCAN_SKIPPED_PROVIDER } from '../../security/malware-scanner';
 import { Hono } from 'hono';
+import { insertDocumentWithAudit, opportunityExists } from '../repos/documents-repo';
 import { type AdminApp, id, now } from '../shared';
 
 const admin = new Hono<AdminApp>();
@@ -29,10 +30,7 @@ admin.post(
   '/opportunities/:id/documents',
   requireRole('admin', 'editor', 'publisher', 'super_admin'),
   async (c) => {
-    const opportunity = await c.env.DB.prepare('SELECT id FROM opportunities WHERE id = ?')
-      .bind(c.req.param('id'))
-      .first();
-    if (!opportunity)
+    if (!(await opportunityExists(c.env.DB, c.req.param('id'))))
       return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
     const body = await c.req.parseBody();
     const upload = body.file;
@@ -105,45 +103,22 @@ admin.post(
     const timestamp = now();
     const scanSkipped = (await getScannerMode(c.env)) === 'disabled';
     try {
-      await c.env.DB.batch([
-        c.env.DB.prepare(
-          'INSERT INTO documents (id, opportunity_id, r2_key, filename, content_type, byte_size, tier, uploaded_by, created_at, sha256, scan_status, scan_provider, scan_job_id, scan_verdict, scan_digest, scanned_at, scan_engine_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        ).bind(
-          documentId,
-          c.req.param('id'),
-          key,
-          safeFilename,
-          contentType,
-          upload.size,
-          tier,
-          c.get('staff').id,
-          timestamp,
-          sha256,
-          scanSkipped ? 'clean' : 'pending',
-          scanSkipped ? SCAN_SKIPPED_PROVIDER : null,
-          scanSkipped ? `skipped-${documentId}` : null,
-          scanSkipped ? 'clean' : null,
-          scanSkipped ? sha256 : null,
-          scanSkipped ? timestamp : null,
-          scanSkipped ? 'scanner-disabled' : null,
-        ),
-        c.env.DB.prepare(
-          "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'document.uploaded', 'document', ?, ?, ?, ?)",
-        ).bind(
-          id(),
-          c.get('staff').id,
-          documentId,
-          c.get('requestId'),
-          JSON.stringify({
-            opportunityId: c.req.param('id'),
-            byteSize: upload.size,
-            tier,
-            contentType,
-            scanSkipped,
-          }),
-          timestamp,
-        ),
-      ]);
+      await insertDocumentWithAudit(c.env.DB, {
+        id: documentId,
+        opportunityId: c.req.param('id'),
+        r2Key: key,
+        filename: safeFilename,
+        contentType,
+        byteSize: upload.size,
+        tier,
+        uploadedBy: c.get('staff').id,
+        timestamp,
+        sha256,
+        scanSkipped,
+        skipProvider: SCAN_SKIPPED_PROVIDER,
+        auditId: id(),
+        requestId: c.get('requestId'),
+      });
     } catch (error) {
       await c.env.PRIVATE_FILES.delete(key);
       throw error;

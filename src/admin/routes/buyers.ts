@@ -2,6 +2,7 @@ import { requireRole } from '../../auth/staff-session';
 import { z } from 'zod';
 import { issueResetToken } from '../../auth/password';
 import { Hono } from 'hono';
+import { activateInvitedBuyer, createActiveBuyer, findAccountByEmail, findActiveBuyerContact, findBuyer, findBuyerContact, listBuyers, setBuyerStatus } from '../repos/buyers-repo';
 import { type AdminApp, audit, id, issueTemporaryPassword, now } from '../shared';
 
 const admin = new Hono<AdminApp>();
@@ -13,10 +14,7 @@ admin.get('/buyers/ui', requireRole('admin', 'super_admin'), async (c) =>
 );
 
 admin.get('/buyers', requireRole('admin', 'super_admin'), async (c) => {
-  const result = await c.env.DB.prepare(
-    "SELECT u.id, u.email, u.display_name AS displayName, u.status, u.created_at AS createdAt, p.company_name AS companyName, p.role_title AS roleTitle, u.must_change_password AS mustChange, CASE WHEN u.password_hash IS NULL THEN 0 ELSE 1 END AS hasPassword FROM users u LEFT JOIN buyer_profiles p ON p.user_id = u.id WHERE u.user_type = 'buyer' ORDER BY CASE u.status WHEN 'invited' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, u.created_at DESC LIMIT 300",
-  ).all();
-  return c.json({ data: result.results ?? [] });
+  return c.json({ data: await listBuyers(c.env.DB) });
 });
 
 admin.patch('/buyers/:id', requireRole('admin', 'super_admin'), async (c) => {
@@ -28,31 +26,18 @@ admin.patch('/buyers/:id', requireRole('admin', 'super_admin'), async (c) => {
       { error: { code: 'VALIDATION_ERROR', message: 'Choose a valid buyer status.' } },
       422,
     );
-  const user = await c.env.DB.prepare(
-    "SELECT id, status FROM users WHERE id = ? AND user_type = 'buyer'",
-  )
-    .bind(c.req.param('id'))
-    .first<{ id: string; status: string }>();
+  const user = await findBuyer(c.env.DB, c.req.param('id'));
   if (!user) return c.json({ error: { code: 'NOT_FOUND', message: 'Buyer not found.' } }, 404);
   const timestamp = now();
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "UPDATE users SET status = ?, updated_at = ? WHERE id = ? AND user_type = 'buyer'",
-    ).bind(parsed.data.status, timestamp, user.id),
-    c.env.DB.prepare(
-      "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND ? != 'active'",
-    ).bind(timestamp, user.id, parsed.data.status),
-    c.env.DB.prepare(
-      "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'buyer.status_changed', 'user', ?, ?, ?, ?)",
-    ).bind(
-      id(),
-      c.get('staff').id,
-      user.id,
-      c.get('requestId'),
-      JSON.stringify({ from: user.status, to: parsed.data.status }),
-      timestamp,
-    ),
-  ]);
+  await setBuyerStatus(c.env.DB, {
+    buyerId: user.id,
+    from: user.status,
+    to: parsed.data.status,
+    auditId: id(),
+    staffId: c.get('staff').id,
+    requestId: c.get('requestId'),
+    timestamp,
+  });
   return c.json({ data: { id: user.id, status: parsed.data.status } });
 });
 
@@ -62,11 +47,7 @@ admin.post('/buyers/:id/temporary-password', requireRole('admin', 'super_admin')
     .safeParse(await c.req.json().catch(() => ({})));
   if (!body.success)
     return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid password.' } }, 422);
-  const user = await c.env.DB.prepare(
-    "SELECT id, email, status FROM users WHERE id = ? AND user_type = 'buyer'",
-  )
-    .bind(c.req.param('id'))
-    .first<{ id: string; email: string; status: string }>();
+  const user = await findBuyerContact(c.env.DB, c.req.param('id'));
   if (!user) return c.json({ error: { code: 'NOT_FOUND', message: 'Buyer not found.' } }, 404);
   const result = await issueTemporaryPassword(c, user, 'buyer', body.data.password || undefined);
   if ('problem' in result)
@@ -78,11 +59,7 @@ admin.post('/buyers/:id/temporary-password', requireRole('admin', 'super_admin')
 });
 
 admin.post('/buyers/:id/reset-password', requireRole('admin', 'super_admin'), async (c) => {
-  const user = await c.env.DB.prepare(
-    "SELECT id, email FROM users WHERE id = ? AND user_type = 'buyer' AND status = 'active'",
-  )
-    .bind(c.req.param('id'))
-    .first<{ id: string; email: string }>();
+  const user = await findActiveBuyerContact(c.env.DB, c.req.param('id'));
   if (!user)
     return c.json(
       { error: { code: 'NOT_FOUND', message: 'Active buyer account not found.' } },
@@ -111,11 +88,7 @@ admin.post('/buyers/provision', requireRole('admin', 'super_admin'), async (c) =
       422,
     );
   const email = parsed.data.email.toLowerCase();
-  const existing = await c.env.DB.prepare(
-    'SELECT id, user_type AS userType, status FROM users WHERE email = ? COLLATE NOCASE',
-  )
-    .bind(email)
-    .first<{ id: string; userType: string; status: string }>();
+  const existing = await findAccountByEmail(c.env.DB, email);
   const timestamp = now();
   if (existing && existing.userType !== 'buyer')
     return c.json(
@@ -140,19 +113,15 @@ admin.post('/buyers/provision', requireRole('admin', 'super_admin'), async (c) =
   const buyerId = existing?.id ?? id();
   const auditDetails = JSON.stringify({ email, reactivated: Boolean(existing) });
   if (existing) {
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        "UPDATE users SET display_name = ?, status = 'active', updated_at = ? WHERE id = ? AND user_type = 'buyer' AND status = 'invited'",
-      ).bind(parsed.data.displayName, timestamp, buyerId),
-      c.env.DB.prepare(
-        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', 'buyer.provisioned', 'user', ?, ?, ?, ? WHERE changes() > 0",
-      ).bind(id(), c.get('staff').id, buyerId, c.get('requestId'), auditDetails, timestamp),
-    ]);
-    const activated = await c.env.DB.prepare(
-      "SELECT id FROM users WHERE id = ? AND status = 'active' AND user_type = 'buyer'",
-    )
-      .bind(buyerId)
-      .first();
+    const auditArgs = {
+      buyerId,
+      auditId: id(),
+      staffId: c.get('staff').id,
+      requestId: c.get('requestId'),
+      timestamp,
+      auditDetails,
+    };
+    const activated = await activateInvitedBuyer(c.env.DB, { ...auditArgs, displayName: parsed.data.displayName });
     if (!activated)
       return c.json(
         {
@@ -165,14 +134,16 @@ admin.post('/buyers/provision', requireRole('admin', 'super_admin'), async (c) =
         409,
       );
   } else {
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        "INSERT INTO users (id, email, display_name, user_type, role, status, created_at, updated_at) VALUES (?, ?, ?, 'buyer', 'buyer', 'active', ?, ?)",
-      ).bind(buyerId, email, parsed.data.displayName, timestamp, timestamp),
-      c.env.DB.prepare(
-        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'buyer.provisioned', 'user', ?, ?, ?, ?)",
-      ).bind(id(), c.get('staff').id, buyerId, c.get('requestId'), auditDetails, timestamp),
-    ]);
+    await createActiveBuyer(c.env.DB, {
+      buyerId,
+      email,
+      displayName: parsed.data.displayName,
+      auditId: id(),
+      staffId: c.get('staff').id,
+      requestId: c.get('requestId'),
+      timestamp,
+      auditDetails,
+    });
   }
   const inviteQueued = Boolean(
     await issueResetToken(c.env, { id: buyerId, email }, 'invite', 'buyer'),

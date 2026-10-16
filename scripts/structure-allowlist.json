@@ -1,27 +1,11 @@
 {
-  "src/admin/routes/buyers.ts": {
-    "maxLines": 400,
-    "maxSql": 13
-  },
   "src/admin/routes/documents.ts": {
     "maxLines": 400,
-    "maxSql": 15
-  },
-  "src/admin/routes/media.ts": {
-    "maxLines": 400,
-    "maxSql": 16
-  },
-  "src/admin/routes/nda.ts": {
-    "maxLines": 400,
-    "maxSql": 16
+    "maxSql": 9
   },
   "src/admin/routes/opportunities.ts": {
     "maxLines": 400,
     "maxSql": 15
-  },
-  "src/admin/routes/opportunity-documents.ts": {
-    "maxLines": 400,
-    "maxSql": 3
   },
   "src/admin/routes/opportunity-lifecycle.ts": {
     "maxLines": 400,
