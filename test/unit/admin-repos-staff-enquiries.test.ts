@@ -5,6 +5,17 @@ import { enquiryVisible, findEnquiryRef, getEnquiry, insertNote, listAssignees, 
 
 const ts = '2026-03-01T10:00:00.000Z';
 
+// Each test seeds what it needs, so the file passes whether or not storage is isolated per test.
+async function seedStaff(): Promise<void> {
+  if (!(await findStaff(env.DB, 'sr-1')))
+    await insertStaff(env.DB, { id: 'sr-1', email: 'sr-1@example.com', displayName: 'Sr One', role: 'broker', passwordHash: null, timestamp: ts });
+  if (!(await findStaff(env.DB, 'sr-2')))
+    await insertStaff(env.DB, { id: 'sr-2', email: 'sr-2@example.com', displayName: 'Sr Two', role: 'admin', passwordHash: 'hash', timestamp: ts });
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO users (id, email, display_name, role, user_type, status, created_at, updated_at) VALUES ('sr-buyer', 'sr-buyer@example.com', 'B', 'buyer', 'buyer', 'active', ?, ?)",
+  ).bind(ts, ts).run();
+}
+
 describe('staff repo', () => {
   it('creates, lists and finds staff; never returns buyers', async () => {
     await insertStaff(env.DB, { id: 'sr-1', email: 'sr-1@example.com', displayName: 'Sr One', role: 'broker', passwordHash: null, timestamp: ts });
@@ -27,12 +38,14 @@ describe('staff repo', () => {
     expect(await isActiveStaff(env.DB, 'sr-buyer')).toBe(false);
   });
   it('detects email clashes case-insensitively, excluding the account itself', async () => {
+    await seedStaff();
     expect(await emailInUse(env.DB, 'SR-1@EXAMPLE.COM')).toBe(true);
     expect(await emailInUse(env.DB, 'sr-1@example.com', 'sr-1')).toBe(false);
     expect(await emailInUse(env.DB, 'sr-1@example.com', 'sr-2')).toBe(true);
     expect(await emailInUse(env.DB, 'nobody@example.com')).toBe(false);
   });
   it('revokes sessions only for security-relevant changes, atomically with the update', async () => {
+    await seedStaff();
     const mk = (id: string, hash: string) =>
       env.DB.prepare(
         "INSERT INTO sessions (id, user_id, token_hash, created_at, last_seen_at, expires_at, session_type) VALUES (?, 'sr-1', ?, ?, ?, '2099-01-01T00:00:00.000Z', 'staff')",
@@ -53,10 +66,11 @@ describe('staff repo', () => {
 describe('enquiries repo', () => {
   const insert = (id: string, name: string, status: string, assignedTo: string | null) =>
     env.DB.prepare(
-      "INSERT INTO enquiries (id, name, email, company, message, source, status, assigned_to, consent_at, created_at, updated_at) VALUES (?, ?, ?, 'Acme', 'a long enough message', 'website', ?, ?, ?, ?, ?)",
+      "INSERT OR IGNORE INTO enquiries (id, name, email, company, message, source, status, assigned_to, consent_at, created_at, updated_at) VALUES (?, ?, ?, 'Acme', 'a long enough message', 'website', ?, ?, ?, ?, ?)",
     ).bind(id, name, `${id}@example.com`, status, assignedTo, ts, ts, ts).run();
 
   it('scopes brokers, filters by status and search, and updates selectively', async () => {
+    await seedStaff();
     await insert('enq-1', 'Alice Mine', 'new', 'sr-1');
     await insert('enq-2', 'Bob Other', 'closed', null);
 
@@ -80,6 +94,8 @@ describe('enquiries repo', () => {
     expect(ref).toMatchObject({ status: 'in_progress', assignedTo: null });
   });
   it('stores notes newest first with the author email', async () => {
+    await seedStaff();
+    await insert('enq-1', 'Alice Mine', 'new', 'sr-1');
     await insertNote(env.DB, { id: 'n1', enquiryId: 'enq-1', authorId: 'sr-2', note: 'first', timestamp: '2026-06-01T00:00:00.000Z' });
     await insertNote(env.DB, { id: 'n2', enquiryId: 'enq-1', authorId: 'sr-2', note: 'second', timestamp: '2026-06-02T00:00:00.000Z' });
     const notes = await listNotes(env.DB, 'enq-1');
@@ -87,6 +103,7 @@ describe('enquiries repo', () => {
     expect(notes[0]!['authorEmail']).toBe('sr-2@example.com');
   });
   it('lists assignable staff only', async () => {
+    await seedStaff();
     const ids = (await listAssignees(env.DB)).map((r) => r['id']);
     expect(ids.includes('sr-2')).toBe(true);
     expect(ids.includes('sr-buyer')).toBe(false);
