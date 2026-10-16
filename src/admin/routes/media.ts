@@ -2,6 +2,7 @@ import { requireRole } from '../../auth/staff-session';
 import { isSafeSvg, MAX_SVG_BYTES } from '../../security/svg-sanitizer';
 import { z } from 'zod';
 import { Hono } from 'hono';
+import { deleteMedia, findMedia, findMediaFile, findMediaForDelete, findPathReferences, insertMedia, listMedia, slugTaken, updateMedia } from '../repos/media-repo';
 import { type AdminApp, audit, id, mediaSignatureMatches, now } from '../shared';
 
 const admin = new Hono<AdminApp>();
@@ -41,15 +42,8 @@ admin.get('/media', requireRole('admin', 'editor', 'publisher', 'super_admin'), 
   const kind = c.req.query('type') || 'all';
   const visibility = c.req.query('visibility') || '';
   const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') || 60)));
-  const clauses: string[] = [];
-  const args: (string | number)[] = [];
-  if (q) { clauses.push("(lower(filename) LIKE ? ESCAPE '\\' OR lower(alt_text) LIKE ? ESCAPE '\\' OR lower(caption) LIKE ? ESCAPE '\\')"); const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`; args.push(like, like, like); }
-  if (kind === 'image') clauses.push("content_type LIKE 'image/%'");
-  if (kind === 'document') clauses.push("content_type NOT LIKE 'image/%'");
-  if (visibility === 'public' || visibility === 'private') { clauses.push('visibility = ?'); args.push(visibility); }
-  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  const rows = await c.env.DB.prepare(`SELECT id, filename, content_type AS contentType, byte_size AS byteSize, alt_text AS altText, caption, folder, visibility, public_slug AS publicSlug, created_at AS createdAt FROM media_assets ${where} ORDER BY created_at DESC LIMIT ?`).bind(...args, limit).all();
-  return c.json({ data: (rows.results || []).map((row) => ({ ...row, url: (row as { visibility: string }).visibility === 'public' ? `/media/${encodeURIComponent(String((row as { publicSlug?: string | null }).publicSlug || (row as { id: string }).id))}` : null })) });
+  const rows = await listMedia(c.env.DB, { q, kind, visibility, limit });
+  return c.json({ data: rows.map((row) => ({ ...row, url: (row as { visibility: string }).visibility === 'public' ? `/media/${encodeURIComponent(String((row as { publicSlug?: string | null }).publicSlug || (row as { id: string }).id))}` : null })) });
 });
 
 admin.post('/media/upload', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
@@ -79,7 +73,7 @@ admin.post('/media/upload', requireRole('admin', 'editor', 'publisher', 'super_a
     const visibility = type.startsWith('image/') ? 'public' : 'private';
     await c.env.PRIVATE_FILES.put(key, bytes.buffer as ArrayBuffer, { httpMetadata: { contentType: type, cacheControl: 'private, no-store' }, customMetadata: { mediaId, sha256, originalName: safeName } });
     try {
-      await c.env.DB.prepare('INSERT INTO media_assets (id, r2_key, filename, content_type, byte_size, sha256, folder, visibility, uploaded_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(mediaId, key, safeName, type, file.size, sha256, 'general', visibility, c.get('staff').id, timestamp, timestamp).run();
+      await insertMedia(c.env.DB, { id: mediaId, r2Key: key, filename: safeName, contentType: type, byteSize: file.size, sha256, visibility, uploadedBy: c.get('staff').id, timestamp });
       await audit(c, 'media.uploaded', 'media_asset', mediaId, { contentType: type, byteSize: file.size, sha256 });
     } catch (error) { await c.env.PRIVATE_FILES.delete(key); throw error; }
     uploaded.push({ id: mediaId, filename: safeName, contentType: type, byteSize: file.size, visibility, url: visibility === 'public' ? `/media/${encodeURIComponent(mediaId)}` : null, createdAt: timestamp });
@@ -90,42 +84,32 @@ admin.post('/media/upload', requireRole('admin', 'editor', 'publisher', 'super_a
 admin.patch('/media/:id', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
   const parsed = z.object({ filename: z.string().trim().min(1).max(180).optional(), altText: z.string().trim().max(240).optional(), caption: z.string().trim().max(500).optional(), folder: z.string().trim().min(1).max(80).regex(/^[a-zA-Z0-9 _-]+$/).optional(), publicSlug: z.string().trim().max(100).regex(/^[a-zA-Z0-9-]+$/).optional().or(z.literal('')), visibility: z.enum(['public', 'private']).optional() }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid media details.' } }, 422);
-  const existing = await c.env.DB.prepare('SELECT id, content_type AS contentType, visibility, public_slug AS publicSlug FROM media_assets WHERE id = ?').bind(c.req.param('id')).first<{ id: string; contentType: string; visibility: string; publicSlug: string | null }>();
+  const existing = await findMedia(c.env.DB, c.req.param('id'));
   if (!existing) return c.json({ error: { code: 'NOT_FOUND', message: 'Media item not found.' } }, 404);
   const patch = parsed.data;
   if (patch.publicSlug) {
-    const duplicateSlug = await c.env.DB.prepare('SELECT id FROM media_assets WHERE (public_slug = ? OR id = ?) AND id != ? LIMIT 1').bind(patch.publicSlug, patch.publicSlug, existing.id).first();
-    if (duplicateSlug) return c.json({ error: { code: 'SLUG_CONFLICT', message: 'That public URL slug is already in use.' } }, 409);
+    if (await slugTaken(c.env.DB, patch.publicSlug, existing.id)) return c.json({ error: { code: 'SLUG_CONFLICT', message: 'That public URL slug is already in use.' } }, 409);
   }
   if (patch.publicSlug !== undefined && patch.publicSlug !== (existing.publicSlug ?? '') && existing.publicSlug) {
     const oldPath = `/media/${existing.publicSlug}`;
-    const [settings, pages, forms, opportunities] = await Promise.all([
-      c.env.DB.prepare('SELECT setting_key AS name FROM platform_settings WHERE value_json LIKE ? LIMIT 20').bind(`%${oldPath}%`).all<{ name: string }>(),
-      c.env.DB.prepare("SELECT slug AS name FROM managed_pages WHERE body_markdown LIKE ? OR description LIKE ? OR seo_title LIKE ? OR seo_description LIKE ? LIMIT 20").bind(`%${oldPath}%`, `%${oldPath}%`, `%${oldPath}%`, `%${oldPath}%`).all<{ name: string }>(),
-      c.env.DB.prepare("SELECT slug AS name FROM managed_forms WHERE fields_json LIKE ? OR description LIKE ? LIMIT 20").bind(`%${oldPath}%`, `%${oldPath}%`).all<{ name: string }>(),
-      c.env.DB.prepare('SELECT slug AS name FROM opportunities WHERE body_html LIKE ? OR summary LIKE ? OR seo_title LIKE ? OR seo_description LIKE ? LIMIT 20').bind(`%${oldPath}%`, `%${oldPath}%`, `%${oldPath}%`, `%${oldPath}%`).all<{ name: string }>(),
-    ]);
+    const found = await findPathReferences(c.env.DB, oldPath);
     const refs = [
-      ...(settings.results ?? []).map((row) => `setting:${row.name}`),
-      ...(pages.results ?? []).map((row) => `page:${row.name}`),
-      ...(forms.results ?? []).map((row) => `form:${row.name}`),
-      ...(opportunities.results ?? []).map((row) => `opportunity:${row.name}`),
+      ...found.settings.map((name) => `setting:${name}`),
+      ...found.pages.map((name) => `page:${name}`),
+      ...found.forms.map((name) => `form:${name}`),
+      ...found.opportunities.map((name) => `opportunity:${name}`),
     ];
     if (refs.length) return c.json({ error: { code: 'MEDIA_URL_IN_USE', message: 'This URL slug is referenced by managed content. Update those references before changing the slug.', references: refs.slice(0, 30) } }, 409);
   }
   if (patch.visibility === 'public' && existing.visibility !== 'public' && c.get('staff').role !== 'admin' && c.get('staff').role !== 'super_admin') return c.json({ error: { code: 'FORBIDDEN', message: 'Only administrators can publish media.' } }, 403);
   if (patch.visibility === 'public' && existing.visibility !== 'public' && !existing.contentType.startsWith('image/') && c.get('staff').role !== 'super_admin') return c.json({ error: { code: 'FORBIDDEN', message: 'Only a super administrator can publish document files. Review confidentiality and rights first.' } }, 403);
-  const sets: string[] = []; const args: (string | number | null)[] = [];
-  for (const [key, column] of [['filename','filename'],['altText','alt_text'],['caption','caption'],['folder','folder'],['publicSlug','public_slug'],['visibility','visibility']] as const) { const value = patch[key]; if (value !== undefined) { sets.push(`${column} = ?`); args.push(value === '' ? null : value); } }
-  if (!sets.length) return c.json({ data: { id: existing.id } });
-  sets.push('updated_at = ?'); args.push(now(), existing.id);
-  await c.env.DB.prepare(`UPDATE media_assets SET ${sets.join(', ')} WHERE id = ?`).bind(...args).run();
+  if (!(await updateMedia(c.env.DB, existing.id, patch, now()))) return c.json({ data: { id: existing.id } });
   await audit(c, patch.visibility && patch.visibility !== existing.visibility ? 'media.visibility_changed' : 'media.updated', 'media_asset', existing.id, { fields: Object.keys(patch), previousVisibility: existing.visibility, visibility: patch.visibility ?? existing.visibility, publicSlug: patch.publicSlug ?? existing.publicSlug });
   return c.json({ data: { id: existing.id, ...patch, url: (patch.visibility || existing.visibility) === 'public' ? `/media/${encodeURIComponent((patch.publicSlug === undefined ? existing.publicSlug : patch.publicSlug) || existing.id)}` : null } });
 });
 
 admin.get('/media/:id/download', requireRole('admin', 'editor', 'publisher', 'super_admin'), async (c) => {
-  const asset = await c.env.DB.prepare('SELECT r2_key AS r2Key, filename, content_type AS contentType FROM media_assets WHERE id = ?').bind(c.req.param('id')).first<{ r2Key: string; filename: string; contentType: string }>();
+  const asset = await findMediaFile(c.env.DB, c.req.param('id'));
   if (!asset) return c.json({ error: { code: 'NOT_FOUND', message: 'Media item not found.' } }, 404);
   const object = await c.env.PRIVATE_FILES.get(asset.r2Key);
   if (!object) return c.json({ error: { code: 'NOT_FOUND', message: 'Stored file not found.' } }, 404);
@@ -134,25 +118,22 @@ admin.get('/media/:id/download', requireRole('admin', 'editor', 'publisher', 'su
 });
 
 admin.delete('/media/:id', requireRole('admin', 'super_admin'), async (c) => {
-  const asset = await c.env.DB.prepare('SELECT id, r2_key AS r2Key, filename, public_slug AS publicSlug FROM media_assets WHERE id = ?').bind(c.req.param('id')).first<{ id: string; r2Key: string; filename: string; publicSlug: string | null }>();
+  const asset = await findMediaForDelete(c.env.DB, c.req.param('id'));
   if (!asset) return c.json({ error: { code: 'NOT_FOUND', message: 'Media item not found.' } }, 404);
   const publicPaths = [`/media/${asset.id}`, ...(asset.publicSlug ? [`/media/${asset.publicSlug}`] : [])];
   const references: { type: string; name: string }[] = [];
   for (const path of publicPaths) {
-    const settings = await c.env.DB.prepare('SELECT setting_key AS name FROM platform_settings WHERE value_json LIKE ? LIMIT 20').bind(`%${path}%`).all<{ name: string }>();
-    for (const row of settings.results ?? []) references.push({ type: 'platform setting', name: row.name });
-    const pages = await c.env.DB.prepare("SELECT slug AS name FROM managed_pages WHERE (body_markdown LIKE ? OR description LIKE ? OR seo_title LIKE ? OR seo_description LIKE ?) LIMIT 20").bind(`%${path}%`, `%${path}%`, `%${path}%`, `%${path}%`).all<{ name: string }>();
-    for (const row of pages.results ?? []) references.push({ type: 'managed page', name: row.name });
-    const forms = await c.env.DB.prepare("SELECT slug AS name FROM managed_forms WHERE (fields_json LIKE ? OR description LIKE ?) LIMIT 20").bind(`%${path}%`, `%${path}%`).all<{ name: string }>();
-    for (const row of forms.results ?? []) references.push({ type: 'managed form', name: row.name });
-    const opportunities = await c.env.DB.prepare('SELECT slug AS name FROM opportunities WHERE body_html LIKE ? OR summary LIKE ? OR seo_title LIKE ? OR seo_description LIKE ? LIMIT 20').bind(`%${path}%`, `%${path}%`, `%${path}%`, `%${path}%`).all<{ name: string }>();
-    for (const row of opportunities.results ?? []) references.push({ type: 'opportunity', name: row.name });
+    const found = await findPathReferences(c.env.DB, path);
+    for (const name of found.settings) references.push({ type: 'platform setting', name });
+    for (const name of found.pages) references.push({ type: 'managed page', name });
+    for (const name of found.forms) references.push({ type: 'managed form', name });
+    for (const name of found.opportunities) references.push({ type: 'opportunity', name });
   }
   const uniqueReferences = references.filter((reference, index, all) => all.findIndex((other) => other.type === reference.type && other.name === reference.name) === index);
   if (uniqueReferences.length) {
     return c.json({ error: { code: 'MEDIA_IN_USE', message: 'This media is referenced by managed content. Replace or unlink those references before deleting it.', references: uniqueReferences.slice(0, 30) } }, 409);
   }
-  await c.env.DB.prepare('DELETE FROM media_assets WHERE id = ?').bind(asset.id).run();
+  await deleteMedia(c.env.DB, asset.id);
   await c.env.PRIVATE_FILES.delete(asset.r2Key);
   await audit(c, 'media.deleted', 'media_asset', asset.id, { filename: asset.filename });
   return c.json({ data: { id: asset.id, deleted: true } });
