@@ -11,6 +11,22 @@ import {
   publisherRoles,
   purgeOpportunityPublicCache,
 } from '../shared';
+import {
+  activeBrokerExists,
+  deleteOpportunityRow,
+  findForDelete,
+  hasLinkedRecords,
+  insertOpportunity,
+  slugExists,
+  updateOpportunity,
+} from '../repos/opportunities-repo';
+import {
+  findOpportunityFull,
+  findOpportunityScoped,
+  insertVersion,
+  nextVersion,
+  slugTakenByOther,
+} from '../repos/opportunity-lifecycle-repo';
 
 const admin = new Hono<AdminApp>();
 
@@ -71,11 +87,7 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
       403,
     );
   if (assignedBrokerId) {
-    const broker = await c.env.DB.prepare(
-      "SELECT id FROM users WHERE id = ? AND user_type = 'staff' AND role = 'broker' AND status = 'active'",
-    )
-      .bind(assignedBrokerId)
-      .first();
+    const broker = await activeBrokerExists(c.env.DB, assignedBrokerId);
     if (!broker)
       return c.json(
         {
@@ -88,9 +100,7 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
       );
   }
   let slug = slugify(input.title);
-  const collision = await c.env.DB.prepare('SELECT 1 AS found FROM opportunities WHERE slug = ?')
-    .bind(slug)
-    .first();
+  const collision = await slugExists(c.env.DB, slug);
   if (collision) slug = `${slug}-${opportunityId.slice(0, 8)}`;
   const record = {
     id: opportunityId,
@@ -112,41 +122,33 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
     seoDescription: input.seoDescription,
     assignedBrokerId,
   };
-  await c.env.DB.prepare(
-    "INSERT INTO opportunities (id, slug, title, country, opportunity_type, classification, labels_json, price_text, price_visibility, lifecycle, content_review_status, summary, body_html, availability, public_visibility, seo_title, seo_description, assigned_broker_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'pending', ?, ?, ?, 0, ?, ?, ?, ?, ?)",
-  )
-    .bind(
-      opportunityId,
-      slug,
-      input.title,
-      input.country,
-      input.opportunityType,
-      input.classification,
-      JSON.stringify(input.labels),
-      input.priceText,
-      input.priceVisibility ? 1 : 0,
-      input.summary,
-      input.bodyHtml,
-      input.availability,
-      input.seoTitle,
-      input.seoDescription,
-      assignedBrokerId,
-      timestamp,
-      timestamp,
-    )
-    .run();
-  await c.env.DB.prepare(
-    'INSERT INTO opportunity_versions (id, opportunity_id, version_number, snapshot_json, changed_by, change_reason, created_at) VALUES (?, ?, 1, ?, ?, ?, ?)',
-  )
-    .bind(
-      id(),
-      opportunityId,
-      JSON.stringify(record),
-      c.get('staff').id,
-      'Initial creation',
-      timestamp,
-    )
-    .run();
+  await insertOpportunity(c.env.DB, {
+    id: opportunityId,
+    slug,
+    title: input.title,
+    country: input.country,
+    opportunityType: input.opportunityType,
+    classification: input.classification,
+    labels: input.labels,
+    priceText: input.priceText,
+    priceVisibility: input.priceVisibility,
+    summary: input.summary,
+    bodyHtml: input.bodyHtml,
+    availability: input.availability,
+    seoTitle: input.seoTitle,
+    seoDescription: input.seoDescription,
+    assignedBrokerId,
+    timestamp,
+  });
+  await insertVersion(c.env.DB, {
+    id: id(),
+    opportunityId,
+    versionNumber: 1,
+    snapshotJson: JSON.stringify(record),
+    changedBy: c.get('staff').id,
+    reason: 'Initial creation',
+    timestamp,
+  });
   await audit(c, 'opportunity.created', 'opportunity', opportunityId, { slug });
   return c.json(
     { data: { id: opportunityId, slug, lifecycle: 'draft', contentReviewStatus: 'pending' } },
@@ -156,12 +158,7 @@ admin.post('/opportunities', requireRole(...editorRoles), async (c) => {
 
 admin.get('/opportunities/:id', requireRole('admin', 'editor', 'broker', 'publisher', 'auditor', 'super_admin'), async (c) => {
   const staff = c.get('staff');
-  const brokerOnly = staff.role === 'broker' ? 1 : 0;
-  const row = await c.env.DB.prepare(
-    'SELECT * FROM opportunities WHERE id = ? AND (? = 0 OR assigned_broker_id = ?)',
-  )
-    .bind(c.req.param('id'), brokerOnly, staff.id)
-    .first<Record<string, unknown>>();
+  const row = await findOpportunityScoped(c.env.DB, c.req.param('id'), staff.role === 'broker', staff.id);
   if (!row) return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
   return c.json({ data: row });
 });
@@ -176,12 +173,7 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
       422,
     );
   const staff = c.get('staff');
-  const brokerOnly = staff.role === 'broker' ? 1 : 0;
-  const existing = await c.env.DB.prepare(
-    'SELECT * FROM opportunities WHERE id = ? AND (? = 0 OR assigned_broker_id = ?)',
-  )
-    .bind(c.req.param('id'), brokerOnly, staff.id)
-    .first<Record<string, unknown>>();
+  const existing = await findOpportunityScoped(c.env.DB, c.req.param('id'), staff.role === 'broker', staff.id);
   if (!existing)
     return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
   const input = parsed.data;
@@ -197,11 +189,7 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
         403,
       );
     if (requested) {
-      const broker = await c.env.DB.prepare(
-        "SELECT id FROM users WHERE id = ? AND user_type = 'staff' AND role = 'broker' AND status = 'active'",
-      )
-        .bind(requested)
-        .first();
+      const broker = await activeBrokerExists(c.env.DB, requested);
       if (!broker)
         return c.json(
           {
@@ -214,67 +202,28 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
         );
     }
   }
-  const mapping: Record<string, string> = {
-    title: 'title',
-    country: 'country',
-    opportunityType: 'opportunity_type',
-    classification: 'classification',
-    labels: 'labels_json',
-    priceText: 'price_text',
-    priceVisibility: 'price_visibility',
-    summary: 'summary',
-    bodyHtml: 'body_html',
-    availability: 'availability',
-    seoTitle: 'seo_title',
-    seoDescription: 'seo_description',
-    assignedBrokerId: 'assigned_broker_id',
-  };
-  const sets = Object.entries(input).map(([key]) => `${mapping[key]} = ?`);
-  const values = Object.entries(input).map(([key, value]) =>
-    key === 'labels' ? JSON.stringify(value) : key === 'priceVisibility' ? (value ? 1 : 0) : value,
-  );
+  let newSlug: string | null = null;
   if (input.title && input.title !== existing.title) {
-    let slug = slugify(input.title);
-    const found = await c.env.DB.prepare(
-      'SELECT 1 AS found FROM opportunities WHERE slug = ? AND id != ?',
-    )
-      .bind(slug, existing.id)
-      .first();
-    if (found) slug = `${slug}-${String(existing.id).slice(0, 8)}`;
-    sets.push('slug = ?');
-    values.push(slug);
+    newSlug = slugify(input.title);
+    if (await slugTakenByOther(c.env.DB, newSlug, String(existing.id)))
+      newSlug = `${newSlug}-${String(existing.id).slice(0, 8)}`;
   }
-  sets.push("content_review_status = 'pending'", 'public_visibility = 0', 'updated_at = ?');
-  values.push(updatedAt, String(existing.id));
-  await c.env.DB.prepare(`UPDATE opportunities SET ${sets.join(', ')} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  await updateOpportunity(c.env.DB, String(existing.id), input, newSlug, updatedAt);
   const cachePurge = await purgeOpportunityPublicCache(
     c.env,
     String(existing.slug),
     typeof existing.country === 'string' ? existing.country : null,
   );
-  const updated = await c.env.DB.prepare('SELECT * FROM opportunities WHERE id = ?')
-    .bind(existing.id)
-    .first<Record<string, unknown>>();
-  const version = await c.env.DB.prepare(
-    'SELECT COALESCE(MAX(version_number), 0) + 1 AS next FROM opportunity_versions WHERE opportunity_id = ?',
-  )
-    .bind(existing.id)
-    .first<{ next: number }>();
-  await c.env.DB.prepare(
-    'INSERT INTO opportunity_versions (id, opportunity_id, version_number, snapshot_json, changed_by, change_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  )
-    .bind(
-      id(),
-      existing.id,
-      version?.next ?? 1,
-      JSON.stringify(updated),
-      c.get('staff').id,
-      'Opportunity edited; sent back for content review',
-      updatedAt,
-    )
-    .run();
+  const updated = await findOpportunityFull(c.env.DB, String(existing.id));
+  await insertVersion(c.env.DB, {
+    id: id(),
+    opportunityId: String(existing.id),
+    versionNumber: await nextVersion(c.env.DB, String(existing.id)),
+    snapshotJson: JSON.stringify(updated),
+    changedBy: c.get('staff').id,
+    reason: 'Opportunity edited; sent back for content review',
+    timestamp: updatedAt,
+  });
   await audit(c, 'opportunity.updated', 'opportunity', String(existing.id), {
     fields: Object.keys(input),
     reviewReset: true,
@@ -284,16 +233,9 @@ admin.patch('/opportunities/:id', requireRole(...editorRoles), async (c) => {
 });
 
 admin.delete('/opportunities/:id', requireRole('admin', 'super_admin'), async (c) => {
-  const row = await c.env.DB.prepare('SELECT id, slug, title, country FROM opportunities WHERE id = ?')
-    .bind(c.req.param('id'))
-    .first<{ id: string; slug: string; title: string; country: string | null }>();
+  const row = await findForDelete(c.env.DB, c.req.param('id'));
   if (!row) return c.json({ error: { code: 'NOT_FOUND', message: 'Opportunity not found.' } }, 404);
-  const used = await c.env.DB.prepare(
-    'SELECT (SELECT COUNT(*) FROM nda_requests WHERE opportunity_id = ?1) AS ndas, (SELECT COUNT(*) FROM access_grants WHERE opportunity_id = ?1) AS grants, (SELECT COUNT(*) FROM documents WHERE opportunity_id = ?1) AS docs, (SELECT COUNT(*) FROM managed_form_submissions WHERE opportunity_id = ?1) AS forms',
-  )
-    .bind(row.id)
-    .first<{ ndas: number; grants: number; docs: number; forms: number }>();
-  if (used && (used.ndas || used.grants || used.docs || used.forms))
+  if (await hasLinkedRecords(c.env.DB, row.id))
     return c.json(
       {
         error: {
@@ -306,7 +248,7 @@ admin.delete('/opportunities/:id', requireRole('admin', 'super_admin'), async (c
     );
   try {
     // Image files are left in storage: the media library is reference-aware and may share them.
-    await c.env.DB.prepare('DELETE FROM opportunities WHERE id = ?').bind(row.id).run();
+    await deleteOpportunityRow(c.env.DB, row.id);
   } catch {
     return c.json(
       {

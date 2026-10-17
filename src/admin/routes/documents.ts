@@ -8,7 +8,19 @@ import {
 } from '../../security/malware-scanner';
 import { z } from 'zod';
 import { Hono } from 'hono';
-import { changeScannerMode, countPendingDocuments, listDocuments, settingUpdatedAt } from '../repos/documents-repo';
+import {
+  changeScannerMode,
+  countPendingDocuments,
+  deleteDocumentRow,
+  findDocumentForDelete,
+  findDocumentForReview,
+  findDocumentForScan,
+  listDocuments,
+  loadSavedScan,
+  recordScanResult,
+  setScanStatusManually,
+  settingUpdatedAt,
+} from '../repos/documents-repo';
 import { type AdminApp, audit, id, now } from '../shared';
 
 const admin = new Hono<AdminApp>();
@@ -94,18 +106,7 @@ admin.put('/scanner-settings', requireRole('admin', 'super_admin'), async (c) =>
 });
 
 admin.post('/documents/:id/scan', requireRole('admin', 'super_admin'), async (c) => {
-  const document = await c.env.DB.prepare(
-    'SELECT id, opportunity_id AS opportunityId, r2_key AS r2Key, content_type AS contentType, sha256, scan_status AS scanStatus FROM documents WHERE id = ?',
-  )
-    .bind(c.req.param('id'))
-    .first<{
-      id: string;
-      opportunityId: string;
-      r2Key: string;
-      contentType: string;
-      sha256: string;
-      scanStatus: string;
-    }>();
+  const document = await findDocumentForScan(c.env.DB, c.req.param('id'));
   if (!document)
     return c.json({ error: { code: 'NOT_FOUND', message: 'Document not found.' } }, 404);
   if (document.scanStatus !== 'pending')
@@ -146,44 +147,33 @@ admin.post('/documents/:id/scan', requireRole('admin', 'super_admin'), async (c)
   }
   const scanStatus = result.verdict === 'clean' ? 'clean' : 'rejected';
   const timestamp = now();
-  const update = c.env.DB.prepare(
-    "UPDATE documents SET scan_status = ?, scan_provider = ?, scan_job_id = ?, scan_verdict = ?, scan_digest = ?, scanned_at = ?, scan_engine_version = ? WHERE id = ? AND scan_status = 'pending' AND sha256 = ?",
-  ).bind(
-    scanStatus,
-    result.provider,
-    result.reference,
-    result.verdict,
-    result.sha256,
-    result.scannedAt,
-    result.engineVersion,
-    document.id,
-    document.sha256,
-  );
-  const auditInsert = c.env.DB.prepare(
-    "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', ?, 'document', ?, ?, ?, ? WHERE changes() > 0 AND EXISTS (SELECT 1 FROM documents WHERE id = ? AND scan_job_id = ? AND scan_status = ?)",
-  ).bind(
-    id(),
-    c.get('staff').id,
-    `document.scan.${scanStatus}`,
-    document.id,
-    c.get('requestId'),
-    JSON.stringify({
+  const auditDetailsJson = JSON.stringify({
+    provider: result.provider,
+    reference: result.reference,
+    verdict: result.verdict,
+    sha256: result.sha256,
+    scannedAt: result.scannedAt,
+    engineVersion: result.engineVersion,
+    opportunityId: document.opportunityId,
+    scanSkipped: result.provider === SCAN_SKIPPED_PROVIDER,
+  });
+  try {
+    await recordScanResult(c.env.DB, {
+      documentId: document.id,
+      expectedSha256: document.sha256,
+      scanStatus,
       provider: result.provider,
       reference: result.reference,
       verdict: result.verdict,
       sha256: result.sha256,
       scannedAt: result.scannedAt,
       engineVersion: result.engineVersion,
-      opportunityId: document.opportunityId,
-      scanSkipped: result.provider === SCAN_SKIPPED_PROVIDER,
-    }),
-    timestamp,
-    document.id,
-    result.reference,
-    scanStatus,
-  );
-  try {
-    await c.env.DB.batch([update, auditInsert]);
+      auditId: id(),
+      actorId: c.get('staff').id,
+      requestId: c.get('requestId'),
+      auditDetailsJson,
+      timestamp,
+    });
   } catch {
     return c.json(
       {
@@ -196,11 +186,7 @@ admin.post('/documents/:id/scan', requireRole('admin', 'super_admin'), async (c)
       500,
     );
   }
-  const saved = await c.env.DB.prepare(
-    'SELECT scan_status AS scanStatus, scan_job_id AS scanJobId FROM documents WHERE id = ?',
-  )
-    .bind(document.id)
-    .first<{ scanStatus: string; scanJobId: string | null }>();
+  const saved = await loadSavedScan(c.env.DB, document.id);
   if (!saved || saved.scanJobId !== result.reference || saved.scanStatus !== scanStatus)
     return c.json(
       {
@@ -248,49 +234,33 @@ admin.patch('/documents/:id/scan-status', requireRole('admin', 'super_admin'), a
       },
       409,
     );
-  const document = await c.env.DB.prepare(
-    'SELECT id, opportunity_id AS opportunityId, scan_status AS scanStatus, sha256 FROM documents WHERE id = ?',
-  )
-    .bind(c.req.param('id'))
-    .first<{ id: string; opportunityId: string; scanStatus: string; sha256: string }>();
+  const document = await findDocumentForReview(c.env.DB, c.req.param('id'));
   if (!document)
     return c.json({ error: { code: 'NOT_FOUND', message: 'Document not found.' } }, 404);
   const timestamp = now();
-  await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE documents SET scan_status = ? WHERE id = ?').bind(
-      parsed.data.status,
-      document.id,
-    ),
-    c.env.DB.prepare(
-      "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', ?, 'document', ?, ?, ?, ?)",
-    ).bind(
-      id(),
-      c.get('staff').id,
-      `document.scan.${parsed.data.status}`,
-      document.id,
-      c.get('requestId'),
-      JSON.stringify({
-        reason: parsed.data.reason,
-        scannerReference: parsed.data.scannerReference ?? null,
-        sha256: document.sha256,
-        opportunityId: document.opportunityId,
-      }),
-      timestamp,
-    ),
-  ]);
+  await setScanStatusManually(c.env.DB, {
+    documentId: document.id,
+    status: parsed.data.status,
+    auditId: id(),
+    actorId: c.get('staff').id,
+    requestId: c.get('requestId'),
+    detailsJson: JSON.stringify({
+      reason: parsed.data.reason,
+      scannerReference: parsed.data.scannerReference ?? null,
+      sha256: document.sha256,
+      opportunityId: document.opportunityId,
+    }),
+    timestamp,
+  });
   return c.json({
     data: { id: document.id, scanStatus: parsed.data.status, updatedAt: timestamp },
   });
 });
 
 admin.delete('/documents/:id', requireRole('admin', 'publisher', 'super_admin'), async (c) => {
-  const doc = await c.env.DB.prepare(
-    'SELECT id, r2_key AS r2Key, opportunity_id AS opportunityId FROM documents WHERE id = ?',
-  )
-    .bind(c.req.param('id'))
-    .first<{ id: string; r2Key: string; opportunityId: string }>();
+  const doc = await findDocumentForDelete(c.env.DB, c.req.param('id'));
   if (!doc) return c.json({ error: { code: 'NOT_FOUND', message: 'Document not found.' } }, 404);
-  await c.env.DB.prepare('DELETE FROM documents WHERE id = ?').bind(doc.id).run();
+  await deleteDocumentRow(c.env.DB, doc.id);
   await c.env.PRIVATE_FILES.delete(doc.r2Key);
   await audit(c, 'document.deleted', 'document', doc.id, { opportunityId: doc.opportunityId });
   return c.json({ data: { deleted: true } });
