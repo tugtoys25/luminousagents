@@ -48,8 +48,11 @@ describe('Sprint 16 unified password-authentication invariants', () => {
   it('keeps first-administrator setup gated by the one-time token and requires a password', () => {
     const portal = read('src/auth/portal-routes.ts');
     expect(portal).toMatch(/ADMIN_BOOTSTRAP_TOKEN/);
-    expect(portal).toMatch(/NOT EXISTS \(SELECT 1 FROM users WHERE user_type = 'staff'\)/);
-    expect(portal).toMatch(/'super_admin'/);
+    // The single-statement NOT EXISTS guard lives in the repository; the route must go through it.
+    const repo = read('src/auth/portal-repo.ts');
+    expect(repo).toMatch(/NOT EXISTS \(SELECT 1 FROM users WHERE user_type = 'staff'\)/);
+    expect(repo).toMatch(/'super_admin'/);
+    expect(portal).toMatch(/insertFirstAdmin\(/);
     expect(portal).toMatch(/passwordPolicyError\(input\.data\.password/);
   });
 
@@ -66,8 +69,11 @@ describe('Sprint 16 unified password-authentication invariants', () => {
 
   it('only provisions first passwords for active staff that have none, using the one-time token', () => {
     const portal = read('src/auth/portal-routes.ts');
-    expect(portal).toMatch(/AND password_hash IS NULL LIMIT 1/);
-    expect(portal).toMatch(/AND password_hash IS NULL[^)]*\)\s*\.bind\(hash/);
+    const repo = read('src/auth/portal-repo.ts');
+    expect(repo).toMatch(/AND password_hash IS NULL LIMIT 1/);
+    expect(repo).toMatch(/AND password_hash IS NULL"/);
+    expect(portal).toMatch(/findUnconfiguredStaffByEmail\(/);
+    expect(portal).toMatch(/provisionStaffPassword\(c\.env\.DB, \{[^}]*passwordHash: hash/);
   });
 
   it('restricts staff account management to super administrators', () => {

@@ -39,7 +39,8 @@ describe('Sprint 25 security baseline', () => {
     const account = read('src/buyers/routes.ts');
     expect(auth).toContain("portal.post('/api/buyer/auth/request-code'");
     expect(auth).toContain("portal.post('/api/buyer/auth/verify-code'");
-    expect(auth).toContain('expires_at > ? AND attempts < 5');
+    expect(read('src/auth/portal-repo.ts')).toContain('expires_at > ? AND attempts < 5');
+    expect(auth).toContain('consumeEmailCode(');
     expect(auth).toContain("portal.post('/api/buyer/auth/set-password'");
     expect(account).toContain('/api/buyer/auth/request-code');
     expect(account).toContain('/api/buyer/auth/verify-code');
