@@ -28,11 +28,13 @@ describe('Sprint 32 static guards', () => {
     expect(route).toBeGreaterThan(-1);
     const body = admin.slice(route, route + 4000);
     const check = body.indexOf('checkLifecycleTransition(');
-    const write = body.indexOf('UPDATE opportunities SET lifecycle');
+    // The write now lives in the repository; the route must call it only after the transition check.
+    const write = body.indexOf('setPublication(');
     expect(check).toBeGreaterThan(-1);
     expect(write).toBeGreaterThan(check);
     expect(body).toContain('transition.code');
     expect(body).toContain('fromLifecycle');
+    expect(admin).toMatch(/UPDATE opportunities SET lifecycle = \?, public_visibility = \?/);
   });
 
   it('registers fixed opportunity paths before the :id wildcard so they are reachable', () => {

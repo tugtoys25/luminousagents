@@ -4,6 +4,7 @@ import { slugify } from '../../domain/opportunities/slug';
 import { RECONCILIATION_CHECKS } from '../../domain/opportunities/reconciliation';
 import { transitionMatrix } from '../../domain/opportunities/lifecycle';
 import { Hono } from 'hono';
+import { applyImport, findOpportunityRow, nextVersionNumber, slugInUseByOther } from '../repos/opportunity-import-repo';
 import { applyReviewDecision, exportOpportunityRows, findOpportunityRef, listOpportunities, loadReconciliation, reviewQueueRows } from '../repos/opportunity-queue-repo';
 import {
   type AdminApp,
@@ -176,7 +177,7 @@ admin.post('/opportunities/import.csv', requireRole('admin', 'super_admin'), asy
     const opportunityId = (row.id ?? '').trim();
     if (!opportunityId || seen.has(opportunityId)) return c.json({ error: { code: 'INVALID_CSV_ID', message: `Row ${rowIndex + 1} has a blank or duplicate ID.` } }, 422);
     seen.add(opportunityId);
-    const existing = await c.env.DB.prepare('SELECT * FROM opportunities WHERE id = ?').bind(opportunityId).first<Record<string, unknown>>();
+    const existing = await findOpportunityRow(c.env.DB, opportunityId);
     if (!existing) return c.json({ error: { code: 'UNKNOWN_CSV_ID', message: `Row ${rowIndex + 1} references an unknown opportunity ID. Imports update existing records only.` } }, 422);
     const title = (row.title ?? '').trim();
     if (title.length < 3 || title.length > 180) return c.json({ error: { code: 'INVALID_CSV_TITLE', message: `Row ${rowIndex + 1} title must be 3–180 characters.` } }, 422);
@@ -206,27 +207,28 @@ admin.post('/opportunities/import.csv', requireRole('admin', 'super_admin'), asy
       seo_title: String(get('seo_title', existing.seo_title ?? '')).slice(0,180),
       seo_description: String(get('seo_description', existing.seo_description ?? '')).slice(0,320),
     };
-    const nextVersion = await c.env.DB.prepare('SELECT COALESCE(MAX(version_number), 0) + 1 AS next FROM opportunity_versions WHERE opportunity_id = ?').bind(opportunityId).first<{ next: number }>();
+    const nextVersion = await nextVersionNumber(c.env.DB, opportunityId);
     const updatedAt = now();
     const snapshot = { ...existing, ...fields, slug: fields.title === existing.title ? existing.slug : slugify(String(fields.title)), lifecycle: 'draft', content_review_status: 'pending', public_visibility: 0, updated_at: updatedAt };
     // Never let imported title changes create duplicate slugs.
-    const slugCollision = await c.env.DB.prepare('SELECT id FROM opportunities WHERE slug = ? AND id != ?').bind(snapshot.slug, opportunityId).first();
-    if (slugCollision) snapshot.slug = `${slugify(String(fields.title))}-${opportunityId.slice(0,8)}`;
-    staged.push({ existing, values: fields, id: opportunityId, snapshot, version: nextVersion?.next ?? 1, updatedAt });
+    if (await slugInUseByOther(c.env.DB, String(snapshot.slug), opportunityId)) snapshot.slug = `${slugify(String(fields.title))}-${opportunityId.slice(0,8)}`;
+    staged.push({ existing, values: fields, id: opportunityId, snapshot, version: nextVersion, updatedAt });
   }
   // Prevalidate the whole CSV before any writes, then use one D1 batch for atomic updates/version/audit records.
-  const statements = staged.flatMap((item) => {
-    const fields = item.values;
-    const columns = Object.keys(fields);
-    const update = c.env.DB.prepare(`UPDATE opportunities SET ${columns.map((column) => `${column} = ?`).join(', ')}, slug = ?, lifecycle = 'draft', content_review_status = 'pending', public_visibility = 0, updated_at = ? WHERE id = ?`)
-      .bind(...columns.map((column) => fields[column]), item.snapshot.slug, item.updatedAt, item.id);
-    const version = c.env.DB.prepare('INSERT INTO opportunity_versions (id, opportunity_id, version_number, snapshot_json, changed_by, change_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(id(), item.id, item.version, JSON.stringify(item.snapshot), staff.id, 'CSV import; returned to private draft for review', item.updatedAt);
-    const auditLog = c.env.DB.prepare('INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(id(), staff.id, 'staff', 'opportunity.imported', 'opportunity', item.id, c.get('requestId'), JSON.stringify({ source: 'csv', reviewReset: true }), item.updatedAt);
-    return [update, version, auditLog];
-  });
-  await c.env.DB.batch(statements);
+  await applyImport(
+    c.env.DB,
+    staged.map((item) => ({
+      id: item.id,
+      values: item.values,
+      slug: String(item.snapshot.slug),
+      snapshotJson: JSON.stringify(item.snapshot),
+      version: item.version,
+      updatedAt: item.updatedAt,
+      versionId: id(),
+      auditId: id(),
+    })),
+    { staffId: staff.id, requestId: c.get('requestId') },
+  );
   const purges = await Promise.all(staged.map((item) => purgeOpportunityPublicCache(c.env, String(item.existing.slug), typeof item.existing.country === 'string' ? item.existing.country : null)));
   return c.json({ data: { imported: staged.length, resetToPrivateDraft: true, cachePurgesConfigured: purges.filter((item) => item.configured).length } });
 });

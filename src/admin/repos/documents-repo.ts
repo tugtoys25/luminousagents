@@ -145,3 +145,103 @@ export async function changeScannerMode(
   );
   await db.batch(statements);
 }
+
+export interface DocumentForScan {
+  id: string;
+  opportunityId: string;
+  r2Key: string;
+  contentType: string;
+  sha256: string;
+  scanStatus: string;
+}
+
+export function findDocumentForScan(db: D1Database, documentId: string): Promise<DocumentForScan | null> {
+  return db
+    .prepare(
+      'SELECT id, opportunity_id AS opportunityId, r2_key AS r2Key, content_type AS contentType, sha256, scan_status AS scanStatus FROM documents WHERE id = ?',
+    )
+    .bind(documentId)
+    .first<DocumentForScan>();
+}
+
+export interface ScanRecord {
+  documentId: string;
+  expectedSha256: string;
+  scanStatus: 'clean' | 'rejected';
+  provider: string;
+  reference: string;
+  verdict: string;
+  sha256: string;
+  scannedAt: string;
+  engineVersion: string | null;
+  auditId: string;
+  actorId: string;
+  requestId: string;
+  auditDetailsJson: string;
+  timestamp: string;
+}
+
+/**
+ * Atomic compare-and-set: only a still-pending row whose digest matches is updated, and the audit row is
+ * written only if that UPDATE changed a row AND the stored scan job is ours. UPDATE and audit MUST stay adjacent.
+ */
+export async function recordScanResult(db: D1Database, r: ScanRecord): Promise<void> {
+  await db.batch([
+    db
+      .prepare(
+        "UPDATE documents SET scan_status = ?, scan_provider = ?, scan_job_id = ?, scan_verdict = ?, scan_digest = ?, scanned_at = ?, scan_engine_version = ? WHERE id = ? AND scan_status = 'pending' AND sha256 = ?",
+      )
+      .bind(r.scanStatus, r.provider, r.reference, r.verdict, r.sha256, r.scannedAt, r.engineVersion, r.documentId, r.expectedSha256),
+    db
+      .prepare(
+        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', ?, 'document', ?, ?, ?, ? WHERE changes() > 0 AND EXISTS (SELECT 1 FROM documents WHERE id = ? AND scan_job_id = ? AND scan_status = ?)",
+      )
+      .bind(r.auditId, r.actorId, `document.scan.${r.scanStatus}`, r.documentId, r.requestId, r.auditDetailsJson, r.timestamp, r.documentId, r.reference, r.scanStatus),
+  ]);
+}
+
+export function loadSavedScan(db: D1Database, documentId: string): Promise<{ scanStatus: string; scanJobId: string | null } | null> {
+  return db
+    .prepare('SELECT scan_status AS scanStatus, scan_job_id AS scanJobId FROM documents WHERE id = ?')
+    .bind(documentId)
+    .first<{ scanStatus: string; scanJobId: string | null }>();
+}
+
+export function findDocumentForReview(
+  db: D1Database,
+  documentId: string,
+): Promise<{ id: string; opportunityId: string; scanStatus: string; sha256: string } | null> {
+  return db
+    .prepare('SELECT id, opportunity_id AS opportunityId, scan_status AS scanStatus, sha256 FROM documents WHERE id = ?')
+    .bind(documentId)
+    .first();
+}
+
+/** Manual override (reject only; the route refuses 'clean'). Status change and audit commit together. */
+export async function setScanStatusManually(
+  db: D1Database,
+  p: { documentId: string; status: 'clean' | 'rejected'; auditId: string; actorId: string; requestId: string; detailsJson: string; timestamp: string },
+): Promise<void> {
+  await db.batch([
+    db.prepare('UPDATE documents SET scan_status = ? WHERE id = ?').bind(p.status, p.documentId),
+    db
+      .prepare(
+        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', ?, 'document', ?, ?, ?, ?)",
+      )
+      .bind(p.auditId, p.actorId, `document.scan.${p.status}`, p.documentId, p.requestId, p.detailsJson, p.timestamp),
+  ]);
+}
+
+export function findDocumentForDelete(
+  db: D1Database,
+  documentId: string,
+): Promise<{ id: string; r2Key: string; opportunityId: string } | null> {
+  return db
+    .prepare('SELECT id, r2_key AS r2Key, opportunity_id AS opportunityId FROM documents WHERE id = ?')
+    .bind(documentId)
+    .first();
+}
+
+export async function deleteDocumentRow(db: D1Database, documentId: string): Promise<void> {
+  await db.prepare('DELETE FROM documents WHERE id = ?').bind(documentId).run();
+}

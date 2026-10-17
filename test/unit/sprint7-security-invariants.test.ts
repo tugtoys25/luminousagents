@@ -38,7 +38,7 @@ describe('Sprint 7 document security invariants', () => {
   it('records the scanned file digest in release audit details', () => {
     const source = read('src/admin/routes.ts');
     expect(source).toMatch(/sha256: document\.sha256/);
-    expect(source).toMatch(/document\.scan\.\$\{parsed\.data\.status\}/);
+    expect(source).toMatch(/document\.scan\.\$\{p\.status\}/); // manual status audit (documents-repo)
   });
 
   it('does not expose non-clean documents to buyer download queries', () => {
