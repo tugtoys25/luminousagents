@@ -29,6 +29,8 @@ import {
   TURNSTILE_PROTECTED_POSTS,
   turnstileConfigRoutes,
 } from './security/turnstile';
+import { listSettings } from './admin/repos/settings-repo';
+import { findPublicMediaAsset } from './admin/repos/media-repo';
 
 const app = new Hono<{ Bindings: Env; Variables: { requestId: string } }>();
 
@@ -80,7 +82,7 @@ app.use('/dashboard*', async (c, next) => {
 
 // Public media is served only for assets explicitly marked public in the staff library.
 app.get('/media/:id', async (c) => {
-  const asset = await c.env.DB.prepare('SELECT r2_key AS r2Key, content_type AS contentType, filename, byte_size AS byteSize, sha256 FROM media_assets WHERE (id = ? OR public_slug = ?) AND visibility = \'public\'').bind(c.req.param('id'), c.req.param('id')).first<{ r2Key: string; contentType: string; filename: string; byteSize: number; sha256: string }>();
+  const asset = await findPublicMediaAsset(c.env.DB, c.req.param('id'));
   if (!asset) return c.notFound();
   // Validator from the stored SHA-256: a repeat view is answered with 304 before any storage read or re-hash.
   // Visibility was already checked above, so an unpublished file still returns 404.
@@ -128,11 +130,9 @@ app.use('*', async (c, next) => {
   const contentType = c.res.headers.get('content-type') ?? '';
   if (!contentType.includes('text/html') || c.res.status >= 400) return;
   try {
-    const settings = await c.env.DB.prepare(
-      'SELECT setting_key AS key, value_json AS value FROM platform_settings',
-    ).all<{ key: string; value: string }>();
+    const settings = await listSettings(c.env.DB);
     const config: Record<string, unknown> = {};
-    for (const row of settings.results ?? []) {
+    for (const row of settings) {
       try {
         config[row.key] = JSON.parse(row.value);
       } catch {

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../env';
 import { brandFromSettings, buildManifest, type BrandValues } from './branding';
+import { listSettingsByKeys } from '../admin/repos/settings-repo';
 
 const KEYS = [
   'site_name',
@@ -15,12 +16,8 @@ const KEYS = [
 async function loadBrand(env: Env): Promise<BrandValues> {
   const values = new Map<string, string>();
   try {
-    const rows = await env.DB.prepare(
-      `SELECT setting_key AS key, value_json AS value FROM platform_settings WHERE setting_key IN (${KEYS.map(() => '?').join(',')})`,
-    )
-      .bind(...KEYS)
-      .all<{ key: string; value: string }>();
-    for (const row of rows.results ?? []) {
+    const rows = await listSettingsByKeys(env.DB, KEYS);
+    for (const row of rows) {
       try {
         const parsed: unknown = JSON.parse(row.value);
         if (typeof parsed === 'string') values.set(row.key, parsed);

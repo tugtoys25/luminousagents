@@ -1,54 +1,14 @@
 {
-  "src/admin/routes/settings-ui.ts": {
-    "maxLines": 400,
-    "maxSql": 1
-  },
-  "src/admin/shared.ts": {
-    "maxLines": 400,
-    "maxSql": 4
-  },
-  "src/auth/password.ts": {
-    "maxLines": 400,
-    "maxSql": 3
-  },
   "src/auth/portal-routes.ts": {
     "maxLines": 913,
     "maxSql": 43
   },
-  "src/auth/staff-session.ts": {
-    "maxLines": 400,
-    "maxSql": 2
-  },
   "src/buyers/routes.ts": {
-    "maxLines": 754,
-    "maxSql": 32
-  },
-  "src/index.ts": {
-    "maxLines": 400,
-    "maxSql": 2
-  },
-  "src/operations/queue.ts": {
-    "maxLines": 400,
-    "maxSql": 16
-  },
-  "src/security/malware-scanner.ts": {
-    "maxLines": 400,
-    "maxSql": 1
-  },
-  "src/web/branding-routes.ts": {
-    "maxLines": 400,
-    "maxSql": 1
-  },
-  "src/web/managed-content.ts": {
-    "maxLines": 400,
-    "maxSql": 8
+    "maxLines": 605,
+    "maxSql": 0
   },
   "src/web/pages/public.tsx": {
-    "maxLines": 1179,
-    "maxSql": 14
-  },
-  "src/web/site-settings.ts": {
-    "maxLines": 400,
-    "maxSql": 1
+    "maxLines": 1104,
+    "maxSql": 0
   }
 }

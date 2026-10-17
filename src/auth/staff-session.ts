@@ -2,6 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { Env } from '../env';
 import { readCookie, sha256Hex } from './password';
 import { mfaRequired } from './mfa';
+import { findStaffSession, touchSession } from './staff-session-repo';
 
 export interface StaffIdentity {
   id: string;
@@ -34,25 +35,12 @@ export async function authenticateStaff(
     return wantsHtml(c)
       ? c.redirect('/admin/login', 302)
       : fail(c, 401, 'UNAUTHENTICATED', 'Staff sign-in required.');
-  const row = await c.env.DB.prepare(
-    "SELECT u.id, u.email, u.display_name AS displayName, u.role, u.must_change_password AS mustChange, s.id AS sessionId, s.mfa_at AS mfaAt, m.enabled_at AS mfaEnabledAt FROM sessions s JOIN users u ON u.id = s.user_id LEFT JOIN staff_mfa m ON m.user_id = u.id WHERE s.token_hash = ? AND s.session_type = 'staff' AND s.revoked_at IS NULL AND s.expires_at > ? AND u.user_type = 'staff' AND u.status = 'active' LIMIT 1",
-  )
-    .bind(await sha256Hex(token), new Date().toISOString())
-    .first<
-      StaffIdentity & {
-        mustChange: number;
-        sessionId: string;
-        mfaAt: string | null;
-        mfaEnabledAt: string | null;
-      }
-    >();
+  const row = await findStaffSession(c.env.DB, await sha256Hex(token), new Date().toISOString());
   if (!row)
     return wantsHtml(c)
       ? c.redirect('/admin/login', 302)
       : fail(c, 401, 'UNAUTHENTICATED', 'Your session is invalid or has expired. Sign in again.');
-  await c.env.DB.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?')
-    .bind(new Date().toISOString(), row.sessionId)
-    .run();
+  await touchSession(c.env.DB, row.sessionId, new Date().toISOString());
   return {
     id: row.id,
     email: row.email,

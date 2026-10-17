@@ -10,7 +10,7 @@ const read = (path: string) =>
 describe('Sprint 19 forms, enquiries and NDA invariants', () => {
   const routes = read('src/admin/routes.ts');
   const queue = read('src/operations/queue.ts');
-  const buyers = read('src/buyers/routes.ts');
+  const buyers = read('src/buyers/routes.ts') + read('src/buyers/buyers-repo.ts');
   const managed = read('src/web/managed-content.ts');
   const shell = read('public/static/js/dashboard-shell.js');
 
@@ -63,7 +63,7 @@ describe('Sprint 19 forms, enquiries and NDA invariants', () => {
     const pub = read('src/web/pages/public.tsx');
     const pages = read('src/web/static-pages.ts');
     expect(pub).toContain('staticPageSlug(path)');
-    expect(pub).toMatch(/status = 'published'/);
+    expect(read('src/web/public-listings-repo.ts')).toMatch(/status = 'published'/); // override lookup lives in the repo
     expect(pages).toContain("'/legal/privacy'");
     expect(routes).toContain("'/pages/defaults'");
   });

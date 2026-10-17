@@ -26,7 +26,7 @@ describe('Sprint 25 security baseline', () => {
     expect(serializer).toContain('viewerTier: 0 | 1 | 2 | 3 = 0');
     expect(serializer).toContain('viewerTier >= 1 || row.price_visibility === 1');
     expect(publicPages).not.toContain('serializeOpportunity(row, 1)');
-    expect(publicPages).toContain('price_visibility');
+    expect(read('src/web/public-listings-repo.ts')).toContain('price_visibility'); // card columns are defined with the SQL
   });
   it('adds an explicit price visibility column defaulting to confidential', () => {
     const migration = read('migrations/0022_sprint25_security_baseline.sql');
@@ -47,7 +47,8 @@ describe('Sprint 25 security baseline', () => {
   it('serves public media only when public and disables caching to protect private transitions', () => {
     const index = read('src/index.ts');
     const admin = read('src/admin/routes.ts');
-    expect(index).toContain("visibility = \\'public\\'");
+    expect(index).toContain('findPublicMediaAsset(');
+    expect(read('src/admin/repos/media-repo.ts')).toContain("visibility = 'public'");
     expect(index).toContain("public, max-age=0, s-maxage=0, must-revalidate");
     expect(admin).toContain("'media.visibility_changed'");
     expect(admin).toContain('publicSlug');

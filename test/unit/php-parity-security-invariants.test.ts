@@ -24,7 +24,9 @@ describe('PHP-edition parity: wiring and security invariants', () => {
   });
 
   it('answers repeat public media views with 304 only after the visibility check', () => {
-    const lookup = index.indexOf("visibility = \\'public\\'");
+    // The lookup lives in media-repo (public-only SQL); the route must call it before answering 304.
+    expect(read('src/admin/repos/media-repo.ts')).toContain("visibility = 'public'");
+    const lookup = index.indexOf('findPublicMediaAsset(');
     const notModified = index.indexOf('status: 304');
     expect(lookup).toBeGreaterThan(-1);
     expect(notModified).toBeGreaterThan(lookup);

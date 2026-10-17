@@ -4,6 +4,8 @@ import type { StaffIdentity } from '../auth/staff-session';
 import { hashPassword, passwordPolicyError } from '../auth/password';
 import { slugify } from '../domain/opportunities/slug';
 import { hasIcoSignature, isSafeSvg } from '../security/svg-sanitizer';
+import { insertStaffAudit } from './repos/audit-repo';
+import { setTemporaryPassword } from '../auth/password-repo';
 
 export type AdminApp = { Bindings: Env; Variables: { requestId: string; staff: StaffIdentity } };
 
@@ -55,17 +57,7 @@ export async function issueTemporaryPassword(
   }
   const password = custom || generateTemporaryPassword();
   const timestamp = now();
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      'UPDATE users SET password_hash = ?, password_updated_at = ?, must_change_password = 1, failed_login_count = 0, locked_until = NULL, updated_at = ? WHERE id = ? AND user_type = ?',
-    ).bind(await hashPassword(password), timestamp, timestamp, user.id, kind),
-    c.env.DB.prepare(
-      'UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL',
-    ).bind(timestamp, user.id),
-    c.env.DB.prepare(
-      'UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
-    ).bind(timestamp, user.id),
-  ]);
+  await setTemporaryPassword(c.env.DB, { userId: user.id, kind, passwordHash: await hashPassword(password), timestamp });
   await audit(c, `${kind}.temporary_password_issued`, 'user', user.id, {
     generated: !custom,
   });
@@ -118,21 +110,16 @@ export async function audit(
   details: Record<string, unknown> = {},
 ) {
   const staff = c.get('staff');
-  await c.env.DB.prepare(
-    'INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-  )
-    .bind(
-      id(),
-      staff.id,
-      'staff',
-      action,
-      entityType,
-      entityId,
-      c.get('requestId'),
-      JSON.stringify(details),
-      now(),
-    )
-    .run();
+  await insertStaffAudit(c.env.DB, {
+    id: id(),
+    staffId: staff.id,
+    action,
+    entityType,
+    entityId,
+    requestId: c.get('requestId'),
+    detailsJson: JSON.stringify(details),
+    timestamp: now(),
+  });
 }
 
 export function mediaSignatureMatches(type: string, b: Uint8Array): boolean {

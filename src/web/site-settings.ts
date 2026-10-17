@@ -1,5 +1,6 @@
 import type { Env } from '../env';
 import { brandUrl, DEFAULT_CHAIRMAN_IMAGE, type SocialInputs } from './branding';
+import { listSettingsByKeys } from '../admin/repos/settings-repo';
 
 export interface ContactSettings {
   phoneMobile: string;
@@ -78,14 +79,8 @@ export async function loadContact(env: Env): Promise<ContactSettings> {
   const contact: ContactSettings = { ...DEFAULT_CONTACT };
   const keys = [...Object.keys(KEYS), ...Object.keys(EXTRA_KEYS)];
   try {
-    const rows = await env.DB.prepare(
-      `SELECT setting_key AS key, value_json AS value FROM platform_settings WHERE setting_key IN (${keys
-        .map(() => '?')
-        .join(',')})`,
-    )
-      .bind(...keys)
-      .all<{ key: string; value: string }>();
-    for (const row of rows.results ?? []) {
+    const rows = await listSettingsByKeys(env.DB, keys);
+    for (const row of rows) {
       try {
         const parsed: unknown = JSON.parse(row.value);
         if (typeof parsed !== 'string' || !parsed.trim()) continue;

@@ -36,3 +36,22 @@ export function settingsAuditStatement(
     )
     .bind(a.auditId, a.staffId, a.requestId, JSON.stringify({ keys: a.keys }), a.timestamp);
 }
+
+/** Raw value_json for the given keys. Callers parse and tolerate malformed values. */
+export async function listSettingsByKeys(db: D1Database, keys: readonly string[]): Promise<Array<{ key: string; value: string }>> {
+  if (keys.length === 0) return [];
+  const rows = await db
+    .prepare(`SELECT setting_key AS key, value_json AS value FROM platform_settings WHERE setting_key IN (${keys.map(() => '?').join(',')})`)
+    .bind(...keys)
+    .all<{ key: string; value: string }>();
+  return rows.results ?? [];
+}
+
+/** Raw value_json for one key, or null when unset. */
+export async function readSettingRaw(db: D1Database, key: string): Promise<string | null> {
+  const row = await db
+    .prepare('SELECT value_json AS value FROM platform_settings WHERE setting_key = ?')
+    .bind(key)
+    .first<{ value: string }>();
+  return row ? row.value : null;
+}

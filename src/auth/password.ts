@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { storeResetToken } from './password-repo';
 
 /**
  * Password hashing uses PBKDF2-HMAC-SHA256 through WebCrypto. Cloudflare Workers cap PBKDF2 at
@@ -155,33 +156,19 @@ export async function issueResetToken(
   const token = randomToken(32);
   const jobId = crypto.randomUUID();
   const minutes = purpose === 'invite' ? 60 * 24 * 3 : RESET_TOKEN_MINUTES;
-  await env.DB.batch([
-    env.DB.prepare(
-      'UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
-    ).bind(timestamp, user.id),
-    env.DB.prepare(
-      'INSERT INTO password_reset_tokens (id, user_id, token_hash, purpose, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    ).bind(
-      crypto.randomUUID(),
-      user.id,
-      await sha256Hex(token),
-      purpose,
-      new Date(Date.now() + minutes * 60_000).toISOString(),
-      timestamp,
+  await storeResetToken(env.DB, {
+    userId: user.id,
+    tokenId: crypto.randomUUID(),
+    tokenHash: await sha256Hex(token),
+    purpose,
+    expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
+    timestamp,
+    jobId,
+    encryptedPayload: await encryptPayload(
+      JSON.stringify({ email: user.email, token, purpose, kind, expiresInMinutes: minutes }),
+      env.OTP_ENCRYPTION_KEY,
     ),
-    env.DB.prepare(
-      "INSERT INTO notification_jobs (id, job_type, payload_json, status, attempts, available_at, created_at, updated_at) VALUES (?, 'auth.password_reset', ?, 'queued', 0, ?, ?, ?)",
-    ).bind(
-      jobId,
-      await encryptPayload(
-        JSON.stringify({ email: user.email, token, purpose, kind, expiresInMinutes: minutes }),
-        env.OTP_ENCRYPTION_KEY,
-      ),
-      timestamp,
-      timestamp,
-      timestamp,
-    ),
-  ]);
+  });
   try {
     await env.NOTIFICATIONS_QUEUE.send({ type: 'auth.password_reset', jobId });
   } catch {
