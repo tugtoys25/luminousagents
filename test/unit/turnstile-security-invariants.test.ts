@@ -15,6 +15,18 @@ const PROTECTED = [
   '/api/forms/:slug/submit',
 ];
 
+/** The sign-in portal is split across src/auth/portal-*.ts (pages, auth API, email codes, onboarding); invariants read them as one. */
+const readPortal = () =>
+  ['portal-routes', 'portal-shared', 'portal-pages', 'portal-auth-api', 'portal-buyer-code', 'portal-onboarding']
+    .map((n) => read(`src/auth/${n}.ts`))
+    .join('\n');
+
+/** The buyer API is split across src/buyers/*-routes.ts and shared.ts; invariants read them as one. */
+const readBuyers = () =>
+  ['routes', 'shared', 'profile-routes', 'documents-routes', 'nda-routes']
+    .map((n) => read(`src/buyers/${n}.ts`))
+    .join('\n');
+
 describe('Turnstile coverage', () => {
   const turnstile = read('src/security/turnstile.ts');
   const index = read('src/index.ts');
@@ -32,9 +44,9 @@ describe('Turnstile coverage', () => {
 
   it('every protected path is a real route', () => {
     const sources = [
-      read('src/auth/portal-routes.ts'),
+      readPortal(),
       read('src/web/managed-content.ts'),
-      read('src/buyers/routes.ts'),
+      readBuyers(),
     ].join('\n');
     expect(sources).toContain("'/api/buyer/register'");
     expect(sources).toContain("'/api/buyer/auth/request-code'");
@@ -43,7 +55,7 @@ describe('Turnstile coverage', () => {
   });
 
   it('renders the widget on every protected form', () => {
-    const portal = read('src/auth/portal-routes.ts');
+    const portal = readPortal();
     for (const path of [
       '/api/admin/auth/login',
       '/api/admin/auth/forgot-password',
@@ -51,7 +63,7 @@ describe('Turnstile coverage', () => {
       '/api/buyer/register',
     ])
       expect(portal).toContain(`'${path}',`);
-    const buyers = read('src/buyers/routes.ts');
+    const buyers = readBuyers();
     expect(buyers).toContain('id="sign-in-form" data-auth-form data-turnstile');
     expect(buyers).toContain('id="buyer-code-request" data-auth-form data-turnstile');
     expect(read('src/web/managed-content.ts')).toContain('id="managed-public-form" data-turnstile');

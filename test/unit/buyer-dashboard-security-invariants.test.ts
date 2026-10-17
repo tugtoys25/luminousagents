@@ -5,8 +5,14 @@ import { resolve } from 'node:path';
 // Static source guards (plain Node): buyer dashboard additions must keep every access check.
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
+/** The buyer API is split across src/buyers/*-routes.ts and shared.ts; invariants read them as one. */
+const readBuyers = () =>
+  ['routes', 'shared', 'profile-routes', 'documents-routes', 'nda-routes']
+    .map((n) => read(`src/buyers/${n}.ts`))
+    .join('\n');
+
 describe('buyer dashboard guards', () => {
-  const routes = read('src/buyers/routes.ts');
+  const routes = readBuyers();
 
   it('preview re-checks session, clean scan, published listing, active grant and tier', () => {
     const start = routes.indexOf("buyers.get('/api/buyer/documents/:documentId/preview'");

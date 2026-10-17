@@ -7,10 +7,22 @@ const read = (path: string) =>
     ? readAdminSources()
     : readFileSync(resolve(process.cwd(), path), 'utf8');
 
+/** The buyer API is split across src/buyers/*-routes.ts and shared.ts; invariants read them as one. */
+const readBuyers = () =>
+  ['routes', 'shared', 'profile-routes', 'documents-routes', 'nda-routes']
+    .map((n) => read(`src/buyers/${n}.ts`))
+    .join('\n');
+
+/** The public site is split across src/web/pages/public-*.ts(x); invariants read them as one. */
+const readPublicPages = () =>
+  ['public', 'public-shared', 'public-home', 'public-listings', 'public-detail', 'public-info', 'public-seo']
+    .map((n) => read(`src/web/pages/${n}.${n === 'public-shared' || n === 'public-seo' ? 'ts' : 'tsx'}`))
+    .join('\n');
+
 describe('Sprint 19 forms, enquiries and NDA invariants', () => {
   const routes = read('src/admin/routes.ts');
   const queue = read('src/operations/queue.ts');
-  const buyers = read('src/buyers/routes.ts') + read('src/buyers/buyers-repo.ts');
+  const buyers = readBuyers() + read('src/buyers/buyers-repo.ts');
   const managed = read('src/web/managed-content.ts');
   const shell = read('public/static/js/dashboard-shell.js');
 
@@ -60,7 +72,7 @@ describe('Sprint 19 forms, enquiries and NDA invariants', () => {
   });
 
   it('lets staff override built-in public pages through published managed pages', () => {
-    const pub = read('src/web/pages/public.tsx');
+    const pub = readPublicPages();
     const pages = read('src/web/static-pages.ts');
     expect(pub).toContain('staticPageSlug(path)');
     expect(read('src/web/public-listings-repo.ts')).toMatch(/status = 'published'/); // override lookup lives in the repo

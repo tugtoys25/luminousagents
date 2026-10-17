@@ -7,6 +7,12 @@ const read = (path: string) =>
     ? readAdminSources()
     : readFileSync(resolve(process.cwd(), path), 'utf8');
 
+/** The buyer API is split across src/buyers/*-routes.ts and shared.ts; invariants read them as one. */
+const readBuyers = () =>
+  ['routes', 'shared', 'profile-routes', 'documents-routes', 'nda-routes']
+    .map((n) => read(`src/buyers/${n}.ts`))
+    .join('\n');
+
 describe('Sprint 10 security invariants', () => {
   it('uses an explicit broker ownership column and migration', () => {
     expect(read('migrations/0012_broker_assignment.sql')).toMatch(/assigned_broker_id/);
@@ -36,7 +42,7 @@ describe('Sprint 10 security invariants', () => {
   });
 
   it('removes inline page styles from CSP-protected dashboard and buyer pages', () => {
-    for (const path of ['src/admin/routes.ts', 'src/buyers/routes.ts']) {
+    for (const path of ['src/admin/routes.ts', 'src/buyers/profile-routes.ts', 'src/buyers/documents-routes.ts', 'src/buyers/nda-routes.ts']) {
       const source = read(path);
       expect(source).not.toMatch(/<style\s*>/i);
       expect(source).not.toMatch(/\sstyle\s*=\s*["']/);
@@ -44,7 +50,7 @@ describe('Sprint 10 security invariants', () => {
   });
 
   it('captures the active NDA template digest and salted IP digest at acceptance', () => {
-    const buyers = read('src/buyers/routes.ts') + read('src/buyers/buyers-repo.ts');
+    const buyers = readBuyers() + read('src/buyers/buyers-repo.ts');
     expect(buyers).toMatch(/accepted_ip_hash, nda_template_hash/);
     expect(buyers).toMatch(/IP_HASH_SECRET/);
     expect(buyers).toMatch(/template\.contentHash/);
