@@ -1,4 +1,35 @@
 import { Hono } from 'hono';
+import {
+  applyBuyerSetPassword,
+  applyPasswordChange,
+  applyPasswordReset,
+  closeOpenEmailCode,
+  completeLogin,
+  consumeEmailCode,
+  consumeResetToken,
+  countStaff,
+  countUnconfiguredStaff,
+  createEmailCodeSession,
+  emailTaken,
+  findActiveBuyerByEmail,
+  findActiveUserByEmail,
+  findLatestEmailCode,
+  findSignedInUser,
+  findUnconfiguredStaffByEmail,
+  findUserForLogin,
+  findValidResetToken,
+  insertBuyerRegistration,
+  insertEmailCode,
+  insertFirstAdmin,
+  insertUserAudit,
+  invalidateOpenEmailCodes,
+  markEmailCodeUsed,
+  provisionStaffPassword,
+  recordEmailCodeMiss,
+  recordFailedLogin,
+  revokeSessionByTokenHash,
+  staffUserExists,
+} from './portal-repo';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Env } from '../env';
@@ -70,31 +101,23 @@ async function auditEvent(
   entityId: string,
   details: Record<string, unknown> = {},
 ) {
-  await env.DB.prepare(
-    "INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,?,?,'user',?,?,?,?)",
-  )
-    .bind(
-      newId(),
-      userId,
-      kind,
-      action,
-      entityId,
-      c.get('requestId'),
-      JSON.stringify(details),
-      now(),
-    )
-    .run();
+  await insertUserAudit(env.DB, {
+    id: newId(),
+    actorUserId: userId,
+    actorType: kind,
+    action,
+    entityId,
+    requestId: c.get('requestId'),
+    detailsJson: JSON.stringify(details),
+    timestamp: now(),
+  });
 }
 
 /** Resolves the currently signed-in user for a kind, regardless of must_change_password. */
 async function currentUser(c: Context<App>, kind: Kind) {
   const token = readCookie(c.req.header('cookie'), cookieFor(kind));
   if (!token) return null;
-  return c.env.DB.prepare(
-    "SELECT u.id, u.email, u.password_hash AS passwordHash, s.id AS sessionId FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.session_type = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.user_type = ? AND u.status = 'active' LIMIT 1",
-  )
-    .bind(await sha256Hex(token), kind, now(), kind)
-    .first<{ id: string; email: string; passwordHash: string | null; sessionId: string }>();
+  return findSignedInUser(c.env.DB, { tokenHash: await sha256Hex(token), kind, timestamp: now() });
 }
 
 /* ------------------------------------------------------------------ pages */
@@ -154,22 +177,10 @@ const formEnd = (button: string) =>
 const staffLinks = (extra = '') => `${extra}<a href="/">Public website</a>`;
 
 async function staffCount(env: Env): Promise<number> {
-  return (
-    (
-      await env.DB.prepare("SELECT COUNT(*) AS total FROM users WHERE user_type = 'staff'").first<{
-        total: number;
-      }>()
-    )?.total ?? 0
-  );
+  return countStaff(env.DB);
 }
 async function unconfiguredStaffCount(env: Env): Promise<number> {
-  return (
-    (
-      await env.DB.prepare(
-        "SELECT COUNT(*) AS total FROM users WHERE user_type = 'staff' AND status = 'active' AND password_hash IS NULL",
-      ).first<{ total: number }>()
-    )?.total ?? 0
-  );
+  return countUnconfiguredStaff(env.DB);
 }
 /** Setup is open while no staff exist, or while an active staff account (created before passwords) still has no password. */
 async function setupOpen(env: Env): Promise<boolean> {
@@ -372,21 +383,7 @@ function mountAuthApi(kind: Kind, base: string) {
         'INVALID_CREDENTIALS',
         'The email or password is incorrect, or the account is temporarily locked.',
       );
-    const user = await c.env.DB.prepare(
-      'SELECT id, email, display_name AS displayName, role, status, password_hash AS passwordHash, failed_login_count AS failed, locked_until AS lockedUntil, must_change_password AS mustChange FROM users WHERE email = ? COLLATE NOCASE AND user_type = ? LIMIT 1',
-    )
-      .bind(email, kind)
-      .first<{
-        id: string;
-        email: string;
-        displayName: string;
-        role: string;
-        status: string;
-        passwordHash: string | null;
-        failed: number;
-        lockedUntil: string | null;
-        mustChange: number;
-      }>();
+    const user = await findUserForLogin(c.env.DB, email, kind);
     if (!user) {
       await dummyVerify(input.data.password);
       return generic();
@@ -399,16 +396,12 @@ function mountAuthApi(kind: Kind, base: string) {
     if (!(await verifyPassword(input.data.password, user.passwordHash))) {
       const failed = user.failed + 1;
       const lock = failed >= MAX_FAILED_LOGINS;
-      await c.env.DB.prepare(
-        'UPDATE users SET failed_login_count = ?, locked_until = ?, updated_at = ? WHERE id = ?',
-      )
-        .bind(
-          lock ? 0 : failed,
-          lock ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000).toISOString() : null,
-          timestamp,
-          user.id,
-        )
-        .run();
+      await recordFailedLogin(c.env.DB, {
+        userId: user.id,
+        failedCount: lock ? 0 : failed,
+        lockedUntil: lock ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000).toISOString() : null,
+        timestamp,
+      });
       if (lock) await auditEvent(c.env, c, 'public', user.id, `${label}.login_locked`, user.id);
       return generic();
     }
@@ -429,29 +422,18 @@ function mountAuthApi(kind: Kind, base: string) {
     const token = randomToken(32);
     const sessionId = newId();
     const expires = new Date(Date.now() + sessionSeconds(kind) * 1000).toISOString();
-    await c.env.DB.batch([
-      needsRehash(user.passwordHash)
-        ? c.env.DB.prepare(
-            'UPDATE users SET failed_login_count = 0, locked_until = NULL, password_hash = ? WHERE id = ?',
-          ).bind(await hashPassword(input.data.password), user.id)
-        : c.env.DB.prepare(
-            'UPDATE users SET failed_login_count = 0, locked_until = NULL WHERE id = ?',
-          ).bind(user.id),
-      c.env.DB.prepare(
-        'INSERT INTO sessions (id,user_id,token_hash,created_at,last_seen_at,expires_at,session_type) VALUES (?,?,?,?,?,?,?)',
-      ).bind(sessionId, user.id, await sha256Hex(token), timestamp, timestamp, expires, kind),
-      c.env.DB.prepare(
-        "INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,?,?,'session',?,?,'{}',?)",
-      ).bind(
-        newId(),
-        user.id,
-        kind,
-        `${label}.session.created`,
-        sessionId,
-        c.get('requestId'),
-        timestamp,
-      ),
-    ]);
+    await completeLogin(c.env.DB, {
+      userId: user.id,
+      kind,
+      rehashedPassword: needsRehash(user.passwordHash) ? await hashPassword(input.data.password) : null,
+      sessionId,
+      tokenHash: await sha256Hex(token),
+      timestamp,
+      expiresAt: expires,
+      auditId: newId(),
+      action: `${label}.session.created`,
+      requestId: c.get('requestId'),
+    });
     c.header('Set-Cookie', sessionCookie(cookieFor(kind), token, sessionSeconds(kind)));
     const mustChange = user.mustChange === 1;
     return c.json({
@@ -476,11 +458,7 @@ function mountAuthApi(kind: Kind, base: string) {
   portal.post(`${base}/logout`, async (c) => {
     const token = readCookie(c.req.header('cookie'), cookieFor(kind));
     if (token)
-      await c.env.DB.prepare(
-        'UPDATE sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL',
-      )
-        .bind(now(), await sha256Hex(token))
-        .run();
+      await revokeSessionByTokenHash(c.env.DB, await sha256Hex(token), now());
     c.header('Set-Cookie', sessionCookie(cookieFor(kind), '', 0));
     return c.json({ data: { signedOut: true } });
   });
@@ -505,11 +483,7 @@ function mountAuthApi(kind: Kind, base: string) {
       (await throttled(c.env, `reset-ip:${label}:${clientIp(c)}`, 15, 3600))
     )
       return reply();
-    const user = await c.env.DB.prepare(
-      "SELECT id, email FROM users WHERE email = ? COLLATE NOCASE AND user_type = ? AND status = 'active' LIMIT 1",
-    )
-      .bind(email, kind)
-      .first<{ id: string; email: string }>();
+    const user = await findActiveUserByEmail(c.env.DB, email, kind);
     if (user) {
       await issueResetToken(c.env, user, 'reset', kind);
       await auditEvent(c.env, c, 'public', user.id, `${label}.password_reset_requested`, user.id);
@@ -532,40 +506,25 @@ function mountAuthApi(kind: Kind, base: string) {
     if (await throttled(c.env, `reset-submit:${label}:${clientIp(c)}`, 20, 900))
       return err(c, 429, 'RATE_LIMITED', 'Please wait before trying again.');
     const timestamp = now();
-    const record = await c.env.DB.prepare(
-      "SELECT t.id, t.user_id AS userId, u.email FROM password_reset_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ? AND t.used_at IS NULL AND t.expires_at > ? AND u.user_type = ? AND u.status = 'active' LIMIT 1",
-    )
-      .bind(await sha256Hex(input.data.token), timestamp, kind)
-      .first<{ id: string; userId: string; email: string }>();
+    const record = await findValidResetToken(c.env.DB, {
+      tokenHash: await sha256Hex(input.data.token),
+      kind,
+      timestamp,
+    });
     if (!record) return invalid();
     const policy = passwordPolicyError(input.data.password, record.email);
     if (policy) return err(c, 422, 'WEAK_PASSWORD', policy);
     const hash = await hashPassword(input.data.password);
-    const consumed = await c.env.DB.prepare(
-      'UPDATE password_reset_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL',
-    )
-      .bind(timestamp, record.id)
-      .run();
-    if (!consumed.meta.changes) return invalid();
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        'UPDATE users SET password_hash = ?, password_updated_at = ?, must_change_password = 0, failed_login_count = 0, locked_until = NULL, updated_at = ? WHERE id = ?',
-      ).bind(hash, timestamp, timestamp, record.userId),
-      c.env.DB.prepare(
-        'UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL',
-      ).bind(timestamp, record.userId),
-      c.env.DB.prepare(
-        "INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,?,?,'user',?,?,'{}',?)",
-      ).bind(
-        newId(),
-        record.userId,
-        kind,
-        `${label}.password_reset_completed`,
-        record.userId,
-        c.get('requestId'),
-        timestamp,
-      ),
-    ]);
+    if (!(await consumeResetToken(c.env.DB, record.id, timestamp))) return invalid();
+    await applyPasswordReset(c.env.DB, {
+      userId: record.userId,
+      kind,
+      passwordHash: hash,
+      timestamp,
+      auditId: newId(),
+      action: `${label}.password_reset_completed`,
+      requestId: c.get('requestId'),
+    });
     return c.json({
       data: { reset: true, message: 'Your password has been updated. You can now sign in.' },
     });
@@ -588,25 +547,16 @@ function mountAuthApi(kind: Kind, base: string) {
     const policy = passwordPolicyError(input.data.newPassword, user.email);
     if (policy) return err(c, 422, 'WEAK_PASSWORD', policy);
     const timestamp = now();
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        'UPDATE users SET password_hash = ?, password_updated_at = ?, must_change_password = 0, updated_at = ? WHERE id = ?',
-      ).bind(await hashPassword(input.data.newPassword), timestamp, timestamp, user.id),
-      c.env.DB.prepare(
-        'UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND id != ? AND revoked_at IS NULL',
-      ).bind(timestamp, user.id, user.sessionId),
-      c.env.DB.prepare(
-        "INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,?,?,'user',?,?,'{}',?)",
-      ).bind(
-        newId(),
-        user.id,
-        kind,
-        `${label}.password_changed`,
-        user.id,
-        c.get('requestId'),
-        timestamp,
-      ),
-    ]);
+    await applyPasswordChange(c.env.DB, {
+      userId: user.id,
+      kind,
+      currentSessionId: user.sessionId,
+      passwordHash: await hashPassword(input.data.newPassword),
+      timestamp,
+      auditId: newId(),
+      action: `${label}.password_changed`,
+      requestId: c.get('requestId'),
+    });
     return c.json({ data: { changed: true, message: 'Your password has been changed.' } });
   });
 }
@@ -621,11 +571,14 @@ portal.post('/api/buyer/auth/set-password', async (c) => {
   const policy = passwordPolicyError(input.data.password, user.email);
   if (policy) return err(c, 422, 'WEAK_PASSWORD', policy);
   const timestamp = now();
-  await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE users SET password_hash = ?, password_updated_at = ?, must_change_password = 0, updated_at = ? WHERE id = ? AND user_type = 'buyer'").bind(await hashPassword(input.data.password), timestamp, timestamp, user.id),
-    c.env.DB.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND id != ? AND revoked_at IS NULL').bind(timestamp, user.id, user.sessionId),
-    c.env.DB.prepare("INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,?,'buyer.password_set','user',?,?, '{}',?)").bind(newId(), user.id, 'buyer', user.id, c.get('requestId'), timestamp),
-  ]);
+  await applyBuyerSetPassword(c.env.DB, {
+    userId: user.id,
+    currentSessionId: user.sessionId,
+    passwordHash: await hashPassword(input.data.password),
+    timestamp,
+    auditId: newId(),
+    requestId: c.get('requestId'),
+  });
   return c.json({ data: { changed: true, message: 'Password set. You can now sign in using either your password or an email code.' } });
 });
 
@@ -659,20 +612,24 @@ portal.post('/api/buyer/auth/request-code', async (c) => {
   const generic = { data: { accepted: true, message: 'If this is an active buyer account, a sign-in code has been sent.' } };
   if (!c.env.OTP_ENCRYPTION_KEY || c.env.OTP_ENCRYPTION_KEY.length < 32 || !c.env.RESEND_API_KEY || !c.env.EMAIL_FROM)
     return err(c, 503, 'EMAIL_CODE_UNAVAILABLE', 'Email-code sign-in is temporarily unavailable. Please use password sign-in or contact the team.');
-  const user = await c.env.DB.prepare("SELECT id, email FROM users WHERE email = ? COLLATE NOCASE AND user_type = 'buyer' AND status = 'active' LIMIT 1")
-    .bind(email).first<{ id: string; email: string }>();
+  const user = await findActiveBuyerByEmail(c.env.DB, email);
   if (!user) return c.json(generic, 202);
   const code = String(crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000).padStart(6, '0');
   const timestamp = now();
   const expires = new Date(Date.now() + 10 * 60_000).toISOString();
   const challengeId = newId();
-  await c.env.DB.prepare('UPDATE buyer_email_codes SET used_at = ? WHERE user_id = ? AND used_at IS NULL').bind(timestamp, user.id).run();
-  await c.env.DB.prepare('INSERT INTO buyer_email_codes (id,user_id,code_hash,expires_at,attempts,created_at) VALUES (?,?,?,?,0,?)')
-    .bind(challengeId, user.id, await buyerCodeHash(user.email, code, c.env.OTP_ENCRYPTION_KEY), expires, timestamp).run();
+  await invalidateOpenEmailCodes(c.env.DB, user.id, timestamp);
+  await insertEmailCode(c.env.DB, {
+    id: challengeId,
+    userId: user.id,
+    codeHash: await buyerCodeHash(user.email, code, c.env.OTP_ENCRYPTION_KEY),
+    expiresAt: expires,
+    timestamp,
+  });
   try {
     await sendBuyerCodeEmail(c.env, user.email, code);
   } catch {
-    await c.env.DB.prepare('UPDATE buyer_email_codes SET used_at = ? WHERE id = ?').bind(now(), challengeId).run();
+    await markEmailCodeUsed(c.env.DB, challengeId, now());
     return err(c, 503, 'EMAIL_DELIVERY_FAILED', 'We could not send a sign-in code. Please try again later or use password sign-in.');
   }
   await auditEvent(c.env, c, 'public', user.id, 'buyer.email_code_requested', challengeId);
@@ -685,28 +642,31 @@ portal.post('/api/buyer/auth/verify-code', async (c) => {
   if ((await throttled(c.env, `buyer-code-verify-ip:${clientIp(c)}`, 20, 900)) || (await throttled(c.env, `buyer-code-verify-email:${email}`, 10, 900)))
     return err(c, 429, 'RATE_LIMITED', 'Too many verification attempts. Please wait and try again.');
   if (!c.env.OTP_ENCRYPTION_KEY || c.env.OTP_ENCRYPTION_KEY.length < 32) return err(c, 503, 'EMAIL_CODE_UNAVAILABLE', 'Email-code sign-in is not configured.');
-  const row = await c.env.DB.prepare("SELECT c.id AS challengeId,c.code_hash AS codeHash,c.expires_at AS expiresAt,c.attempts,u.id,u.email,u.display_name AS displayName,u.status,u.must_change_password AS mustChange FROM buyer_email_codes c JOIN users u ON u.id=c.user_id WHERE u.email = ? COLLATE NOCASE AND u.user_type='buyer' AND c.used_at IS NULL ORDER BY c.created_at DESC LIMIT 1")
-    .bind(email).first<{ challengeId: string; codeHash: string; expiresAt: string; attempts: number; id: string; email: string; displayName: string; status: string; mustChange: number }>();
+  const row = await findLatestEmailCode(c.env.DB, email);
   const timestamp = now();
   if (!row || row.status !== 'active' || row.expiresAt <= timestamp || row.attempts >= 5) return err(c, 401, 'INVALID_CODE', 'The code is invalid or expired. Request a new code and try again.');
   if (row.mustChange === 1) {
-    await c.env.DB.prepare('UPDATE buyer_email_codes SET used_at = ? WHERE id = ? AND used_at IS NULL').bind(timestamp, row.challengeId).run();
+    await closeOpenEmailCode(c.env.DB, row.challengeId, timestamp);
     return err(c, 403, 'PASSWORD_CHANGE_REQUIRED', 'This account must complete its password change using password sign-in before email-code sign-in can be used.');
   }
   const candidate = await buyerCodeHash(row.email, input.data.code, c.env.OTP_ENCRYPTION_KEY);
   if (candidate !== row.codeHash) {
-    await c.env.DB.prepare('UPDATE buyer_email_codes SET attempts = attempts + 1, used_at = CASE WHEN attempts + 1 >= 5 THEN ? ELSE used_at END WHERE id = ? AND used_at IS NULL').bind(timestamp, row.challengeId).run();
+    await recordEmailCodeMiss(c.env.DB, row.challengeId, timestamp);
     return err(c, 401, 'INVALID_CODE', 'The code is invalid or expired. Request a new code and try again.');
   }
   const token = randomToken(32);
   const sessionId = newId();
   const expires = new Date(Date.now() + BUYER_SESSION_SECONDS * 1000).toISOString();
-  const consumed = await c.env.DB.prepare('UPDATE buyer_email_codes SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ? AND attempts < 5').bind(timestamp, row.challengeId, timestamp).run();
-  if ((consumed.meta?.changes ?? 0) !== 1) return err(c, 401, 'INVALID_CODE', 'The code is invalid or expired. Request a new code and try again.');
-  await c.env.DB.batch([
-    c.env.DB.prepare('INSERT INTO sessions (id,user_id,token_hash,created_at,last_seen_at,expires_at,session_type) VALUES (?,?,?,?,?,?,?)').bind(sessionId, row.id, await sha256Hex(token), timestamp, timestamp, expires, 'buyer'),
-    c.env.DB.prepare("INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,?,?,'buyer.email_code_login','session',?,?, '{}',?)").bind(newId(), row.id, 'buyer', sessionId, c.get('requestId'), timestamp),
-  ]);
+  if (!(await consumeEmailCode(c.env.DB, row.challengeId, timestamp))) return err(c, 401, 'INVALID_CODE', 'The code is invalid or expired. Request a new code and try again.');
+  await createEmailCodeSession(c.env.DB, {
+    userId: row.id,
+    sessionId,
+    tokenHash: await sha256Hex(token),
+    timestamp,
+    expiresAt: expires,
+    auditId: newId(),
+    requestId: c.get('requestId'),
+  });
   c.header('Set-Cookie', sessionCookie(buyerCodeCookie, token, BUYER_SESSION_SECONDS));
   return c.json({ data: { id: row.id, email: row.email, displayName: row.displayName, expiresAt: expires, redirectTo: '/account' } });
 });
@@ -746,18 +706,14 @@ portal.post('/api/admin/bootstrap', async (c) => {
   const hash = await hashPassword(input.data.password);
   // Credential migration: a staff account created before passwords existed (password_hash IS NULL) can be given
   // its first password here, using the same one-time token. Accounts that already have a password are never touched.
-  const unconfigured = await c.env.DB.prepare(
-    "SELECT id FROM users WHERE email = ? COLLATE NOCASE AND user_type = 'staff' AND status = 'active' AND password_hash IS NULL LIMIT 1",
-  )
-    .bind(email)
-    .first<{ id: string }>();
+  const unconfigured = await findUnconfiguredStaffByEmail(c.env.DB, email);
   if (unconfigured) {
-    const result = await c.env.DB.prepare(
-      "UPDATE users SET password_hash = ?, password_updated_at = ?, must_change_password = 0, failed_login_count = 0, locked_until = NULL, updated_at = ? WHERE id = ? AND user_type = 'staff' AND status = 'active' AND password_hash IS NULL",
-    )
-      .bind(hash, timestamp, timestamp, unconfigured.id)
-      .run();
-    if (!result.meta.changes)
+    const provisioned = await provisionStaffPassword(c.env.DB, {
+      userId: unconfigured.id,
+      passwordHash: hash,
+      timestamp,
+    });
+    if (!provisioned)
       return err(
         c,
         409,
@@ -791,14 +747,15 @@ portal.post('/api/admin/bootstrap', async (c) => {
       'Setup is closed for this email. If the account has no password yet, use that account email with the setup token.',
     );
   try {
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        "INSERT INTO users (id,email,display_name,user_type,role,status,password_hash,password_updated_at,created_at,updated_at) SELECT ?, ?, ?, 'staff', 'super_admin', 'active', ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM users WHERE user_type = 'staff')",
-      ).bind(userId, email, input.data.displayName, hash, timestamp, timestamp, timestamp),
-      c.env.DB.prepare(
-        "INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) SELECT ?, ?, 'staff', 'staff.first_admin_bootstrapped', 'user', ?, ?, '{}', ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND user_type = 'staff')",
-      ).bind(newId(), userId, userId, c.get('requestId'), timestamp, userId),
-    ]);
+    await insertFirstAdmin(c.env.DB, {
+      userId,
+      email,
+      displayName: input.data.displayName,
+      passwordHash: hash,
+      timestamp,
+      auditId: newId(),
+      requestId: c.get('requestId'),
+    });
   } catch {
     return err(
       c,
@@ -807,11 +764,7 @@ portal.post('/api/admin/bootstrap', async (c) => {
       'Setup is already complete or the account could not be created.',
     );
   }
-  const created = await c.env.DB.prepare(
-    "SELECT id FROM users WHERE id = ? AND user_type = 'staff'",
-  )
-    .bind(userId)
-    .first();
+  const created = await staffUserExists(c.env.DB, userId);
   if (!created)
     return err(c, 410, 'SETUP_CLOSED', 'A staff account already exists; setup is closed.');
   return c.json(
@@ -859,46 +812,32 @@ portal.post('/api/buyer/register', async (c) => {
       message: 'Registration received. The team will review your details before enabling sign-in.',
     },
   };
-  const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE')
-    .bind(email)
-    .first();
+  const existing = await emailTaken(c.env.DB, email);
   if (existing) return c.json(accepted, 202); // identical response avoids revealing registered emails
   const timestamp = now();
   const userId = newId();
   const jobId = newId();
   const hash = input.data.password ? await hashPassword(input.data.password) : null;
   try {
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        "INSERT INTO users (id,email,display_name,user_type,role,status,password_hash,password_updated_at,created_at,updated_at) VALUES (?,?,?,'buyer','buyer','invited',?,?,?,?)",
-      ).bind(userId, email, input.data.displayName, hash, hash ? timestamp : null, timestamp, timestamp),
-      c.env.DB.prepare(
-        'INSERT INTO buyer_profiles (user_id,company_name,role_title,experience_notes,updated_at,privacy_consent_at,privacy_notice_version) VALUES (?,?,?,?,?,?,?)',
-      ).bind(
-        userId,
-        input.data.companyName,
-        input.data.roleTitle,
-        `Investment focus: ${input.data.investmentFocus}`,
-        timestamp,
-        timestamp,
-        PRIVACY_VERSION,
-      ),
-      c.env.DB.prepare(
-        "INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,NULL,'public','buyer.registration_submitted','user',?,?,?,?)",
-      ).bind(
-        newId(),
-        userId,
-        c.get('requestId'),
-        JSON.stringify({
-          investmentFocus: input.data.investmentFocus,
-          consentVersion: PRIVACY_VERSION,
-        }),
-        timestamp,
-      ),
-      c.env.DB.prepare(
-        "INSERT INTO notification_jobs (id,job_type,payload_json,status,attempts,available_at,created_at,updated_at) VALUES (?,'buyer.registration_review',?,'queued',0,?,?,?)",
-      ).bind(jobId, JSON.stringify({ userId }), timestamp, timestamp, timestamp),
-    ]);
+    await insertBuyerRegistration(c.env.DB, {
+      userId,
+      email,
+      displayName: input.data.displayName,
+      passwordHash: hash,
+      companyName: input.data.companyName,
+      roleTitle: input.data.roleTitle,
+      experienceNotes: `Investment focus: ${input.data.investmentFocus}`,
+      privacyVersion: PRIVACY_VERSION,
+      timestamp,
+      auditId: newId(),
+      requestId: c.get('requestId'),
+      auditDetailsJson: JSON.stringify({
+        investmentFocus: input.data.investmentFocus,
+        consentVersion: PRIVACY_VERSION,
+      }),
+      jobId,
+      jobPayloadJson: JSON.stringify({ userId }),
+    });
     try {
       await c.env.NOTIFICATIONS_QUEUE.send({ jobId, type: 'buyer.registration_review' });
     } catch {

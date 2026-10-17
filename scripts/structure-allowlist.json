@@ -1,7 +1,11 @@
 {
+  "src/auth/portal-repo.ts": {
+    "maxLines": 496,
+    "maxSql": 0
+  },
   "src/auth/portal-routes.ts": {
-    "maxLines": 913,
-    "maxSql": 43
+    "maxLines": 852,
+    "maxSql": 0
   },
   "src/buyers/routes.ts": {
     "maxLines": 605,
