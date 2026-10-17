@@ -249,7 +249,7 @@ buyers.get('/api/buyer/opportunities/:id/documents', requireBuyer, async (c) => 
 });
 
 buyers.get('/api/buyer/documents/:documentId/download', requireBuyer, async (c) => {
-  const doc = await findAccessibleDocument(c.env.DB, c.req.param('documentId'));
+  const doc = await findAccessibleDocument(c.env.DB, c.req.param('documentId') ?? '');
   if (!doc) return jsonError(c, 404, 'NOT_FOUND', 'Document not found.');
   const grant = await findActiveGrant(c.env.DB, c.get('buyer').id, doc.opportunityId, now());
   if (!grant || doc.tier > grant.tier)
@@ -280,7 +280,7 @@ const PREVIEW_TYPES = new Set([
 ]);
 
 buyers.get('/api/buyer/documents/:documentId/preview', requireBuyer, async (c) => {
-  const doc = await findAccessibleDocument(c.env.DB, c.req.param('documentId'));
+  const doc = await findAccessibleDocument(c.env.DB, c.req.param('documentId') ?? '');
   if (!doc) return jsonError(c, 404, 'NOT_FOUND', 'Document not found.');
   const grant = await findActiveGrant(c.env.DB, c.get('buyer').id, doc.opportunityId, now());
   if (!grant || doc.tier > grant.tier)
@@ -429,7 +429,7 @@ buyers.post('/api/buyer/opportunities/:slug/nda-requests', requireBuyer, async (
       'VALIDATION_ERROR',
       'Enter the full legal name used to acknowledge the NDA.',
     );
-  const opportunityId = await findPublicOpportunityIdBySlug(c.env.DB, c.req.param('slug'));
+  const opportunityId = await findPublicOpportunityIdBySlug(c.env.DB, c.req.param('slug') ?? '');
   if (!opportunityId) return jsonError(c, 404, 'NOT_FOUND', 'Opportunity not found.');
   const template = await findTemplateForAcknowledgement(c.env.DB, parsed.data.templateId);
   if (!template)
@@ -484,7 +484,7 @@ buyers.post('/api/buyer/opportunities/:slug/nda-requests', requireBuyer, async (
 });
 
 buyers.post('/api/buyer/nda-requests/:id/signed-pdf', requireBuyer, async (c) => {
-  const request = await findPendingNdaForUpload(c.env.DB, c.req.param('id'), c.get('buyer').id);
+  const request = await findPendingNdaForUpload(c.env.DB, c.req.param('id') ?? '', c.get('buyer').id);
   if (!request) return jsonError(c, 404, 'NOT_FOUND', 'Pending NDA request not found.');
   if (request.signedPdfR2Key)
     return jsonError(
