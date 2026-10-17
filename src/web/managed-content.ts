@@ -1,6 +1,14 @@
 import { Hono } from 'hono';
 import type { Env } from '../env';
 import { STATIC_PAGES, staticPageSlug } from './static-pages';
+import { readSettingRaw } from '../admin/repos/settings-repo';
+import {
+  findPublicOpportunityId,
+  findPublishedForm,
+  findPublishedFormForSubmit,
+  findPublishedPage,
+  insertSubmission,
+} from './managed-content-repo';
 
 const managed = new Hono<{ Bindings: Env; Variables: { requestId: string } }>();
 const escapeHtml = (s: string) =>
@@ -11,14 +19,10 @@ const escapeHtml = (s: string) =>
 const now = () => new Date().toISOString();
 const uuid = () => crypto.randomUUID();
 async function setting(env: Env, key: string): Promise<string> {
-  const row = await env.DB.prepare(
-    'SELECT value_json AS value FROM platform_settings WHERE setting_key=?',
-  )
-    .bind(key)
-    .first<{ value: string }>();
-  if (!row) return '';
+  const raw = await readSettingRaw(env.DB, key);
+  if (raw === null) return '';
   try {
-    const parsed = JSON.parse(row.value) as unknown;
+    const parsed = JSON.parse(raw) as unknown;
     return typeof parsed === 'string' ? parsed.trim().slice(0, 100) : '';
   } catch {
     return '';
@@ -29,17 +33,7 @@ managed.get('/pages/:slug', async (c) => {
   // Built-in pages keep their own address; /pages/<builtin-slug> is never a second URL for them.
   const builtInPath = STATIC_PAGES.find(([path]) => staticPageSlug(path) === slug)?.[0];
   if (builtInPath) return c.redirect(builtInPath, 301);
-  const page = await c.env.DB.prepare(
-    "SELECT title,description,body_markdown AS bodyMarkdown,seo_title AS seoTitle,seo_description AS seoDescription FROM managed_pages WHERE slug=? AND status='published' LIMIT 1",
-  )
-    .bind(slug)
-    .first<{
-      title: string;
-      description: string;
-      bodyMarkdown: string;
-      seoTitle: string;
-      seoDescription: string;
-    }>();
+  const page = await findPublishedPage(c.env.DB, slug);
   if (!page) return c.notFound();
   const name = (await setting(c.env, 'site_name')) || 'Casinos of Mayfair';
   const body = escapeHtml(page.bodyMarkdown).replace(/\r?\n/g, '<br>');
@@ -49,11 +43,7 @@ managed.get('/pages/:slug', async (c) => {
 });
 managed.get('/forms/:slug', async (c) => {
   const slug = c.req.param('slug');
-  const form = await c.env.DB.prepare(
-    "SELECT id,title,description,fields_json AS fieldsJson FROM managed_forms WHERE slug=? AND status='published' LIMIT 1",
-  )
-    .bind(slug)
-    .first<{ id: string; title: string; description: string; fieldsJson: string }>();
+  const form = await findPublishedForm(c.env.DB, slug);
   if (!form) return c.notFound();
   {
     const clientIp = c.req.header('cf-connecting-ip');
@@ -111,17 +101,7 @@ managed.post('/api/forms/:slug/submit', async (c) => {
     return c.json({ error: { code: 'INVALID_FORM', message: 'Check the form fields.' } }, 422);
   if (typeof raw.website === 'string' && raw.website.trim())
     return c.json({ data: { accepted: true } }, 202);
-  const form = await c.env.DB.prepare(
-    "SELECT id,title,description,fields_json AS fieldsJson,notification_enabled AS notificationEnabled FROM managed_forms WHERE slug=? AND status='published' LIMIT 1",
-  )
-    .bind(slug)
-    .first<{
-      id: string;
-      title: string;
-      description: string;
-      fieldsJson: string;
-      notificationEnabled: number;
-    }>();
+  const form = await findPublishedFormForSubmit(c.env.DB, slug);
   if (!form) return c.notFound();
   let fields: Array<{
     name: string;
@@ -160,14 +140,7 @@ managed.post('/api/forms/:slug/submit', async (c) => {
   const opportunitySlug = typeof raw.opportunity === 'string' ? raw.opportunity.slice(0, 120) : '';
   let opportunityId: string | null = null;
   if (opportunitySlug) {
-    const op = await c.env.DB.prepare(
-      "SELECT id,title FROM opportunities WHERE slug=? AND lifecycle='published' AND content_review_status='approved' AND public_visibility=1 LIMIT 1",
-    )
-      .bind(opportunitySlug)
-      .first<{ id: string; title: string }>();
-    if (op) {
-      opportunityId = op.id;
-    }
+    opportunityId = await findPublicOpportunityId(c.env.DB, opportunitySlug);
   }
   const id = uuid(),
     timestamp = now(),
@@ -184,36 +157,18 @@ managed.post('/api/forms/:slug/submit', async (c) => {
     const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(ip));
     ipHash = [...new Uint8Array(digest)].map((v) => v.toString(16).padStart(2, '0')).join('');
   }
-  await c.env.DB.prepare(
-    'INSERT INTO managed_form_submissions (id,form_id,opportunity_id,data_json,consent_at,ip_hash,created_at) VALUES (?,?,?,?,?,?,?)',
-  )
-    .bind(id, form.id, opportunityId, JSON.stringify(data), timestamp, ipHash, timestamp)
-    .run();
-  const statements = [
-    c.env.DB.prepare(
-      "INSERT INTO audit_logs (id,actor_user_id,actor_type,action,entity_type,entity_id,request_id,details_json,created_at) VALUES (?,NULL,'public','managed_form.submitted','managed_form_submission',?,?,?,?)",
-    ).bind(
-      uuid(),
-      id,
-      c.get('requestId'),
-      JSON.stringify({ formId: form.id, opportunityId }),
-      timestamp,
-    ),
-  ];
-  const notificationJobId = uuid();
-  if (form.notificationEnabled)
-    statements.push(
-      c.env.DB.prepare(
-        "INSERT INTO notification_jobs (id,job_type,payload_json,status,attempts,available_at,created_at,updated_at) VALUES (?,'managed_form.submitted',?,'queued',0,?,?,?)",
-      ).bind(
-        notificationJobId,
-        JSON.stringify({ submissionId: id }),
-        timestamp,
-        timestamp,
-        timestamp,
-      ),
-    );
-  await c.env.DB.batch(statements);
+  const notificationJobId = form.notificationEnabled ? uuid() : null;
+  await insertSubmission(c.env.DB, {
+    id,
+    formId: form.id,
+    opportunityId,
+    dataJson: JSON.stringify(data),
+    ipHash,
+    timestamp,
+    requestId: c.get('requestId'),
+    auditId: uuid(),
+    notificationJobId,
+  });
   if (form.notificationEnabled) {
     try {
       await c.env.NOTIFICATIONS_QUEUE.send({

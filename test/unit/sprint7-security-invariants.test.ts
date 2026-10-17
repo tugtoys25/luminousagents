@@ -42,7 +42,7 @@ describe('Sprint 7 document security invariants', () => {
   });
 
   it('does not expose non-clean documents to buyer download queries', () => {
-    const source = read('src/buyers/routes.ts');
+    const source = read('src/buyers/routes.ts') + read('src/buyers/buyers-repo.ts');
     expect(source).toMatch(/scan_status = 'clean'/);
   });
 });

@@ -44,7 +44,7 @@ describe('Sprint 10 security invariants', () => {
   });
 
   it('captures the active NDA template digest and salted IP digest at acceptance', () => {
-    const buyers = read('src/buyers/routes.ts');
+    const buyers = read('src/buyers/routes.ts') + read('src/buyers/buyers-repo.ts');
     expect(buyers).toMatch(/accepted_ip_hash, nda_template_hash/);
     expect(buyers).toMatch(/IP_HASH_SECRET/);
     expect(buyers).toMatch(/template\.contentHash/);

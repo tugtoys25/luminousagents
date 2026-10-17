@@ -26,7 +26,8 @@ describe('Sprint 24 managed media library invariants', () => {
     expect(routes).toMatch(/admin\.get\('\/media', requireRole\(/);
     expect(routes).toMatch(/admin\.post\('\/media\/upload', requireRole\(/);
     expect(routes).toMatch(/admin\.delete\('\/media\/:id', requireRole\('admin', 'super_admin'\)/);
-    expect(index).toMatch(/WHERE (\(id = \? OR public_slug = \?\) AND|id = \? AND) visibility = \\'public\\'/);
+    expect(index).toContain('findPublicMediaAsset(');
+    expect(read('src/admin/repos/media-repo.ts')).toMatch(/WHERE (\(id = \? OR public_slug = \?\) AND|id = \? AND) visibility = 'public'/);
     expect(index).toContain("headers.set('X-Content-Type-Options', 'nosniff')");
     expect(index).toContain('/static/js/dashboard-media-picker.js');
   });

@@ -160,3 +160,21 @@ export async function findPathReferences(db: D1Database, path: string): Promise<
   const names = (r: { results?: { name: string }[] }) => (r.results ?? []).map((row) => row.name);
   return { settings: names(settings), pages: names(pages), forms: names(forms), opportunities: names(opportunities) };
 }
+
+export interface PublicMediaAsset {
+  r2Key: string;
+  contentType: string;
+  filename: string;
+  byteSize: number;
+  sha256: string;
+}
+
+/** Public serving: only assets explicitly marked public, found by id or public slug. */
+export function findPublicMediaAsset(db: D1Database, idOrSlug: string): Promise<PublicMediaAsset | null> {
+  return db
+    .prepare(
+      "SELECT r2_key AS r2Key, content_type AS contentType, filename, byte_size AS byteSize, sha256 FROM media_assets WHERE (id = ? OR public_slug = ?) AND visibility = 'public'",
+    )
+    .bind(idOrSlug, idOrSlug)
+    .first<PublicMediaAsset>();
+}

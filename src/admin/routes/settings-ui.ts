@@ -1,6 +1,7 @@
 import { requireRole } from '../../auth/staff-session';
 import { Hono } from 'hono';
 import { type AdminApp, platformSettingKeys } from '../shared';
+import { listSettings } from '../repos/settings-repo';
 
 const admin = new Hono<AdminApp>();
 
@@ -11,9 +12,7 @@ const escapeHtml = (s: unknown) =>
   );
 
 admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (c) => {
-  const rows = await c.env.DB.prepare(
-    'SELECT setting_key AS key,value_json AS value FROM platform_settings ORDER BY setting_key',
-  ).all<{ key: string; value: string }>();
+  const rows = { results: await listSettings(c.env.DB) };
   const values: Record<string, unknown> = {};
   for (const row of rows.results ?? []) {
     try {

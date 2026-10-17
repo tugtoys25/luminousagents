@@ -4,7 +4,32 @@ import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Env } from '../env';
 import { scanR2Document, ScannerError, type VerifiedScan } from '../security/malware-scanner';
-import { serializeOpportunity, type OpportunityRow } from '../domain/opportunities/serialize';
+import { serializeOpportunity } from '../domain/opportunities/serialize';
+import { touchSession } from '../auth/staff-session-repo';
+import {
+  attachSignedPdf,
+  detachSignedPdf,
+  findAccessibleDocument,
+  findActiveGrant,
+  findActiveTemplate,
+  findBuyerProfile,
+  findBuyerSession,
+  findPendingNdaForUpload,
+  findPublicOpportunityIdBySlug,
+  findTemplateForAcknowledgement,
+  hasOpenNdaRequest,
+  insertBuyerAudit,
+  insertNdaRequest,
+  listBuyerActivity,
+  listDocumentsAtTier,
+  listNdaRequests,
+  listSavedPublic,
+  publicOpportunityExists,
+  recordSignedPdfUpload,
+  saveOpportunity,
+  unsaveOpportunity,
+  upsertBuyerProfile,
+} from './buyers-repo';
 
 type Buyer = {
   id: string;
@@ -38,15 +63,9 @@ async function buyerAuth(c: Context<BuyerApp>): Promise<Buyer | Response> {
   const token = readCookie(c.req.header('cookie'), 'mayfair_buyer_session');
   if (!token) return jsonError(c, 401, 'UNAUTHENTICATED', 'Buyer sign-in required.');
   const tokenHash = await digest(token);
-  const row = await c.env.DB.prepare(
-    "SELECT u.id, u.email, u.display_name AS displayName, u.status, CASE WHEN u.password_hash IS NULL THEN 0 ELSE 1 END AS hasPassword, u.must_change_password AS mustChange, s.id AS sessionId FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.user_type = 'buyer' AND u.status = 'active' LIMIT 1",
-  )
-    .bind(tokenHash, now())
-    .first<Buyer & { sessionId: string; mustChange: number }>();
+  const row = await findBuyerSession(c.env.DB, tokenHash, now());
   if (!row) return jsonError(c, 401, 'UNAUTHENTICATED', 'Buyer session is invalid or expired.');
-  await c.env.DB.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?')
-    .bind(now(), row.sessionId)
-    .run();
+  await touchSession(c.env.DB, row.sessionId, now());
   if (row.mustChange === 1)
     return jsonError(
       c,
@@ -70,20 +89,16 @@ async function audit(
   entityId: string,
   details: Record<string, unknown> = {},
 ) {
-  await c.env.DB.prepare(
-    "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'buyer', ?, ?, ?, ?, ?, ?)",
-  )
-    .bind(
-      uuid(),
-      c.get('buyer').id,
-      action,
-      entityType,
-      entityId,
-      c.get('requestId'),
-      JSON.stringify(details),
-      now(),
-    )
-    .run();
+  await insertBuyerAudit(c.env.DB, {
+    id: uuid(),
+    buyerId: c.get('buyer').id,
+    action,
+    entityType,
+    entityId,
+    requestId: c.get('requestId'),
+    detailsJson: JSON.stringify(details),
+    timestamp: now(),
+  });
 }
 
 buyers.get('/account', async (c) =>
@@ -106,23 +121,8 @@ const buyerProfileShape = z
   })
   .strict();
 
-type BuyerProfileRow = {
-  companyName: string;
-  roleTitle: string;
-  countriesJson: string;
-  budgetMinMinor: number | null;
-  budgetMaxMinor: number | null;
-  currency: string;
-  experienceNotes: string;
-  updatedAt: string;
-};
-
 async function getBuyerProfile(env: Env, userId: string) {
-  const row = await env.DB.prepare(
-    'SELECT company_name AS companyName, role_title AS roleTitle, countries_json AS countriesJson, budget_min_minor AS budgetMinMinor, budget_max_minor AS budgetMaxMinor, currency, experience_notes AS experienceNotes, updated_at AS updatedAt FROM buyer_profiles WHERE user_id = ? LIMIT 1',
-  )
-    .bind(userId)
-    .first<BuyerProfileRow>();
+  const row = await findBuyerProfile(env.DB, userId);
   if (!row) {
     return {
       companyName: '',
@@ -187,26 +187,17 @@ buyers.put('/api/buyer/profile', requireBuyer, async (c) => {
   ];
   const timestamp = now();
   const userId = c.get('buyer').id;
-  await c.env.DB.prepare(
-    `INSERT INTO buyer_profiles (user_id, company_name, role_title, countries_json, budget_min_minor, budget_max_minor, currency, experience_notes, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET company_name = excluded.company_name, role_title = excluded.role_title,
-       countries_json = excluded.countries_json, budget_min_minor = excluded.budget_min_minor,
-       budget_max_minor = excluded.budget_max_minor, currency = excluded.currency,
-       experience_notes = excluded.experience_notes, updated_at = excluded.updated_at`,
-  )
-    .bind(
-      userId,
-      profile.companyName,
-      profile.roleTitle,
-      JSON.stringify(countries),
-      profile.budgetMin === null ? null : Math.round(profile.budgetMin * 100),
-      profile.budgetMax === null ? null : Math.round(profile.budgetMax * 100),
-      profile.currency,
-      profile.experienceNotes,
-      timestamp,
-    )
-    .run();
+  await upsertBuyerProfile(c.env.DB, {
+    userId,
+    companyName: profile.companyName,
+    roleTitle: profile.roleTitle,
+    countriesJson: JSON.stringify(countries),
+    budgetMinMinor: profile.budgetMin === null ? null : Math.round(profile.budgetMin * 100),
+    budgetMaxMinor: profile.budgetMax === null ? null : Math.round(profile.budgetMax * 100),
+    currency: profile.currency,
+    experienceNotes: profile.experienceNotes,
+    timestamp,
+  });
   await audit(c, 'buyer.profile_updated', 'buyer_profile', userId, {
     fields: [
       'companyName',
@@ -222,92 +213,45 @@ buyers.put('/api/buyer/profile', requireBuyer, async (c) => {
   return c.json({ data: await getBuyerProfile(c.env, userId) });
 });
 buyers.get('/api/buyer/opportunities', requireBuyer, async (c) => {
-  const result = await c.env.DB.prepare(
-    "SELECT o.id, o.slug, o.title, o.country, o.opportunity_type, o.price_text, o.price_visibility, o.lifecycle, o.summary, o.availability, o.points_json, o.seo_title, o.seo_description, o.published_at, o.classification, o.labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = o.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = o.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt, s.created_at AS savedAt FROM saved_opportunities s JOIN opportunities o ON o.id = s.opportunity_id WHERE s.user_id = ? AND o.lifecycle = 'published' AND o.content_review_status = 'approved' AND o.public_visibility = 1 AND o.classification = 'public' ORDER BY s.created_at DESC",
-  )
-    .bind(c.get('buyer').id)
-    .all<OpportunityRow & { savedAt: string }>();
+  const saved = await listSavedPublic(c.env.DB, c.get('buyer').id);
   c.header('Cache-Control', 'private, no-store');
   return c.json({
-    data: (result.results ?? []).map((row) => ({
+    data: saved.map((row) => ({
       ...serializeOpportunity(row, 0),
       savedAt: row.savedAt,
     })),
   });
 });
 buyers.post('/api/buyer/opportunities/:id/save', requireBuyer, async (c) => {
-  const opp = await c.env.DB.prepare(
-    "SELECT id FROM opportunities WHERE id = ? AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public'",
-  )
-    .bind(c.req.param('id'))
-    .first();
-  if (!opp) return jsonError(c, 404, 'NOT_FOUND', 'Opportunity not found.');
-  await c.env.DB.prepare(
-    'INSERT OR IGNORE INTO saved_opportunities (user_id, opportunity_id, created_at) VALUES (?, ?, ?)',
-  )
-    .bind(c.get('buyer').id, c.req.param('id'), now())
-    .run();
+  if (!(await publicOpportunityExists(c.env.DB, c.req.param('id') ?? '')))
+    return jsonError(c, 404, 'NOT_FOUND', 'Opportunity not found.');
+  await saveOpportunity(c.env.DB, c.get('buyer').id, c.req.param('id') ?? '', now());
   await audit(c, 'opportunity.saved', 'opportunity', c.req.param('id') ?? '');
   return c.json({ data: { saved: true } }, 201);
 });
 buyers.delete('/api/buyer/opportunities/:id/save', requireBuyer, async (c) => {
-  await c.env.DB.prepare('DELETE FROM saved_opportunities WHERE user_id = ? AND opportunity_id = ?')
-    .bind(c.get('buyer').id, c.req.param('id'))
-    .run();
+  await unsaveOpportunity(c.env.DB, c.get('buyer').id, c.req.param('id') ?? '');
   await audit(c, 'opportunity.unsaved', 'opportunity', c.req.param('id') ?? '');
   return c.json({ data: { saved: false } });
 });
 
 buyers.get('/api/buyer/nda-requests', requireBuyer, async (c) => {
-  const result = await c.env.DB.prepare(
-    'SELECT n.id, n.status, n.acceptance_name AS acceptanceName, n.accepted_at AS acceptedAt, n.review_reason AS reviewReason, CASE WHEN n.signed_pdf_r2_key IS NULL THEN 0 ELSE 1 END AS hasSignedPdf, n.created_at AS createdAt, o.id AS opportunityId, o.slug AS opportunitySlug, o.title AS opportunityTitle, g.id AS grantId, g.tier AS accessTier, g.expires_at AS accessExpiresAt, g.revoked_at AS accessRevokedAt FROM nda_requests n JOIN opportunities o ON o.id = n.opportunity_id LEFT JOIN access_grants g ON g.nda_request_id = n.id AND g.user_id = n.user_id WHERE n.user_id = ? ORDER BY n.created_at DESC LIMIT 100',
-  )
-    .bind(c.get('buyer').id)
-    .all();
-  return c.json({ data: result.results ?? [] });
+  return c.json({ data: await listNdaRequests(c.env.DB, c.get('buyer').id) });
 });
 
 buyers.get('/api/buyer/opportunities/:id/documents', requireBuyer, async (c) => {
-  const opp = await c.env.DB.prepare(
-    "SELECT id FROM opportunities WHERE id = ? AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public'",
-  )
-    .bind(c.req.param('id'))
-    .first();
-  if (!opp) return jsonError(c, 404, 'NOT_FOUND', 'Opportunity not found.');
-  const grant = await c.env.DB.prepare(
-    'SELECT id, tier FROM access_grants WHERE user_id = ? AND opportunity_id = ? AND revoked_at IS NULL AND expires_at > ? LIMIT 1',
-  )
-    .bind(c.get('buyer').id, c.req.param('id'), now())
-    .first<{ id: string; tier: number }>();
+  if (!(await publicOpportunityExists(c.env.DB, c.req.param('id') ?? '')))
+    return jsonError(c, 404, 'NOT_FOUND', 'Opportunity not found.');
+  const grant = await findActiveGrant(c.env.DB, c.get('buyer').id, c.req.param('id') ?? '', now());
   if (!grant)
     return jsonError(c, 403, 'ACCESS_NOT_GRANTED', 'Approved NDA and active access are required.');
-  const result = await c.env.DB.prepare(
-    "SELECT id, filename, content_type AS contentType, byte_size AS byteSize, tier, created_at AS createdAt FROM documents WHERE opportunity_id = ? AND tier <= ? AND scan_status = 'clean' ORDER BY created_at DESC",
-  )
-    .bind(c.req.param('id'), grant.tier)
-    .all();
-  return c.json({ data: result.results ?? [] });
+  return c.json({ data: await listDocumentsAtTier(c.env.DB, c.req.param('id') ?? '', grant.tier) });
 });
 
 buyers.get('/api/buyer/documents/:documentId/download', requireBuyer, async (c) => {
-  const doc = await c.env.DB.prepare(
-    "SELECT d.id, d.opportunity_id AS opportunityId, d.r2_key AS r2Key, d.filename, d.content_type AS contentType, d.tier FROM documents d JOIN opportunities o ON o.id = d.opportunity_id WHERE d.id = ? AND d.scan_status = 'clean' AND o.lifecycle = 'published' AND o.content_review_status = 'approved' AND o.public_visibility = 1 AND o.classification = 'public'",
-  )
-    .bind(c.req.param('documentId'))
-    .first<{
-      id: string;
-      opportunityId: string;
-      r2Key: string;
-      filename: string;
-      contentType: string;
-      tier: number;
-    }>();
+  const doc = await findAccessibleDocument(c.env.DB, c.req.param('documentId') ?? '');
   if (!doc) return jsonError(c, 404, 'NOT_FOUND', 'Document not found.');
-  const grant = await c.env.DB.prepare(
-    'SELECT id, tier FROM access_grants WHERE user_id = ? AND opportunity_id = ? AND revoked_at IS NULL AND expires_at > ? LIMIT 1',
-  )
-    .bind(c.get('buyer').id, doc.opportunityId, now())
-    .first<{ id: string; tier: number }>();
+  const grant = await findActiveGrant(c.env.DB, c.get('buyer').id, doc.opportunityId, now());
   if (!grant || doc.tier > grant.tier)
     return jsonError(c, 403, 'ACCESS_NOT_GRANTED', 'Approved NDA and active access are required.');
   const file = await c.env.PRIVATE_FILES.get(doc.r2Key);
@@ -336,24 +280,9 @@ const PREVIEW_TYPES = new Set([
 ]);
 
 buyers.get('/api/buyer/documents/:documentId/preview', requireBuyer, async (c) => {
-  const doc = await c.env.DB.prepare(
-    "SELECT d.id, d.opportunity_id AS opportunityId, d.r2_key AS r2Key, d.filename, d.content_type AS contentType, d.tier FROM documents d JOIN opportunities o ON o.id = d.opportunity_id WHERE d.id = ? AND d.scan_status = 'clean' AND o.lifecycle = 'published' AND o.content_review_status = 'approved' AND o.public_visibility = 1 AND o.classification = 'public'",
-  )
-    .bind(c.req.param('documentId'))
-    .first<{
-      id: string;
-      opportunityId: string;
-      r2Key: string;
-      filename: string;
-      contentType: string;
-      tier: number;
-    }>();
+  const doc = await findAccessibleDocument(c.env.DB, c.req.param('documentId') ?? '');
   if (!doc) return jsonError(c, 404, 'NOT_FOUND', 'Document not found.');
-  const grant = await c.env.DB.prepare(
-    'SELECT id, tier FROM access_grants WHERE user_id = ? AND opportunity_id = ? AND revoked_at IS NULL AND expires_at > ? LIMIT 1',
-  )
-    .bind(c.get('buyer').id, doc.opportunityId, now())
-    .first<{ id: string; tier: number }>();
+  const grant = await findActiveGrant(c.env.DB, c.get('buyer').id, doc.opportunityId, now());
   if (!grant || doc.tier > grant.tier)
     return jsonError(c, 403, 'ACCESS_NOT_GRANTED', 'Approved NDA and active access are required.');
   const baseType = doc.contentType.split(';')[0]?.trim().toLowerCase() ?? '';
@@ -376,14 +305,10 @@ buyers.get('/api/buyer/documents/:documentId/preview', requireBuyer, async (c) =
 });
 
 buyers.get('/api/buyer/activity', requireBuyer, async (c) => {
-  const result = await c.env.DB.prepare(
-    "SELECT action, entity_id AS entityId, MAX(created_at) AS at FROM audit_logs WHERE actor_user_id = ? AND actor_type = 'buyer' AND action IN ('nda.template_downloaded', 'document.downloaded', 'document.previewed') GROUP BY action, entity_id",
-  )
-    .bind(c.get('buyer').id)
-    .all<{ action: string; entityId: string; at: string }>();
+  const activity = await listBuyerActivity(c.env.DB, c.get('buyer').id);
   let ndaDownloadedAt: string | null = null;
   const documents: Record<string, { downloadedAt?: string; previewedAt?: string }> = {};
-  for (const row of result.results ?? []) {
+  for (const row of activity) {
     if (row.action === 'nda.template_downloaded') {
       if (!ndaDownloadedAt || row.at > ndaDownloadedAt) ndaDownloadedAt = row.at;
     } else {
@@ -397,15 +322,7 @@ buyers.get('/api/buyer/activity', requireBuyer, async (c) => {
 });
 
 buyers.get('/api/buyer/nda-template/download', requireBuyer, async (c) => {
-  const template = await c.env.DB.prepare(
-    "SELECT id, name, version, r2_key AS r2Key, content_hash AS contentHash FROM nda_templates WHERE status = 'active' ORDER BY version DESC LIMIT 1",
-  ).first<{
-    id: string;
-    name: string;
-    version: number;
-    r2Key: string | null;
-    contentHash: string;
-  }>();
+  const template = await findActiveTemplate(c.env.DB);
   if (!template)
     return jsonError(
       c,
@@ -449,15 +366,7 @@ buyers.get('/api/buyer/nda-template/download', requireBuyer, async (c) => {
 });
 
 buyers.get('/api/buyer/nda-template', requireBuyer, async (c) => {
-  const template = await c.env.DB.prepare(
-    "SELECT id, name, version, r2_key AS r2Key, content_hash AS contentHash FROM nda_templates WHERE status = 'active' ORDER BY version DESC LIMIT 1",
-  ).first<{
-    id: string;
-    name: string;
-    version: number;
-    r2Key: string | null;
-    contentHash: string;
-  }>();
+  const template = await findActiveTemplate(c.env.DB);
   if (!template)
     return jsonError(
       c,
@@ -520,21 +429,9 @@ buyers.post('/api/buyer/opportunities/:slug/nda-requests', requireBuyer, async (
       'VALIDATION_ERROR',
       'Enter the full legal name used to acknowledge the NDA.',
     );
-  const opportunity = await c.env.DB.prepare(
-    "SELECT id FROM opportunities WHERE slug = ? AND lifecycle = 'published' AND content_review_status = 'approved' AND public_visibility = 1 AND classification = 'public'",
-  )
-    .bind(c.req.param('slug'))
-    .first<{ id: string }>();
-  if (!opportunity) return jsonError(c, 404, 'NOT_FOUND', 'Opportunity not found.');
-  const template = parsed.data.templateId
-    ? await c.env.DB.prepare(
-        "SELECT id, content_hash AS contentHash FROM nda_templates WHERE id = ? AND status = 'active'",
-      )
-        .bind(parsed.data.templateId)
-        .first<{ id: string; contentHash: string }>()
-    : await c.env.DB.prepare(
-        "SELECT id, content_hash AS contentHash FROM nda_templates WHERE status = 'active' ORDER BY version DESC LIMIT 1",
-      ).first<{ id: string; contentHash: string }>();
+  const opportunityId = await findPublicOpportunityIdBySlug(c.env.DB, c.req.param('slug') ?? '');
+  if (!opportunityId) return jsonError(c, 404, 'NOT_FOUND', 'Opportunity not found.');
+  const template = await findTemplateForAcknowledgement(c.env.DB, parsed.data.templateId);
   if (!template)
     return jsonError(
       c,
@@ -551,11 +448,7 @@ buyers.post('/api/buyer/opportunities/:slug/nda-requests', requireBuyer, async (
     );
   const clientIp = c.req.header('cf-connecting-ip') ?? 'unknown';
   const acceptedIpHash = await digest(`${c.env.IP_HASH_SECRET}:${clientIp}`);
-  const previous = await c.env.DB.prepare(
-    "SELECT n.id FROM nda_requests n WHERE n.user_id = ? AND n.opportunity_id = ? AND (n.status = 'pending' OR (n.status = 'approved' AND EXISTS (SELECT 1 FROM access_grants g WHERE g.nda_request_id = n.id AND g.revoked_at IS NULL AND g.expires_at > ?))) LIMIT 1",
-  )
-    .bind(c.get('buyer').id, opportunity.id, now())
-    .first();
+  const previous = await hasOpenNdaRequest(c.env.DB, c.get('buyer').id, opportunityId, now());
   if (previous)
     return jsonError(
       c,
@@ -566,45 +459,19 @@ buyers.post('/api/buyer/opportunities/:slug/nda-requests', requireBuyer, async (
   const requestId = uuid();
   const notificationJobId = uuid();
   const timestamp = now();
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "INSERT INTO nda_requests (id, user_id, opportunity_id, template_id, status, acceptance_name, accepted_at, accepted_ip_hash, nda_template_hash, review_reason, created_at, updated_at) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, '', ?, ?)",
-    ).bind(
-      requestId,
-      c.get('buyer').id,
-      opportunity.id,
-      template.id,
-      parsed.data.acceptanceName,
-      timestamp,
-      acceptedIpHash,
-      template.contentHash,
-      timestamp,
-      timestamp,
-    ),
-    c.env.DB.prepare(
-      "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'buyer', 'nda.requested', 'nda_request', ?, ?, ?, ?)",
-    ).bind(
-      uuid(),
-      c.get('buyer').id,
-      requestId,
-      c.get('requestId'),
-      JSON.stringify({
-        opportunityId: opportunity.id,
-        templateId: template.id,
-        templateHash: template.contentHash,
-      }),
-      timestamp,
-    ),
-    c.env.DB.prepare(
-      "INSERT INTO notification_jobs (id, job_type, payload_json, status, attempts, available_at, created_at, updated_at) VALUES (?, 'nda.review_requested', ?, 'queued', 0, ?, ?, ?)",
-    ).bind(
-      notificationJobId,
-      JSON.stringify({ ndaRequestId: requestId }),
-      timestamp,
-      timestamp,
-      timestamp,
-    ),
-  ]);
+  await insertNdaRequest(c.env.DB, {
+    requestId,
+    userId: c.get('buyer').id,
+    opportunityId,
+    templateId: template.id,
+    acceptanceName: parsed.data.acceptanceName,
+    acceptedIpHash,
+    templateHash: template.contentHash,
+    timestamp,
+    auditId: uuid(),
+    auditRequestId: c.get('requestId'),
+    jobId: notificationJobId,
+  });
   try {
     await c.env.NOTIFICATIONS_QUEUE.send({
       type: 'nda.review_requested',
@@ -617,11 +484,7 @@ buyers.post('/api/buyer/opportunities/:slug/nda-requests', requireBuyer, async (
 });
 
 buyers.post('/api/buyer/nda-requests/:id/signed-pdf', requireBuyer, async (c) => {
-  const request = await c.env.DB.prepare(
-    "SELECT id, signed_pdf_r2_key AS signedPdfR2Key FROM nda_requests WHERE id = ? AND user_id = ? AND status = 'pending' LIMIT 1",
-  )
-    .bind(c.req.param('id'), c.get('buyer').id)
-    .first<{ id: string; signedPdfR2Key: string | null }>();
+  const request = await findPendingNdaForUpload(c.env.DB, c.req.param('id') ?? '', c.get('buyer').id);
   if (!request) return jsonError(c, 404, 'NOT_FOUND', 'Pending NDA request not found.');
   if (request.signedPdfR2Key)
     return jsonError(
@@ -684,12 +547,16 @@ buyers.post('/api/buyer/nda-requests/:id/signed-pdf', requireBuyer, async (c) =>
   }
   const timestamp = now();
   const notificationJobId = uuid();
-  const update = await c.env.DB.prepare(
-    "UPDATE nda_requests SET signed_pdf_r2_key = ?, signed_pdf_sha256 = ?, signed_pdf_scan_provider = ?, signed_pdf_scanned_at = ?, updated_at = ? WHERE id = ? AND user_id = ? AND status = 'pending' AND signed_pdf_r2_key IS NULL",
-  )
-    .bind(key, sha256, scan.provider, scan.scannedAt, timestamp, request.id, c.get('buyer').id)
-    .run();
-  if ((update.meta?.changes ?? 0) !== 1) {
+  const attached = await attachSignedPdf(c.env.DB, {
+    key,
+    sha256,
+    provider: scan.provider,
+    scannedAt: scan.scannedAt,
+    timestamp,
+    requestId: request.id,
+    userId: c.get('buyer').id,
+  });
+  if (!attached) {
     await c.env.PRIVATE_FILES.delete(key);
     return jsonError(
       c,
@@ -699,33 +566,17 @@ buyers.post('/api/buyer/nda-requests/:id/signed-pdf', requireBuyer, async (c) =>
     );
   }
   try {
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'buyer', 'nda.signed_pdf_uploaded', 'nda_request', ?, ?, ?, ?)",
-      ).bind(
-        uuid(),
-        c.get('buyer').id,
-        request.id,
-        c.get('requestId'),
-        JSON.stringify({ sha256, scannerProvider: scan.provider, scannedAt: scan.scannedAt }),
-        timestamp,
-      ),
-      c.env.DB.prepare(
-        "INSERT INTO notification_jobs (id, job_type, payload_json, status, attempts, available_at, created_at, updated_at) VALUES (?, 'nda.signed_pdf_uploaded', ?, 'queued', 0, ?, ?, ?)",
-      ).bind(
-        notificationJobId,
-        JSON.stringify({ ndaRequestId: request.id }),
-        timestamp,
-        timestamp,
-        timestamp,
-      ),
-    ]);
+    await recordSignedPdfUpload(c.env.DB, {
+      auditId: uuid(),
+      userId: c.get('buyer').id,
+      requestId: request.id,
+      auditRequestId: c.get('requestId'),
+      detailsJson: JSON.stringify({ sha256, scannerProvider: scan.provider, scannedAt: scan.scannedAt }),
+      timestamp,
+      jobId: notificationJobId,
+    });
   } catch {
-    await c.env.DB.prepare(
-      'UPDATE nda_requests SET signed_pdf_r2_key = NULL, signed_pdf_sha256 = NULL, signed_pdf_scan_provider = NULL, signed_pdf_scanned_at = NULL, updated_at = ? WHERE id = ? AND signed_pdf_r2_key = ?',
-    )
-      .bind(now(), request.id, key)
-      .run();
+    await detachSignedPdf(c.env.DB, request.id, key, now());
     await c.env.PRIVATE_FILES.delete(key);
     return jsonError(
       c,

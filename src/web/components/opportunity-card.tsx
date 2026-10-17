@@ -1,8 +1,7 @@
 import type { PublicOpportunity } from '../../domain/opportunities/serialize';
 
-/** Column list shared by every public query that renders OpportunityCard. */
-export const OPPORTUNITY_CARD_SELECT =
-  'id, slug, title, country, opportunity_type, price_text, price_visibility, lifecycle, summary, availability, points_json, seo_title, seo_description, published_at, classification, labels_json, (SELECT id FROM opportunity_media m WHERE m.opportunity_id = opportunities.id ORDER BY m.sort_order ASC, m.created_at ASC LIMIT 1) AS cover_media_id, (SELECT alt_text FROM opportunity_media ma WHERE ma.id = (SELECT id FROM opportunity_media mb WHERE mb.opportunity_id = opportunities.id ORDER BY mb.sort_order ASC, mb.created_at ASC LIMIT 1)) AS cover_media_alt';
+/** Column list shared by every public query that renders OpportunityCard (defined with the SQL in the repository). */
+export { OPPORTUNITY_CARD_SELECT } from '../public-listings-repo';
 
 const typeLabel = (type: string) =>
   type === 'casino-hotel'

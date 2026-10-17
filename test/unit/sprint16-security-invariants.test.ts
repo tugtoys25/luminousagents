@@ -39,7 +39,9 @@ describe('Sprint 16 unified password-authentication invariants', () => {
     const portal = read('src/auth/portal-routes.ts');
     expect(portal).toMatch(/sha256Hex\(token\)/);
     const password = read('src/auth/password.ts');
-    expect(password).toMatch(/token_hash/);
+    // The raw token is hashed in password.ts before it reaches the repository, which only has a token_hash column.
+    expect(password).toMatch(/tokenHash: await sha256Hex\(token\)/);
+    expect(read('src/auth/password-repo.ts')).toMatch(/token_hash/);
     expect(password).toMatch(/HttpOnly; Secure; SameSite=Lax/);
   });
 

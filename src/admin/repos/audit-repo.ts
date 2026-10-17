@@ -42,3 +42,16 @@ export async function pageAudit(db: D1Database, f: AuditFilter, limit: number, o
     .all();
   return result.results ?? [];
 }
+
+/** Appends one staff audit row. Audit rows are insert-only; nothing in the application updates or deletes them. */
+export async function insertStaffAudit(
+  db: D1Database,
+  r: { id: string; staffId: string; action: string; entityType: string; entityId: string; requestId: string; detailsJson: string; timestamp: string },
+): Promise<void> {
+  await db
+    .prepare(
+      'INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(r.id, r.staffId, 'staff', r.action, r.entityType, r.entityId, r.requestId, r.detailsJson, r.timestamp)
+    .run();
+}
