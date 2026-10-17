@@ -11,13 +11,9 @@
     "maxLines": 400,
     "maxSql": 24
   },
-  "src/admin/routes/opportunity-media.ts": {
-    "maxLines": 400,
-    "maxSql": 18
-  },
   "src/admin/routes/opportunity-queue.ts": {
     "maxLines": 400,
-    "maxSql": 16
+    "maxSql": 7
   },
   "src/admin/routes/settings-ui.ts": {
     "maxLines": 400,

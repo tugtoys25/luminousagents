@@ -9,6 +9,16 @@ import {
   now,
   purgeOpportunityPublicCache,
 } from '../shared';
+import {
+  attachImage,
+  backfillAssetAltText,
+  deleteImage,
+  findMediaForDelete,
+  findOpportunityForMedia,
+  findPublicLibraryAsset,
+  listOpportunityMedia,
+  nextSortOrder,
+} from '../repos/opportunity-media-repo';
 
 const admin = new Hono<AdminApp>();
 
@@ -17,17 +27,7 @@ admin.post(
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) => {
     const opportunityId = c.req.param('id');
-    const opportunity = await c.env.DB.prepare(
-      'SELECT id, slug, country, public_visibility AS publicVisibility, assigned_broker_id AS assignedBrokerId FROM opportunities WHERE id = ?',
-    )
-      .bind(opportunityId)
-      .first<{
-        id: string;
-        slug: string;
-        country: string | null;
-        publicVisibility: number;
-        assignedBrokerId: string | null;
-      }>();
+    const opportunity = await findOpportunityForMedia(c.env.DB, opportunityId);
     if (
       !opportunity ||
       (c.get('staff').role === 'broker' && opportunity.assignedBrokerId !== c.get('staff').id)
@@ -86,43 +86,26 @@ admin.post(
       httpMetadata: { contentType, cacheControl: 'private, no-store' },
       customMetadata: { sha256, mediaId },
     });
-    const order = await c.env.DB.prepare(
-      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM opportunity_media WHERE opportunity_id = ?',
-    )
-      .bind(opportunityId)
-      .first<{ next: number }>();
+    const sortOrder = await nextSortOrder(c.env.DB, opportunityId);
     try {
-      await c.env.DB.batch([
-        c.env.DB.prepare(
-          "UPDATE opportunities SET content_review_status = 'pending', public_visibility = 0, updated_at = ? WHERE id = ? AND public_visibility = 1",
-        ).bind(timestamp, opportunityId),
-        c.env.DB.prepare(
-          "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', 'opportunity.media_change_requires_review', 'opportunity', ?, ?, '{}', ? WHERE changes() > 0",
-        ).bind(id(), c.get('staff').id, opportunityId, c.get('requestId'), timestamp),
-        c.env.DB.prepare(
-          'INSERT INTO opportunity_media (id, opportunity_id, r2_key, alt_text, sort_order, created_at, content_type, byte_size, sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        ).bind(
-          mediaId,
-          opportunityId,
-          key,
-          altText,
-          order?.next ?? 0,
-          timestamp,
-          contentType,
-          upload.size,
-          sha256,
-        ),
-        c.env.DB.prepare(
-          "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'opportunity.media_uploaded', 'opportunity_media', ?, ?, ?, ?)",
-        ).bind(
-          id(),
-          c.get('staff').id,
-          mediaId,
-          c.get('requestId'),
-          JSON.stringify({ opportunityId, byteSize: upload.size, contentType, sha256 }),
-          timestamp,
-        ),
-      ]);
+      await attachImage(c.env.DB, {
+        mediaId,
+        opportunityId,
+        r2Key: key,
+        altText,
+        sortOrder,
+        contentType,
+        byteSize: upload.size,
+        sha256,
+        timestamp,
+        actorId: c.get('staff').id,
+        requestId: c.get('requestId'),
+        reviewAuditId: id(),
+        uploadAudit: {
+          id: id(),
+          detailsJson: JSON.stringify({ opportunityId, byteSize: upload.size, contentType, sha256 }),
+        },
+      });
     } catch (error) {
       await c.env.PRIVATE_FILES.delete(key);
       throw error;
@@ -138,7 +121,7 @@ admin.post(
           id: mediaId,
           opportunityId,
           altText,
-          sortOrder: order?.next ?? 0,
+          sortOrder,
           contentType,
           byteSize: upload.size,
           sha256,
@@ -155,11 +138,7 @@ admin.post(
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) => {
     const opportunityId = c.req.param('id');
-    const opportunity = await c.env.DB.prepare(
-      'SELECT id, slug, country, assigned_broker_id AS assignedBrokerId FROM opportunities WHERE id = ?',
-    )
-      .bind(opportunityId)
-      .first<{ id: string; slug: string; country: string | null; assignedBrokerId: string | null }>();
+    const opportunity = await findOpportunityForMedia(c.env.DB, opportunityId);
     if (
       !opportunity ||
       (c.get('staff').role === 'broker' && opportunity.assignedBrokerId !== c.get('staff').id)
@@ -184,18 +163,7 @@ admin.post(
     }
     if (!body.success || !lookup)
       return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Choose an image from the Media library.' } }, 422);
-    const asset = await c.env.DB.prepare(
-      "SELECT id, r2_key AS r2Key, content_type AS contentType, byte_size AS byteSize, alt_text AS altText, visibility FROM media_assets WHERE (id = ?1 OR public_slug = ?1) AND visibility = 'public'",
-    )
-      .bind(lookup)
-      .first<{
-        id: string;
-        r2Key: string;
-        contentType: string;
-        byteSize: number;
-        altText: string | null;
-        visibility: string;
-      }>();
+    const asset = await findPublicLibraryAsset(c.env.DB, lookup);
     if (!asset)
       return c.json(
         { error: { code: 'NOT_FOUND', message: 'That image is not available. Make sure it is public in the Media library.' } },
@@ -234,28 +202,28 @@ admin.post(
       httpMetadata: { contentType: asset.contentType, cacheControl: 'private, no-store' },
       customMetadata: { sha256, mediaId, libraryAssetId: asset.id },
     });
-    const order = await c.env.DB.prepare(
-      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM opportunity_media WHERE opportunity_id = ?',
-    )
-      .bind(opportunityId)
-      .first<{ next: number }>();
+    const sortOrder = await nextSortOrder(c.env.DB, opportunityId);
     try {
-      await c.env.DB.batch([
-        // Same rule as an upload: changing the pictures of a live listing sends it back for approval.
-        c.env.DB.prepare(
-          "UPDATE opportunities SET content_review_status = 'pending', public_visibility = 0, updated_at = ? WHERE id = ? AND public_visibility = 1",
-        ).bind(timestamp, opportunityId),
-        c.env.DB.prepare(
-          'INSERT INTO opportunity_media (id, opportunity_id, r2_key, alt_text, sort_order, created_at, content_type, byte_size, sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        ).bind(mediaId, opportunityId, key, altText, order?.next ?? 0, timestamp, asset.contentType, bytes.length, sha256),
-      ]);
+      await attachImage(c.env.DB, {
+        mediaId,
+        opportunityId,
+        r2Key: key,
+        altText,
+        sortOrder,
+        contentType: asset.contentType,
+        byteSize: bytes.length,
+        sha256,
+        timestamp,
+        actorId: c.get('staff').id,
+        requestId: c.get('requestId'),
+        reviewAuditId: id(),
+        uploadAudit: null,
+      });
     } catch (error) {
       await c.env.PRIVATE_FILES.delete(key);
       throw error;
     }
-    await c.env.DB.prepare("UPDATE media_assets SET alt_text = ?, updated_at = ? WHERE id = ? AND (alt_text IS NULL OR alt_text = '')")
-      .bind(altText, timestamp, asset.id)
-      .run();
+    await backfillAssetAltText(c.env.DB, asset.id, altText, timestamp);
     await audit(c, 'opportunity.media_added_from_library', 'opportunity_media', mediaId, {
       opportunityId,
       libraryAssetId: asset.id,
@@ -263,7 +231,7 @@ admin.post(
       sha256,
     });
     const cachePurge = await purgeOpportunityPublicCache(c.env, opportunity.slug, opportunity.country);
-    return c.json({ data: { id: mediaId, opportunityId, altText, sortOrder: order?.next ?? 0, cachePurge } }, 201);
+    return c.json({ data: { id: mediaId, opportunityId, altText, sortOrder, cachePurge } }, 201);
   },
 );
 
@@ -271,12 +239,13 @@ admin.get(
   '/opportunities/:id/media',
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) => {
-    const result = await c.env.DB.prepare(
-      'SELECT m.id, m.alt_text AS altText, m.sort_order AS sortOrder, m.content_type AS contentType, m.byte_size AS byteSize, m.sha256 FROM opportunity_media m JOIN opportunities o ON o.id = m.opportunity_id WHERE m.opportunity_id = ? AND (? = 0 OR o.assigned_broker_id = ?) ORDER BY m.sort_order, m.created_at',
-    )
-      .bind(c.req.param('id'), c.get('staff').role === 'broker' ? 1 : 0, c.get('staff').id)
-      .all();
-    return c.json({ data: result.results ?? [] });
+    const rows = await listOpportunityMedia(
+      c.env.DB,
+      c.req.param('id'),
+      c.get('staff').role === 'broker',
+      c.get('staff').id,
+    );
+    return c.json({ data: rows });
   },
 );
 
@@ -284,35 +253,22 @@ admin.delete(
   '/opportunities/:id/media/:mediaId',
   requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'),
   async (c) => {
-    const media = await c.env.DB.prepare(
-      'SELECT m.id, m.r2_key AS r2Key, o.slug, o.country, o.assigned_broker_id AS assignedBrokerId FROM opportunity_media m JOIN opportunities o ON o.id = m.opportunity_id WHERE m.id = ? AND m.opportunity_id = ?',
-    )
-      .bind(c.req.param('mediaId'), c.req.param('id'))
-      .first<{
-        id: string;
-        r2Key: string;
-        slug: string;
-        country: string | null;
-        assignedBrokerId: string | null;
-      }>();
+    const media = await findMediaForDelete(c.env.DB, c.req.param('mediaId'), c.req.param('id'));
     if (
       !media ||
       (c.get('staff').role === 'broker' && media.assignedBrokerId !== c.get('staff').id)
     )
       return c.json({ error: { code: 'NOT_FOUND', message: 'Listing image not found.' } }, 404);
     const timestamp = now();
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        "UPDATE opportunities SET content_review_status = 'pending', public_visibility = 0, updated_at = ? WHERE id = ? AND public_visibility = 1",
-      ).bind(timestamp, c.req.param('id')),
-      c.env.DB.prepare(
-        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', 'opportunity.media_change_requires_review', 'opportunity', ?, ?, '{}', ? WHERE changes() > 0",
-      ).bind(id(), c.get('staff').id, c.req.param('id'), c.get('requestId'), timestamp),
-      c.env.DB.prepare('DELETE FROM opportunity_media WHERE id = ?').bind(media.id),
-      c.env.DB.prepare(
-        "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', 'opportunity.media_deleted', 'opportunity_media', ?, ?, '{}', ?)",
-      ).bind(id(), c.get('staff').id, media.id, c.get('requestId'), timestamp),
-    ]);
+    await deleteImage(c.env.DB, {
+      mediaId: media.id,
+      opportunityId: c.req.param('id'),
+      timestamp,
+      actorId: c.get('staff').id,
+      requestId: c.get('requestId'),
+      reviewAuditId: id(),
+      deleteAuditId: id(),
+    });
     await c.env.PRIVATE_FILES.delete(media.r2Key);
     const cachePurge = await purgeOpportunityPublicCache(c.env, media.slug, media.country);
     return c.json({ data: { deleted: true, cachePurge } });

@@ -1,15 +1,10 @@
 import { requireRole } from '../../auth/staff-session';
 import { z } from 'zod';
 import { slugify } from '../../domain/opportunities/slug';
-import {
-  buildReconciliationSql,
-  DUPLICATE_LEGACY_ID_SQL,
-  DUPLICATE_SLUG_SQL,
-  RECONCILIATION_CHECKS,
-  RECONCILIATION_GROUPINGS,
-} from '../../domain/opportunities/reconciliation';
+import { RECONCILIATION_CHECKS } from '../../domain/opportunities/reconciliation';
 import { transitionMatrix } from '../../domain/opportunities/lifecycle';
 import { Hono } from 'hono';
+import { applyReviewDecision, exportOpportunityRows, findOpportunityRef, listOpportunities, loadReconciliation, reviewQueueRows } from '../repos/opportunity-queue-repo';
 import {
   type AdminApp,
   audit,
@@ -19,7 +14,6 @@ import {
   now,
   publisherRoles,
   purgeOpportunityPublicCache,
-  STAGE_SQL,
 } from '../shared';
 
 const admin = new Hono<AdminApp>();
@@ -67,24 +61,12 @@ admin.get('/opportunities/review-queue/ui', requireRole('admin', 'editor', 'brok
 
 admin.get('/opportunities/review-queue', requireRole('admin', 'editor', 'broker', 'publisher', 'super_admin'), async (c) => {
   const staff = c.get('staff');
-  const rows = await c.env.DB.prepare(
-    `SELECT id, title, country, price_text AS priceText, summary, lifecycle,
-      content_review_status AS reviewStatus, public_visibility AS publicVisibility,
-      classification, last_verified_at AS lastVerifiedAt, updated_at AS updatedAt,
-      assigned_broker_id AS assignedBrokerId
-     FROM opportunities
-     WHERE (? = 0 OR assigned_broker_id = ?)
-       AND (content_review_status = 'pending' OR country IS NULL OR trim(country) = ''
-         OR trim(summary) = '' OR last_verified_at IS NULL OR last_verified_at < ?
-         OR (trim(price_text) <> '' AND price_minor IS NULL AND currency IS NULL))
-     ORDER BY CASE WHEN content_review_status = 'pending' THEN 0 ELSE 1 END, updated_at ASC
-     LIMIT 250`,
-  ).bind(staff.role === 'broker' ? 1 : 0, staff.id, new Date(Date.now() - 180 * 86400000).toISOString()).all<{
-    id: string; title: string; country: string | null; priceText: string; summary: string;
-    lifecycle: string; reviewStatus: string; publicVisibility: number; classification: string;
-    lastVerifiedAt: string | null; updatedAt: string; assignedBrokerId: string | null;
-  }>();
-  const data = (rows.results ?? []).map((row) => {
+  const queueRows = await reviewQueueRows(c.env.DB, {
+    brokerOnly: staff.role === 'broker' ? 1 : 0,
+    staffId: staff.id,
+    staleBeforeIso: new Date(Date.now() - 180 * 86400000).toISOString(),
+  });
+  const data = queueRows.map((row) => {
     const reasons: string[] = [];
     if (row.reviewStatus === 'pending') reasons.push('content_review_pending');
     if (!row.country?.trim()) reasons.push('country_missing');
@@ -110,27 +92,13 @@ admin.get('/opportunities', requireRole('admin', 'editor', 'broker', 'publisher'
   const page = Math.max(1, Number.parseInt(c.req.query('page') ?? '1', 10) || 1);
   const staff = c.get('staff');
   const brokerOnly = staff.role === 'broker' ? 1 : 0;
-  const like = `%${q}%`;
-  const where = `(? = '' OR title LIKE ? OR country LIKE ? OR slug LIKE ?) AND (? = '' OR content_review_status = ?) AND (? = 0 OR assigned_broker_id = ?)`;
-  const base = [q, like, like, like, review, review, brokerOnly, staff.id];
-  const [rows, counts] = await Promise.all([
-    c.env.DB.prepare(
-      `SELECT * FROM (SELECT id, slug, title, country, opportunity_type AS opportunityType, price_text AS priceText, lifecycle, classification, content_review_status AS reviewStatus, public_visibility AS publicVisibility, assigned_broker_id AS assignedBrokerId, updated_at AS updatedAt, ${STAGE_SQL} AS stage FROM opportunities WHERE ${where}) WHERE (? = '' OR stage = ?) ORDER BY updatedAt DESC, title ASC LIMIT ? OFFSET ?`,
-    )
-      .bind(...base, stage, stage, pageSize, (page - 1) * pageSize)
-      .all(),
-    c.env.DB.prepare(
-      `SELECT stage, COUNT(*) AS n FROM (SELECT ${STAGE_SQL} AS stage FROM opportunities WHERE ${where}) GROUP BY stage`,
-    )
-      .bind(...base)
-      .all<{ stage: string; n: number }>(),
-  ]);
+  const { rows, stageCounts } = await listOpportunities(c.env.DB, { q, review, stage, brokerOnly, staffId: staff.id, pageSize, page });
   const byStage: Record<string, number> = { live: 0, ready: 0, review: 0, draft: 0, closed: 0 };
-  for (const row of counts.results ?? []) byStage[row.stage] = row.n;
+  for (const row of stageCounts) byStage[row.stage] = row.n;
   const all = Object.values(byStage).reduce((sum, n) => sum + n, 0);
   c.header('Cache-Control', 'private, no-store');
   return c.json({
-    data: rows.results ?? [],
+    data: rows,
     page,
     pageSize,
     total: stage ? (byStage[stage] ?? 0) : all,
@@ -139,22 +107,16 @@ admin.get('/opportunities', requireRole('admin', 'editor', 'broker', 'publisher'
 });
 
 admin.get('/opportunities/export.csv', requireRole('admin', 'super_admin'), async (c) => {
-  const result = await c.env.DB.prepare(
-    `SELECT id, legacy_id, slug, title, country, opportunity_type, classification, labels_json,
-      price_text, price_visibility, lifecycle, content_review_status, legacy_status, summary,
-      body_html, availability, points_json, public_visibility, last_verified_at, published_at,
-      seo_title, seo_description, assigned_broker_id, created_at, updated_at
-     FROM opportunities ORDER BY updated_at DESC`,
-  ).all<Record<string, unknown>>();
+  const exportRows = await exportOpportunityRows(c.env.DB);
   const columns = [
     'id','legacy_id','slug','title','country','opportunity_type','classification','labels_json',
     'price_text','price_visibility','lifecycle','content_review_status','legacy_status','summary',
     'body_html','availability','points_json','public_visibility','last_verified_at','published_at',
     'seo_title','seo_description','assigned_broker_id','created_at','updated_at',
   ];
-  const rows = [columns, ...(result.results ?? []).map((row) => columns.map((key) => row[key]))];
+  const rows = [columns, ...exportRows.map((row) => columns.map((key) => row[key]))];
   const csv = rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
-  await audit(c, 'opportunity.exported', 'opportunity', 'all', { count: result.results?.length ?? 0, format: 'csv' });
+  await audit(c, 'opportunity.exported', 'opportunity', 'all', { count: exportRows.length, format: 'csv' });
   return new Response(csv, {
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
@@ -177,12 +139,9 @@ admin.post('/opportunities/bulk-review', requireRole(...publisherRoles), async (
   const timestamp = now();
   const outcomes: Array<{ id: string; status: string }> = [];
   for (const opportunityId of ids) {
-    const existing = await c.env.DB.prepare('SELECT id, slug, country FROM opportunities WHERE id = ?')
-      .bind(opportunityId).first<{ id: string; slug: string; country: string | null }>();
+    const existing = await findOpportunityRef(c.env.DB, opportunityId);
     if (!existing) { outcomes.push({ id: opportunityId, status: 'not_found' }); continue; }
-    await c.env.DB.prepare(
-      "UPDATE opportunities SET content_review_status = ?, last_verified_at = CASE WHEN ? = 'approved' THEN ? ELSE last_verified_at END, public_visibility = 0, updated_at = ? WHERE id = ?",
-    ).bind(parsed.data.decision, parsed.data.decision, timestamp, timestamp, opportunityId).run();
+    await applyReviewDecision(c.env.DB, opportunityId, parsed.data.decision, timestamp);
     const cachePurge = await purgeOpportunityPublicCache(c.env, existing.slug, existing.country);
     await audit(c, `opportunity.review.${parsed.data.decision}`, 'opportunity', opportunityId, {
       reason: parsed.data.reason, bulk: true, cachePurge,
@@ -274,16 +233,7 @@ admin.post('/opportunities/import.csv', requireRole('admin', 'super_admin'), asy
 
 admin.get('/opportunities/reconciliation', requireRole('admin', 'auditor', 'super_admin'), async (c) => {
   c.header('Cache-Control', 'private, no-store');
-  const counts = (await c.env.DB.prepare(buildReconciliationSql()).first<Record<string, number>>()) ?? {};
-  const groups: Record<string, Array<Record<string, unknown>>> = {};
-  for (const grouping of RECONCILIATION_GROUPINGS) {
-    const result = await c.env.DB.prepare(
-      `SELECT ${grouping.column} AS value, COUNT(*) AS count FROM opportunities GROUP BY ${grouping.column} ORDER BY count DESC`,
-    ).all<Record<string, unknown>>();
-    groups[grouping.key] = result.results ?? [];
-  }
-  const duplicateLegacy = await c.env.DB.prepare(DUPLICATE_LEGACY_ID_SQL).first<{ n: number }>();
-  const duplicateSlug = await c.env.DB.prepare(DUPLICATE_SLUG_SQL).first<{ n: number }>();
+  const { counts, groups, duplicateLegacyIds, duplicateSlugs } = await loadReconciliation(c.env.DB);
   const checks = RECONCILIATION_CHECKS.map((check) => ({
     key: check.key,
     label: check.label,
@@ -295,11 +245,11 @@ admin.get('/opportunities/reconciliation', requireRole('admin', 'auditor', 'supe
     data: {
       generatedAt: now(),
       total: Number(counts.total ?? 0),
-      duplicateLegacyIds: Number(duplicateLegacy?.n ?? 0),
-      duplicateSlugs: Number(duplicateSlug?.n ?? 0),
+      duplicateLegacyIds: duplicateLegacyIds,
+      duplicateSlugs: duplicateSlugs,
       checks,
       groups,
-      publishable: blockers.length === 0 && Number(duplicateLegacy?.n ?? 0) === 0 && Number(duplicateSlug?.n ?? 0) === 0,
+      publishable: blockers.length === 0 && duplicateLegacyIds === 0 && duplicateSlugs === 0,
       blockers: blockers.map((check) => check.key),
     },
   });
