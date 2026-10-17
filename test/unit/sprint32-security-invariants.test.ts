@@ -9,9 +9,21 @@ const read = (path: string) =>
     ? readAdminSources()
     : readFileSync(resolve(process.cwd(), path), 'utf8');
 
+/** The sign-in portal is split across src/auth/portal-*.ts (pages, auth API, email codes, onboarding); invariants read them as one. */
+const readPortal = () =>
+  ['portal-routes', 'portal-shared', 'portal-pages', 'portal-auth-api', 'portal-buyer-code', 'portal-onboarding']
+    .map((n) => read(`src/auth/${n}.ts`))
+    .join('\n');
+
+/** The public site is split across src/web/pages/public-*.ts(x); invariants read them as one. */
+const readPublicPages = () =>
+  ['public', 'public-shared', 'public-home', 'public-listings', 'public-detail', 'public-info', 'public-seo']
+    .map((n) => read(`src/web/pages/${n}.${n === 'public-shared' || n === 'public-seo' ? 'ts' : 'tsx'}`))
+    .join('\n');
+
 describe('Sprint 32 static guards', () => {
   it('buyer email-code request returns the generic response object, not a call to it', () => {
-    const auth = read('src/auth/portal-routes.ts');
+    const auth = readPortal();
     const start = auth.indexOf("portal.post('/api/buyer/auth/request-code'");
     const end = auth.indexOf("portal.post('/api/buyer/auth/verify-code'");
     expect(start).toBeGreaterThan(-1);
@@ -57,7 +69,7 @@ describe('Sprint 32 static guards', () => {
     const serializer = read('src/domain/opportunities/serialize.ts');
     expect(serializer).toContain("from './redaction.ts'");
     expect(serializer).toContain('redactConfidentialText');
-    const pages = read('src/web/pages/public.tsx');
+    const pages = readPublicPages();
     expect(pages).not.toContain('serializeOpportunity(row, 1)');
   });
 

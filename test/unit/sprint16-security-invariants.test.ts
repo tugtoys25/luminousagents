@@ -7,6 +7,12 @@ const read = (path: string) =>
     ? readAdminSources()
     : readFileSync(resolve(process.cwd(), path), 'utf8');
 
+/** The sign-in portal is split across src/auth/portal-*.ts (pages, auth API, email codes, onboarding); invariants read them as one. */
+const readPortal = () =>
+  ['portal-routes', 'portal-shared', 'portal-pages', 'portal-auth-api', 'portal-buyer-code', 'portal-onboarding']
+    .map((n) => read(`src/auth/${n}.ts`))
+    .join('\n');
+
 describe('Sprint 16 unified password-authentication invariants', () => {
   it('no longer depends on Cloudflare Access or emailed one-time login codes', () => {
     expect(existsSync(resolve(process.cwd(), 'src/auth/cloudflare-access.ts'))).toBe(false);
@@ -36,7 +42,7 @@ describe('Sprint 16 unified password-authentication invariants', () => {
   });
 
   it('hashes session and reset tokens before storage and sets hardened cookies', () => {
-    const portal = read('src/auth/portal-routes.ts');
+    const portal = readPortal();
     expect(portal).toMatch(/sha256Hex\(token\)/);
     const password = read('src/auth/password.ts');
     // The raw token is hashed in password.ts before it reaches the repository, which only has a token_hash column.
@@ -46,10 +52,10 @@ describe('Sprint 16 unified password-authentication invariants', () => {
   });
 
   it('keeps first-administrator setup gated by the one-time token and requires a password', () => {
-    const portal = read('src/auth/portal-routes.ts');
+    const portal = readPortal();
     expect(portal).toMatch(/ADMIN_BOOTSTRAP_TOKEN/);
     // The single-statement NOT EXISTS guard lives in the repository; the route must go through it.
-    const repo = read('src/auth/portal-repo.ts');
+    const repo = read('src/auth/portal-onboarding-repo.ts');
     expect(repo).toMatch(/NOT EXISTS \(SELECT 1 FROM users WHERE user_type = 'staff'\)/);
     expect(repo).toMatch(/'super_admin'/);
     expect(portal).toMatch(/insertFirstAdmin\(/);
@@ -68,8 +74,8 @@ describe('Sprint 16 unified password-authentication invariants', () => {
   });
 
   it('only provisions first passwords for active staff that have none, using the one-time token', () => {
-    const portal = read('src/auth/portal-routes.ts');
-    const repo = read('src/auth/portal-repo.ts');
+    const portal = readPortal();
+    const repo = read('src/auth/portal-onboarding-repo.ts');
     expect(repo).toMatch(/AND password_hash IS NULL LIMIT 1/);
     expect(repo).toMatch(/AND password_hash IS NULL"/);
     expect(portal).toMatch(/findUnconfiguredStaffByEmail\(/);

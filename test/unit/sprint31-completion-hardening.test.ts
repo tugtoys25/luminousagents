@@ -14,6 +14,18 @@ const base: OpportunityRow = {
   points_json: '["Price £45 million", "Freehold"]', seo_title: 'Casino £45 million',
   seo_description: 'Price £45 million; qualified parties only.', published_at: null,
 };
+/** The buyer API is split across src/buyers/*-routes.ts and shared.ts; invariants read them as one. */
+const readBuyers = () =>
+  ['routes', 'shared', 'profile-routes', 'documents-routes', 'nda-routes']
+    .map((n) => read(`src/buyers/${n}.ts`))
+    .join('\n');
+
+/** The public site is split across src/web/pages/public-*.ts(x); invariants read them as one. */
+const readPublicPages = () =>
+  ['public', 'public-shared', 'public-home', 'public-listings', 'public-detail', 'public-info', 'public-seo']
+    .map((n) => read(`src/web/pages/${n}.${n === 'public-shared' || n === 'public-seo' ? 'ts' : 'tsx'}`))
+    .join('\n');
+
 describe('cumulative completion hardening', () => {
   it('keeps confidential prices out of all public serializer fields', () => {
     const result = serializeOpportunity(base, 0);
@@ -29,15 +41,15 @@ describe('cumulative completion hardening', () => {
     expect(serializeOpportunity(base, 3).price).toBe('£45 million');
   });
   it('uses the central public serializer for buyer saved listings and blocks price-oriented search side channels', () => {
-    const buyer = read('src/buyers/routes.ts') + read('src/buyers/buyers-repo.ts');
-    const publicPages = read('src/web/pages/public.tsx');
+    const buyer = readBuyers() + read('src/buyers/buyers-repo.ts');
+    const publicPages = readPublicPages();
     expect(buyer).toContain('serializeOpportunity(row, 0)');
     expect(buyer).toContain("o.classification = 'public'");
     expect(read('src/web/public-listings-repo.ts')).toContain('price_visibility = 0 AND (title LIKE ? OR summary LIKE ? OR price_text LIKE ?)');
     expect(publicPages).toContain('searchCatalogue(');
   });
   it('implements buyer profile read/write endpoints with range validation and audit', () => {
-    const source = read('src/buyers/routes.ts') + read('src/buyers/buyers-repo.ts');
+    const source = readBuyers() + read('src/buyers/buyers-repo.ts');
     expect(source).toContain("buyers.get('/api/buyer/profile'");
     expect(source).toContain("buyers.put('/api/buyer/profile'");
     expect(source).toContain('INVALID_BUDGET_RANGE');
@@ -59,7 +71,7 @@ describe('cumulative completion hardening', () => {
     expect(source).toContain("'/opportunities/:id/verify'");
   });
   it('provides whitelisted public directory sorting and preserves it across pagination', () => {
-    const source = read('src/web/pages/public.tsx');
+    const source = readPublicPages();
     expect(source).toContain("sortParam === 'title' || sortParam === 'country'");
     expect(read('src/web/public-listings-repo.ts')).toContain('ORDER BY ${orderBy} LIMIT ${PAGE_SIZE} OFFSET ?');
     expect(source).toContain('name="sort"');
@@ -84,7 +96,7 @@ describe('cumulative completion hardening', () => {
     expect(client).toContain('private storage');
   });
   it('requires signed NDA PDFs to be scanned and keeps them private', () => {
-    const buyer = read('src/buyers/routes.ts') + read('src/buyers/buyers-repo.ts');
+    const buyer = readBuyers() + read('src/buyers/buyers-repo.ts');
     const admin = read('src/admin/routes.ts');
     const queue = read('src/operations/queue.ts');
     expect(buyer).toContain("buyers.post('/api/buyer/nda-requests/:id/signed-pdf'");

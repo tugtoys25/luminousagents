@@ -1,6 +1,8 @@
 import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import * as r from '../../src/auth/portal-repo';
+import * as base from '../../src/auth/portal-repo';
+import * as codes from '../../src/auth/portal-code-repo';
+import * as onboarding from '../../src/auth/portal-onboarding-repo';
 
 // These steps share database state and must run in order. The Workers test pool undoes storage after
 // every test, so they run as steps inside one test instead of as separate `it` blocks.
@@ -12,6 +14,8 @@ async function step(name: string, fn: () => Promise<void>): Promise<void> {
     throw error;
   }
 }
+
+const r = { ...base, ...codes, ...onboarding };
 
 const t0 = '2026-09-10T10:00:00.000Z';
 const t1 = '2026-09-10T11:00:00.000Z';
