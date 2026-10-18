@@ -43,3 +43,7 @@
 # SELLER_ALERT_INCLUDE_PRICE=false
 # SELLER_COMPANY_WEBSITE=https://casinosofmayfair.com
 # SELLER_MARKETING_CONSENT_ENABLED=false                                   (enable only after legal review)
+# SELLER_REMINDERS_ENABLED=true
+# SELLER_REMINDER_INTERVAL_HOURS=24
+# SELLER_ESCALATION_AFTER_HOURS=48          (unset or 0 disables escalation)
+# SELLER_ESCALATION_RECIPIENTS=manager@example.com

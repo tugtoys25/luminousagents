@@ -31,3 +31,34 @@ describe('seller migrations and public surface (static checks)', () => {
     expect(read('src/seller/routes.ts')).not.toMatch(/console\.\w+\([^)]*(body|parsed|raw)\b/);
   });
 });
+
+describe('seller staff workflow (static checks)', () => {
+  it('seller history tables are append-only', () => {
+    const m = read('migrations/0035_seller_history_append_only.sql');
+    for (const table of ['seller_enquiry_notes', 'seller_communications', 'seller_enquiry_status_history', 'seller_enquiry_qualifications']) {
+      expect(m).toContain(`BEFORE UPDATE ON ${table}`);
+      expect(m).toContain(`BEFORE DELETE ON ${table}`);
+    }
+  });
+  it('every seller staff route is role-guarded and every mutating handler loads the enquiry through the scoped loader', () => {
+    for (const file of ['src/admin/routes/seller-enquiries.ts', 'src/admin/routes/seller-enquiry-actions.ts']) {
+      const src = read(file);
+      const routes = src.match(/admin\.(get|post)\(/g) ?? [];
+      expect(src.match(/requireRole\(/g)?.length).toBe(routes.length);
+    }
+    const actions = read('src/admin/routes/seller-enquiry-actions.ts');
+    expect(actions.match(/loadEnquiry\(c\)/g)?.length).toBe(5);
+  });
+  it('staff UI renders data with textContent, never innerHTML', () => {
+    expect(read('public/static/js/dashboard-seller-enquiries.js')).not.toMatch(/innerHTML|insertAdjacentHTML|document\.write|eval\(/);
+  });
+  it('detail responses strip the internal id, idempotency hash and IP hash', () => {
+    const repo = read('src/seller/staff-repo.ts');
+    expect(repo).not.toMatch(/idempotency_hash AS|source_ip_hash AS|original_submission_json AS/);
+    expect(read('src/admin/routes/seller-enquiries.ts')).toContain('const { id: enquiryId, ...data }');
+  });
+  it('closure and assignment are manager-only', () => {
+    const shared = read('src/admin/shared.ts');
+    expect(shared).toMatch(/sellerAssignRoles = \['admin', 'super_admin'\]/);
+  });
+});

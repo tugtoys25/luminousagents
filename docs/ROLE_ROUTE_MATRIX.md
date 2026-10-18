@@ -9,7 +9,7 @@ session. `yes` means the role is named in that route's `requireRole(...)`; `·` 
 This matrix describes route-level access only. Record-level rules (for example a broker seeing only
 assigned records) are enforced inside the handlers and are covered by their own tests.
 
-99 routes · 1 open to any signed-in staff role.
+109 routes · 1 open to any signed-in staff role.
 
 | Method | Path | super_admin | admin | editor | broker | publisher | auditor |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -96,6 +96,16 @@ assigned records) are enforced inside the handlers and are covered by their own 
 | GET | `/dashboard/pages/ui` | yes | yes | yes | · | · | · |
 | GET | `/dashboard/scanner-settings` | yes | yes | yes | · | yes | · |
 | PUT | `/dashboard/scanner-settings` | yes | yes | · | · | · | · |
+| GET | `/dashboard/seller-enquiries` | yes | yes | · | yes | · | · |
+| GET | `/dashboard/seller-enquiries/:ref` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/assign` | yes | yes | · | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/communications` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/followups` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/followups/:taskId/complete` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/notes` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/qualification` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/status` | yes | yes | · | yes | · | · |
+| GET | `/dashboard/seller-enquiries/ui` | yes | yes | · | yes | · | · |
 | GET | `/dashboard/sessions` | yes | · | · | · | · | · |
 | POST | `/dashboard/sessions/:id/revoke` | yes | · | · | · | · | · |
 | GET | `/dashboard/sessions/ui` | yes | · | · | · | · | · |

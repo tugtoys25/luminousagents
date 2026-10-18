@@ -20,6 +20,7 @@ import { SVG_SANDBOX_CSP } from './security/svg-sanitizer';
 import managedContentRoutes from './web/managed-content';
 import adminRoutes from './admin/routes';
 import enquiryRoutes from './enquiries/routes';
+import { runSellerReminders } from './seller/reminders';
 import sellerRoutes, { SELLER_SUBMIT_PATH, sellerBodyLimit } from './seller/routes';
 import buyerRoutes from './buyers/routes';
 import portalRoutes from './auth/portal-routes';
@@ -357,6 +358,11 @@ export default {
   fetch: app.fetch,
   queue: consumeNotifications,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      runSellerReminders(env).catch((error: unknown) => {
+        loggerFor(env).error('seller_reminders_failed', { errorType: error instanceof Error ? error.name : 'UnknownError' });
+      }),
+    );
     ctx.waitUntil(
       recoverNotificationJobs(env).catch((error: unknown) => {
         loggerFor(env).error('scheduled_recovery_failed', {
