@@ -22,11 +22,14 @@ export const AUTHORITY_DECLARATIONS = ['YES', 'NO', 'UNSURE'] as const;
 export const SALE_REASONS = ['STRATEGIC_DECISION', 'OWNERSHIP_CHANGE_SUCCESSION', 'PORTFOLIO_RESTRUCTURING', 'INVESTMENT_REALISATION', 'OTHER', 'DISCUSS_PRIVATELY'] as const;
 export const SALE_TIMINGS = ['ASAP', 'WITHIN_3_MONTHS', 'WITHIN_6_MONTHS', 'WITHIN_12_MONTHS', 'OVER_12_MONTHS', 'EXPLORING'] as const;
 export const CURRENCIES = ['GBP', 'EUR', 'USD', 'CHF', 'AED', 'OTHER'] as const;
+// eslint-disable-next-line no-control-regex
 export const CONFIDENTIALITY_PREFERENCES = ['CONTACT_BEFORE_PUBLIC_IDENTIFICATION', 'DISCUSS_PUBLIC_LISTING_AFTER_REVIEW', 'DISCUSS_WITH_BROKER'] as const;
 
 // Single-line fields: any control character (incl. CR/LF, which enables header injection) is rejected.
+// eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 // Multi-line fields: newline and tab allowed, other control characters rejected.
+// eslint-disable-next-line no-control-regex
 const CONTROL_EXCEPT_NEWLINE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/;
 
 const line = (min: number, max: number) =>
