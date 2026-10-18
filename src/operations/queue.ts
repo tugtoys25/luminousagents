@@ -53,7 +53,7 @@ function escapeHtml(value: unknown): string {
     (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!,
   );
 }
-type SendOptions = { from?: string; replyTo?: string };
+type SendOptions = { from?: string | undefined; replyTo?: string | undefined };
 class PermanentEmailError extends Error {}
 async function sendEmail(
   env: Env,
