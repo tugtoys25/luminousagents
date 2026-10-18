@@ -103,7 +103,7 @@
   }
 
   window.fetch = async (input, init) => {
-    const retryable = input instanceof Request ? input.clone() : null;
+    const retryable = input instanceof window.Request ? input.clone() : null;
     const response = await nativeFetch(input, init);
     if (response.status !== 403 || !sameOriginStaffApi(input)) return response;
     let code = '';
