@@ -169,6 +169,7 @@ describe('portal repo: login', () => {
       await r.insertFirstAdmin(env.DB, { ...p, userId: 'fa-blocked', auditId: 'au-fa-blocked' });
       expect(await r.staffUserExists(env.DB, 'fa-blocked')).toBe(false);
       expect(await n("SELECT COUNT(*) AS n FROM audit_logs WHERE id = 'au-fa-blocked'")).toBe(0);
+      await env.DB.prepare('DROP TRIGGER IF EXISTS trg_audit_logs_no_delete').run();
       await env.DB.prepare("DELETE FROM audit_logs WHERE actor_user_id IN (SELECT id FROM users WHERE user_type = 'staff')").run();
       await env.DB.prepare("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE user_type = 'staff')").run();
       await env.DB.prepare("DELETE FROM users WHERE user_type = 'staff'").run();

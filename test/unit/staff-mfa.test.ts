@@ -29,6 +29,7 @@ afterEach(async () => {
   for (const id of created.splice(0)) {
     await env.CACHE.delete(`mfa-attempts:${id}`);
     await env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(id).run();
+      await env.DB.prepare('DROP TRIGGER IF EXISTS trg_audit_logs_no_delete').run();
     await env.DB.prepare('DELETE FROM audit_logs WHERE actor_user_id=? OR entity_id=?').bind(id, id).run();
     await env.DB.prepare('DELETE FROM users WHERE id=?').bind(id).run();
   }
