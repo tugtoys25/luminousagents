@@ -1,10 +1,11 @@
 import { countryName } from './countries';
 import type { SellerEnquiryForEmail } from './repo';
+import type { FollowupForReminder } from './staff-repo';
 
 export const TEMPLATE_ACK = 'seller_enquiry_received_v1';
 export const TEMPLATE_ALERT = 'seller_enquiry_internal_alert_v1';
-/** Single place to change when the staff seller inbox route is added. */
-export const SELLER_DASHBOARD_PATH = '/dashboard';
+export const SELLER_DASHBOARD_PATH = '/dashboard/seller-enquiries/ui';
+export const TEMPLATE_FOLLOWUP_DUE = 'seller_followup_due_v1';
 
 export interface RenderedEmail {
   templateId: string;
@@ -24,6 +25,9 @@ export const escapeHtml = (value: unknown): string =>
 /** Remove CR/LF and other control characters from anything placed in a header-like or single-line position. */
 // eslint-disable-next-line no-control-regex
 export const oneLine = (value: unknown): string => String(value ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').trim();
+/** Staff-authenticated page; the reference is a selector, not a credential. */
+export const dashboardUrl = (cfg: SellerEmailConfig, reference: string): string =>
+  `${cfg.baseUrl.replace(/\/$/, '')}${SELLER_DASHBOARD_PATH}?selected=${encodeURIComponent(reference)}`;
 const label = (v: string): string => v.toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
 const BRAND_OPEN = '<div style="font-family:Georgia,serif;color:#292522;max-width:640px;margin:0 auto;line-height:1.6">';
@@ -97,7 +101,7 @@ const INTERNAL_NOTICE_2 =
 const NEXT_ACTIONS = ['Assign a broker owner.', 'Review confidentiality preference before any contact.', 'Attempt contact using the preferred method and record the outcome.', 'Begin qualification; authority is unverified.'];
 
 export function renderSellerInternalAlert(e: SellerEnquiryForEmail, cfg: SellerEmailConfig): RenderedEmail {
-  const url = `${cfg.baseUrl.replace(/\/$/, '')}${SELLER_DASHBOARD_PATH}`;
+  const url = dashboardUrl(cfg, e.reference);
   const rows: Array<[string, string]> = [
     ['Reference', e.reference],
     ['Received (UTC)', e.createdAt],
@@ -129,4 +133,28 @@ export function renderSellerInternalAlert(e: SellerEnquiryForEmail, cfg: SellerE
     `</ul><p>${escapeHtml(INTERNAL_NOTICE_1)}</p><p>${escapeHtml(INTERNAL_NOTICE_2)}</p>` +
     BRAND_CLOSE;
   return { templateId: TEMPLATE_ALERT, subject: `New Seller Enquiry — ${e.reference}`, html, text };
+}
+
+const REMINDER_MESSAGE = [
+  'A seller enquiry requires follow-up.',
+  'Review the enquiry history and determine the appropriate next step. Record the outcome of any contact attempt and update the next follow-up date.',
+  'This is an internal reminder. Review confidentiality restrictions before contacting the seller or sharing any information.',
+];
+
+export function renderSellerFollowupDue(t: FollowupForReminder, cfg: SellerEmailConfig, escalated = false): RenderedEmail {
+  const rows: Array<[string, string]> = [
+    ['Enquiry reference', t.reference],
+    ['Seller name', oneLine(t.contactName)],
+    ['Current status', label(t.enquiryStatus)],
+    ['Assigned broker', oneLine(t.assigneeName) || 'Unassigned'],
+    ['Last contact', t.lastContactAt ?? 'No contact recorded'],
+    ['Follow-up due', t.dueAt],
+    ['Follow-up reason', oneLine(t.title)],
+    ['Dashboard', dashboardUrl(cfg, t.reference)],
+  ];
+  const lead = escalated ? ['This follow-up is overdue and has been escalated.', ...REMINDER_MESSAGE] : REMINDER_MESSAGE;
+  const text = `${lead.join('\n\n')}\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n`;
+  const html = BRAND_OPEN + lead.map((p) => `<p>${escapeHtml(p)}</p>`).join('') + '<table cellpadding="4">' +
+    rows.map(([k, v]) => `<tr><td><strong>${escapeHtml(k)}</strong></td><td>${k === 'Dashboard' ? `<a href="${escapeHtml(v)}">${escapeHtml(v)}</a>` : escapeHtml(v)}</td></tr>`).join('') + '</table>' + BRAND_CLOSE;
+  return { templateId: TEMPLATE_FOLLOWUP_DUE, subject: `${escalated ? 'Escalated: ' : ''}Seller Follow-up Due — ${t.reference}`, html, text };
 }

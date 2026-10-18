@@ -98,6 +98,13 @@
           kw: 'contact leads messages',
         },
         {
+          label: 'Seller enquiries',
+          href: '/dashboard/seller-enquiries/ui',
+          icon: 'mail',
+          match: ['/dashboard/seller-enquiries'],
+          kw: 'sellers sell casino brokerage leads',
+        },
+        {
           label: 'NDA requests',
           href: '/dashboard/nda-requests/ui',
           icon: 'shield',

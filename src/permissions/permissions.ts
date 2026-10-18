@@ -12,6 +12,15 @@ export const PERMISSIONS = {
   'staff.manage': ['super_admin', 'admin'],
   'mfa.reset': ['super_admin'],
   'audit.read': ['super_admin', 'admin', 'auditor'],
+  // Seller workflow. Brokers see and work only enquiries assigned to them (record-level check in the repository);
+  // assignment and closure decisions stay with managers (admin/super_admin). There is no separate compliance role yet.
+  'seller_enquiries.read': ['super_admin', 'admin', 'broker'],
+  'seller_enquiries.assign': ['super_admin', 'admin'],
+  'seller_enquiries.update_status': ['super_admin', 'admin', 'broker'],
+  'seller_enquiries.close': ['super_admin', 'admin'],
+  'seller_enquiries.add_note': ['super_admin', 'admin', 'broker'],
+  'seller_enquiries.record_communication': ['super_admin', 'admin', 'broker'],
+  'seller_followups.manage': ['super_admin', 'admin', 'broker'],
 } as const satisfies Record<string, readonly StaffRoleName[]>;
 export type Permission = keyof typeof PERMISSIONS;
 

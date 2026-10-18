@@ -33,6 +33,12 @@ export interface Env {
   SELLER_COMPANY_WEBSITE?: string;
   /** 'true' only after legal review of marketing consent; otherwise the checkbox is not offered and consent is never recorded. */
   SELLER_MARKETING_CONSENT_ENABLED?: string;
+  /** 'false' disables follow-up reminders. */
+  SELLER_REMINDERS_ENABLED?: string;
+  SELLER_REMINDER_INTERVAL_HOURS?: string;
+  /** Hours overdue before a one-off escalation email; unset or 0 disables escalation. Needs SELLER_ESCALATION_RECIPIENTS. */
+  SELLER_ESCALATION_AFTER_HOURS?: string;
+  SELLER_ESCALATION_RECIPIENTS?: string;
   OPS_EMAIL?: string;
   PUBLIC_BASE_URL?: string;
   CLOUDFLARE_ZONE_ID?: string;

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import sellerRoutes, { sellerBodyLimit } from '../../src/seller/routes';
 import { valid } from '../support/seller-fixtures';
@@ -114,4 +114,3 @@ describe('POST /api/sell-a-casino', () => {
     expect(insert.args).not.toContain('seller-form-marketing-v1');
   });
 });
-void vi;

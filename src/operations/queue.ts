@@ -18,8 +18,8 @@ import {
   requeueStaleProcessing,
   type NotificationJob,
 } from './queue-repo';
-import { JOB_ACK, JOB_INTERNAL_ALERT, findSellerEnquiryForEmail } from '../seller/repo';
-import { renderSellerAcknowledgement, renderSellerInternalAlert } from '../seller/emails';
+import { PermanentEmailError, type SendOptions } from './email-errors';
+import { handleSellerJob } from '../seller/jobs';
 
 type QueueEnvelope = { jobId?: string; type?: string };
 const now = () => new Date().toISOString();
@@ -53,8 +53,6 @@ function escapeHtml(value: unknown): string {
     (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!,
   );
 }
-type SendOptions = { from?: string | undefined; replyTo?: string | undefined };
-class PermanentEmailError extends Error {}
 async function sendEmail(
   env: Env,
   to: string | string[],
@@ -84,30 +82,7 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
   ) as Record<string, unknown>;
   const sendJobEmail = (emailEnv: Env, to: string, subject: string, html: string, text: string) =>
     sendEmail(emailEnv, to, subject, html, text, `mayfair-${job.id}`);
-  if (job.job_type === JOB_ACK || job.job_type === JOB_INTERNAL_ALERT) {
-    const enquiryId = String(payload['enquiryId'] ?? '');
-    if (!enquiryId) throw new PermanentEmailError('Invalid seller enquiry payload');
-    const enquiry = await findSellerEnquiryForEmail(env.DB, enquiryId);
-    if (!enquiry) throw new PermanentEmailError('Seller enquiry not found or anonymised');
-    const baseUrl = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
-    const cfg = {
-      baseUrl,
-      companyWebsite: env.SELLER_COMPANY_WEBSITE || baseUrl,
-      includePhone: env.SELLER_ALERT_INCLUDE_PHONE === 'true',
-      includePrice: env.SELLER_ALERT_INCLUDE_PRICE === 'true',
-    };
-    const from = env.SELLER_EMAIL_FROM || env.EMAIL_FROM;
-    if (job.job_type === JOB_ACK) {
-      const mail = renderSellerAcknowledgement(enquiry, cfg);
-      await sendEmail(env, enquiry.email, mail.subject, mail.html, mail.text, `mayfair-${job.id}`, { from, replyTo: env.SELLER_REPLY_TO });
-      return;
-    }
-    const recipients = (env.SELLER_ALERT_RECIPIENTS ?? '').split(',').map((v) => v.trim()).filter((v) => /^[^\s@,]+@[^\s@,]+$/.test(v));
-    if (!recipients.length) throw new Error('SELLER_ALERT_RECIPIENTS is not configured');
-    const mail = renderSellerInternalAlert(enquiry, cfg);
-    await sendEmail(env, recipients, mail.subject, mail.html, mail.text, `mayfair-${job.id}`, { from });
-    return;
-  }
+  if (await handleSellerJob(env, job, payload, sendEmail)) return;
   if (job.job_type === 'auth.password_reset') {
     const email = String(payload['email'] ?? '');
     const token = String(payload['token'] ?? '');
