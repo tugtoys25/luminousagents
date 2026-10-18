@@ -68,7 +68,7 @@ app.use('/dashboard*', async (c, next) => {
     html = html.replace('</head>', () => `${identity}${mediaCss}</head>`);
     html = html.replace(
       '</body>',
-      () => '<script src="/static/js/dashboard-media-picker.js" defer></script><script src="/static/js/dashboard-shell.js" defer></script></body>',
+      () => '<script src="/static/js/dashboard-step-up.js" defer></script><script src="/static/js/dashboard-media-picker.js" defer></script><script src="/static/js/dashboard-shell.js" defer></script></body>',
     );
     const headers = new Headers(c.res.headers);
     headers.delete('content-length');

@@ -7,7 +7,10 @@ import { hasIcoSignature, isSafeSvg } from '../security/svg-sanitizer';
 import { insertStaffAudit } from './repos/audit-repo';
 import { setTemporaryPassword } from '../auth/password-repo';
 
-export type AdminApp = { Bindings: Env; Variables: { requestId: string; staff: StaffIdentity } };
+export type AdminApp = {
+  Bindings: Env;
+  Variables: { requestId: string; staff: StaffIdentity; mfa?: { enrolled: boolean; verifiedAt: string | null } };
+};
 
 export const editorRoles = ['admin', 'editor', 'broker', 'super_admin'];
 // Kept literal because scripts/role-matrix.mjs reads these lists; test/unit/permissions.test.ts

@@ -14,9 +14,12 @@ export interface StaffSessionState {
   mustChangePassword: boolean;
   sessionId: string;
   /** required: policy or enrolment demands a second factor; verified: this session has passed it. */
-  mfa: { required: boolean; verified: boolean; enrolled: boolean };
+  mfa: { required: boolean; verified: boolean; enrolled: boolean; verifiedAt: string | null };
 }
-export type StaffApp = { Bindings: Env; Variables: { requestId: string; staff: StaffIdentity } };
+export type StaffApp = {
+  Bindings: Env;
+  Variables: { requestId: string; staff: StaffIdentity; mfa?: { enrolled: boolean; verifiedAt: string | null } };
+};
 
 export const STAFF_COOKIE = 'mayfair_staff_session';
 export const STAFF_SESSION_SECONDS = 8 * 60 * 60;
@@ -51,6 +54,7 @@ export async function authenticateStaff(
     mfa: {
       required: mfaRequired(c.env, row.role, row.mfaEnabledAt !== null),
       verified: row.mfaAt !== null,
+      verifiedAt: row.mfaAt,
       enrolled: row.mfaEnabledAt !== null,
     },
   };
@@ -75,6 +79,7 @@ export function staffAuth(): MiddlewareHandler<StaffApp> {
         : fail(c, 403, 'MFA_REQUIRED', 'Complete two-factor verification to continue.');
     const { mustChangePassword: _m, sessionId: _s, mfa: _f, ...staff } = identity;
     c.set('staff', staff);
+    c.set('mfa', { enrolled: identity.mfa.enrolled, verifiedAt: identity.mfa.verifiedAt });
     await next();
   };
 }

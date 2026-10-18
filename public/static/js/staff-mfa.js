@@ -37,6 +37,7 @@
       const body = recoveryMode
         ? { recoveryCode: verifyForm.elements.recoveryCode.value }
         : { code: verifyForm.elements.code.value };
+      if (verifyForm.dataset.next) body.next = verifyForm.dataset.next;
       button.disabled = true;
       say(notice, 'Checking…');
       try {
