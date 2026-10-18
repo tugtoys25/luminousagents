@@ -108,6 +108,7 @@ describe('buyer sign-in through authorised document download', () => {
       expect(revokedDownload.status).toBe(403);
     } finally {
       await env.PRIVATE_FILES.delete(objectKey);
+      await env.DB.prepare('DROP TRIGGER IF EXISTS trg_audit_logs_no_delete').run();
       await env.DB.prepare('DELETE FROM audit_logs WHERE actor_user_id=?').bind(userId).run();
       await env.DB.prepare('DELETE FROM documents WHERE id=?').bind(documentId).run();
       await env.DB.prepare('DELETE FROM access_grants WHERE id=?').bind(grantId).run();

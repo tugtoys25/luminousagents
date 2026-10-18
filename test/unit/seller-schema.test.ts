@@ -86,7 +86,7 @@ describe('sellerEnquirySchema', () => {
     if (r.success) expect(Object.keys(r.data)).not.toEqual(expect.arrayContaining(['status', 'assigned_to', 'id', 'created_at']));
   });
   it('field errors never echo input', () => {
-    const r = parse({ contact_name: 'S3CRET\n' });
+    const r = parse({ contact_name: 'S3CRET\nX' });
     if (r.success) throw new Error('expected failure');
     expect(JSON.stringify(fieldErrors(r.error))).not.toContain('S3CRET');
   });

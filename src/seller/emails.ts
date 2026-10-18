@@ -22,6 +22,7 @@ export interface SellerEmailConfig {
 export const escapeHtml = (value: unknown): string =>
   String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 /** Remove CR/LF and other control characters from anything placed in a header-like or single-line position. */
+// eslint-disable-next-line no-control-regex
 export const oneLine = (value: unknown): string => String(value ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').trim();
 const label = (v: string): string => v.toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 

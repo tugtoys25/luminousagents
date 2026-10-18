@@ -22,7 +22,6 @@ export const AUTHORITY_DECLARATIONS = ['YES', 'NO', 'UNSURE'] as const;
 export const SALE_REASONS = ['STRATEGIC_DECISION', 'OWNERSHIP_CHANGE_SUCCESSION', 'PORTFOLIO_RESTRUCTURING', 'INVESTMENT_REALISATION', 'OTHER', 'DISCUSS_PRIVATELY'] as const;
 export const SALE_TIMINGS = ['ASAP', 'WITHIN_3_MONTHS', 'WITHIN_6_MONTHS', 'WITHIN_12_MONTHS', 'OVER_12_MONTHS', 'EXPLORING'] as const;
 export const CURRENCIES = ['GBP', 'EUR', 'USD', 'CHF', 'AED', 'OTHER'] as const;
-// eslint-disable-next-line no-control-regex
 export const CONFIDENTIALITY_PREFERENCES = ['CONTACT_BEFORE_PUBLIC_IDENTIFICATION', 'DISCUSS_PUBLIC_LISTING_AFTER_REVIEW', 'DISCUSS_WITH_BROKER'] as const;
 
 // Single-line fields: any control character (incl. CR/LF, which enables header injection) is rejected.
