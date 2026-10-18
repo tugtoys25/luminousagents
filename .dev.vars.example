@@ -34,3 +34,12 @@
 # MFA_ENCRYPTION_KEY=base64-encoded-32-random-bytes   (optional; falls back to OTP_ENCRYPTION_KEY)
 # STAFF_MFA_REQUIRED_ROLES=super_admin,admin
 # LOG_LEVEL=info
+
+# Seller enquiry workflow (/sell-a-casino). No production values are invented here.
+# SELLER_EMAIL_FROM=Casinos of Mayfair Brokerage <brokerage@example.com>   (verified sender; falls back to EMAIL_FROM)
+# SELLER_REPLY_TO=brokerage@example.com
+# SELLER_ALERT_RECIPIENTS=broker1@example.com,broker2@example.com          (required for internal alerts)
+# SELLER_ALERT_INCLUDE_PHONE=false
+# SELLER_ALERT_INCLUDE_PRICE=false
+# SELLER_COMPANY_WEBSITE=https://casinosofmayfair.com
+# SELLER_MARKETING_CONSENT_ENABLED=false                                   (enable only after legal review)

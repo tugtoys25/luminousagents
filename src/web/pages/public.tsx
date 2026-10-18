@@ -4,6 +4,7 @@ import homeRoutes from './public-home';
 import listingsRoutes from './public-listings';
 import detailRoutes from './public-detail';
 import infoRoutes from './public-info';
+import sellRoutes from './public-sell';
 import seoRoutes from './public-seo';
 
 /** Public website pages, composed from focused modules. Contact settings load first for HTML requests. */
@@ -13,6 +14,7 @@ publicPages.route('/', homeRoutes);
 publicPages.route('/', listingsRoutes);
 publicPages.route('/', detailRoutes);
 publicPages.route('/', infoRoutes);
+publicPages.route('/', sellRoutes);
 publicPages.route('/', seoRoutes);
 
 export default publicPages;

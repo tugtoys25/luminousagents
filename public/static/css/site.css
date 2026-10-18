@@ -2266,3 +2266,16 @@ body.has-footer > .site-footer {
   margin-left: 10px;
   text-decoration: underline;
 }
+
+/* Seller enquiry form (/sell-a-casino) */
+.seller-form h2 { margin-top: 1.4rem; font-size: 1.25rem; }
+.seller-form .field { display: grid; gap: 0.3rem; border: 0; padding: 0; margin: 0; }
+.seller-form .field[hidden] { display: none; }
+.seller-form select { width: 100%; padding: 0.85rem 0.9rem; border: 1px solid #cfc7bb; border-radius: 8px; font: inherit; background: #fff; color: #292522; }
+.seller-form select:focus { outline: 3px solid rgba(140, 29, 40, 0.18); border-color: #8c1d28; }
+.seller-form .choice { display: flex; gap: 0.6rem; font-weight: 400; margin-top: 0.3rem; }
+.seller-form legend { font-weight: 600; color: #302a25; }
+.seller-form .field-hint { font-size: 0.85rem; color: #6b665e; margin: 0; }
+.seller-form .field-error { font-size: 0.9rem; color: #8c1d28; margin: 0; font-weight: 600; }
+.seller-form [aria-invalid='true'] { border-color: #8c1d28; }
+.seller-form .honeypot { position: absolute; left: -9999px; }

@@ -22,6 +22,17 @@ export interface Env {
   MALWARE_SCANNER_SIGNING_SECRET?: string;
   MALWARE_SCANNER_PROVIDER?: string;
   EMAIL_FROM?: string;
+  /** Seller workflow: verified sender for seller-facing mail; falls back to EMAIL_FROM when unset. */
+  SELLER_EMAIL_FROM?: string;
+  SELLER_REPLY_TO?: string;
+  /** Comma list of internal recipients for new seller enquiry alerts. Required: alerts fail visibly (retry, then dead) when unset. */
+  SELLER_ALERT_RECIPIENTS?: string;
+  SELLER_ALERT_INCLUDE_PHONE?: string;
+  SELLER_ALERT_INCLUDE_PRICE?: string;
+  /** Public company website shown in seller emails. Falls back to PUBLIC_BASE_URL. */
+  SELLER_COMPANY_WEBSITE?: string;
+  /** 'true' only after legal review of marketing consent; otherwise the checkbox is not offered and consent is never recorded. */
+  SELLER_MARKETING_CONSENT_ENABLED?: string;
   OPS_EMAIL?: string;
   PUBLIC_BASE_URL?: string;
   CLOUDFLARE_ZONE_ID?: string;

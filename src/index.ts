@@ -20,6 +20,7 @@ import { SVG_SANDBOX_CSP } from './security/svg-sanitizer';
 import managedContentRoutes from './web/managed-content';
 import adminRoutes from './admin/routes';
 import enquiryRoutes from './enquiries/routes';
+import sellerRoutes, { SELLER_SUBMIT_PATH, sellerBodyLimit } from './seller/routes';
 import buyerRoutes from './buyers/routes';
 import portalRoutes from './auth/portal-routes';
 import mfaRoutes from './auth/mfa-routes';
@@ -40,6 +41,8 @@ app.use('*', publicCacheMiddleware);
 app.use('/api/buyer/*', sameOriginMutationMiddleware);
 app.use('/api/admin/*', sameOriginMutationMiddleware);
 app.use('/dashboard/*', sameOriginMutationMiddleware);
+// Reject oversized seller submissions before any body parsing (including Turnstile's).
+app.use(SELLER_SUBMIT_PATH, sellerBodyLimit);
 // Server-side Turnstile on every public form and authentication entry point.
 app.on('POST', [...TURNSTILE_PROTECTED_POSTS], requireTurnstile);
 const escapeAttr = (value: unknown): string =>
@@ -329,6 +332,7 @@ app.route('/', portalRoutes);
 app.route('/', managedContentRoutes);
 app.route('/', publicPages);
 app.route('/', enquiryRoutes);
+app.route('/', sellerRoutes);
 app.route('/', buyerRoutes);
 app.route('/dashboard', adminRoutes);
 

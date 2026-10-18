@@ -52,3 +52,6 @@ Adds integrity and scanner-provenance fields for buyer-uploaded signed NDA PDFs.
 Deactivates the repository-seeded NDA acknowledgement if it is still the active template and has no managed private R2 object. This prevents an unreviewed bootstrap document from being presented as an approved NDA. Create a managed, counsel-approved version and explicitly activate it before enabling NDA requests in staging or production.
 
 Sprint 32 adds no migration. The numbered set remains 0001 through 0030.
+
+- `0032_seller_enquiries.sql`: seller enquiry table and a unique logical-notification key on `notification_jobs`. Additive.
+- `0033_audit_append_only.sql`: triggers making `audit_logs` append-only (rollback: drop the two triggers). Apply to staging first.

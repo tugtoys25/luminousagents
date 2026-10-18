@@ -18,6 +18,8 @@ import {
   requeueStaleProcessing,
   type NotificationJob,
 } from './queue-repo';
+import { JOB_ACK, JOB_INTERNAL_ALERT, findSellerEnquiryForEmail } from '../seller/repo';
+import { renderSellerAcknowledgement, renderSellerInternalAlert } from '../seller/emails';
 
 type QueueEnvelope = { jobId?: string; type?: string };
 const now = () => new Date().toISOString();
@@ -51,21 +53,30 @@ function escapeHtml(value: unknown): string {
     (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!,
   );
 }
+type SendOptions = { from?: string; replyTo?: string };
+class PermanentEmailError extends Error {}
 async function sendEmail(
   env: Env,
-  to: string,
+  to: string | string[],
   subject: string,
   html: string,
   text: string,
   idempotencyKey?: string,
+  options: SendOptions = {},
 ): Promise<void> {
-  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) throw new Error('Email provider is not configured');
+  const from = options.from ?? env.EMAIL_FROM;
+  if (!env.RESEND_API_KEY || !from) throw new Error('Email provider is not configured');
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json', ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) },
-    body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject, html, text }),
+    body: JSON.stringify({ from, to: Array.isArray(to) ? to : [to], subject, html, text, ...(options.replyTo ? { reply_to: options.replyTo } : {}) }),
   });
-  if (!response.ok) throw new Error(`Email provider returned HTTP ${response.status}`);
+  if (!response.ok) {
+    // 4xx other than 408/429 will not succeed on retry (bad recipient, bad sender, auth): do not retry indefinitely.
+    if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)
+      throw new PermanentEmailError(`Email provider returned HTTP ${response.status}`);
+    throw new Error(`Email provider returned HTTP ${response.status}`);
+  }
 }
 async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
   const payload = JSON.parse(
@@ -73,6 +84,30 @@ async function renderAndSend(env: Env, job: NotificationJob): Promise<void> {
   ) as Record<string, unknown>;
   const sendJobEmail = (emailEnv: Env, to: string, subject: string, html: string, text: string) =>
     sendEmail(emailEnv, to, subject, html, text, `mayfair-${job.id}`);
+  if (job.job_type === JOB_ACK || job.job_type === JOB_INTERNAL_ALERT) {
+    const enquiryId = String(payload['enquiryId'] ?? '');
+    if (!enquiryId) throw new PermanentEmailError('Invalid seller enquiry payload');
+    const enquiry = await findSellerEnquiryForEmail(env.DB, enquiryId);
+    if (!enquiry) throw new PermanentEmailError('Seller enquiry not found or anonymised');
+    const baseUrl = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
+    const cfg = {
+      baseUrl,
+      companyWebsite: env.SELLER_COMPANY_WEBSITE || baseUrl,
+      includePhone: env.SELLER_ALERT_INCLUDE_PHONE === 'true',
+      includePrice: env.SELLER_ALERT_INCLUDE_PRICE === 'true',
+    };
+    const from = env.SELLER_EMAIL_FROM || env.EMAIL_FROM;
+    if (job.job_type === JOB_ACK) {
+      const mail = renderSellerAcknowledgement(enquiry, cfg);
+      await sendEmail(env, enquiry.email, mail.subject, mail.html, mail.text, `mayfair-${job.id}`, { from, replyTo: env.SELLER_REPLY_TO });
+      return;
+    }
+    const recipients = (env.SELLER_ALERT_RECIPIENTS ?? '').split(',').map((v) => v.trim()).filter((v) => /^[^\s@,]+@[^\s@,]+$/.test(v));
+    if (!recipients.length) throw new Error('SELLER_ALERT_RECIPIENTS is not configured');
+    const mail = renderSellerInternalAlert(enquiry, cfg);
+    await sendEmail(env, recipients, mail.subject, mail.html, mail.text, `mayfair-${job.id}`, { from });
+    return;
+  }
   if (job.job_type === 'auth.password_reset') {
     const email = String(payload['email'] ?? '');
     const token = String(payload['token'] ?? '');
@@ -259,7 +294,7 @@ export async function consumeNotifications(batch: MessageBatch<unknown>, env: En
       message.ack();
     } catch (error) {
       const attempt = job.attempts + 1;
-      const dead = attempt >= 5;
+      const dead = attempt >= 5 || error instanceof PermanentEmailError;
       const delay = Math.min(3600, 30 * 2 ** Math.min(attempt - 1, 7));
       await markRetryOrDead(env.DB, {
         jobId: job.id,

@@ -104,4 +104,5 @@ export const TURNSTILE_PROTECTED_POSTS = [
   '/api/buyer/auth/request-code',
   '/api/buyer/register',
   '/api/forms/:slug/submit',
+  '/api/sell-a-casino',
 ] as const;
