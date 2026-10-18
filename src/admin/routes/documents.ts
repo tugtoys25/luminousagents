@@ -1,4 +1,5 @@
 import { requireRole } from '../../auth/staff-session';
+import { requireRecentMfa } from '../../auth/step-up';
 import {
   getScannerMode,
   SCAN_SKIPPED_PROVIDER,
@@ -56,7 +57,7 @@ admin.get(
   },
 );
 
-admin.put('/scanner-settings', requireRole('admin', 'super_admin'), async (c) => {
+admin.put('/scanner-settings', requireRole('admin', 'super_admin'), requireRecentMfa('/dashboard'), async (c) => {
   const parsed = z
     .object({
       mode: z.enum(['enforced', 'disabled']),
@@ -210,7 +211,7 @@ admin.post('/documents/:id/scan', requireRole('admin', 'super_admin'), async (c)
   });
 });
 
-admin.patch('/documents/:id/scan-status', requireRole('admin', 'super_admin'), async (c) => {
+admin.patch('/documents/:id/scan-status', requireRole('admin', 'super_admin'), requireRecentMfa('/dashboard'), async (c) => {
   const parsed = z
     .object({
       status: z.enum(['clean', 'rejected']),
@@ -257,7 +258,7 @@ admin.patch('/documents/:id/scan-status', requireRole('admin', 'super_admin'), a
   });
 });
 
-admin.delete('/documents/:id', requireRole('admin', 'publisher', 'super_admin'), async (c) => {
+admin.delete('/documents/:id', requireRole('admin', 'publisher', 'super_admin'), requireRecentMfa('/dashboard'), async (c) => {
   const doc = await findDocumentForDelete(c.env.DB, c.req.param('id'));
   if (!doc) return c.json({ error: { code: 'NOT_FOUND', message: 'Document not found.' } }, 404);
   await deleteDocumentRow(c.env.DB, doc.id);

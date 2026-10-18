@@ -1,4 +1,5 @@
 import { requireRole } from '../../auth/staff-session';
+import { requireRecentMfa } from '../../auth/step-up';
 import { z } from 'zod';
 import { hashPassword, issueResetToken, passwordPolicyError } from '../../auth/password';
 import { Hono } from 'hono';
@@ -28,7 +29,7 @@ admin.get('/staff', requireRole('super_admin'), async (c) => {
   });
 });
 
-admin.post('/staff', requireRole('super_admin'), async (c) => {
+admin.post('/staff', requireRole('super_admin'), requireRecentMfa('/staff/ui'), async (c) => {
   const parsed = z
     .object({
       email: z.string().trim().email().max(254),
@@ -78,7 +79,7 @@ admin.post('/staff', requireRole('super_admin'), async (c) => {
   return c.json({ data: { id: userId, email, role: parsed.data.role, invited } }, 201);
 });
 
-admin.patch('/staff/:id', requireRole('super_admin'), async (c) => {
+admin.patch('/staff/:id', requireRole('super_admin'), requireRecentMfa('/staff/ui'), async (c) => {
   const parsed = z
     .object({
       role: z.enum(staffRoles).optional(),
@@ -139,7 +140,7 @@ admin.patch('/staff/:id', requireRole('super_admin'), async (c) => {
   return c.json({ data: { id: user.id, role, status, displayName, email } });
 });
 
-admin.post('/staff/:id/temporary-password', requireRole('super_admin'), async (c) => {
+admin.post('/staff/:id/temporary-password', requireRole('super_admin'), requireRecentMfa('/staff/ui'), async (c) => {
   const body = z
     .object({ password: z.string().max(200).optional() })
     .safeParse(await c.req.json().catch(() => ({})));
@@ -165,7 +166,7 @@ admin.post('/staff/:id/temporary-password', requireRole('super_admin'), async (c
   return c.json({ data: { email: user.email, temporaryPassword: result.password } });
 });
 
-admin.post('/staff/:id/reset-password', requireRole('super_admin'), async (c) => {
+admin.post('/staff/:id/reset-password', requireRole('super_admin'), requireRecentMfa('/staff/ui'), async (c) => {
   const user = await findActiveStaffContact(c.env.DB, c.req.param('id'));
   if (!user)
     return c.json(

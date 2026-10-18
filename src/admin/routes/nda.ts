@@ -1,4 +1,5 @@
 import { requireRole } from '../../auth/staff-session';
+import { requireRecentMfa } from '../../auth/step-up';
 import { z } from 'zod';
 import { Hono } from 'hono';
 import { findNdaRequest, findSignedPdf, listNdaRequests, reviewNdaRequest } from '../repos/nda-requests-repo';
@@ -78,7 +79,7 @@ admin.post('/nda-templates', requireRole('admin', 'super_admin'), async (c) => {
   );
 });
 
-admin.post('/nda-templates/:id/activate', requireRole('admin', 'super_admin'), async (c) => {
+admin.post('/nda-templates/:id/activate', requireRole('admin', 'super_admin'), requireRecentMfa('/dashboard'), async (c) => {
   const template = await findTemplate(c.env.DB, c.req.param('id'));
   if (!template)
     return c.json({ error: { code: 'NOT_FOUND', message: 'NDA template not found.' } }, 404);
@@ -168,6 +169,7 @@ admin.get('/nda-requests/:id/signed-pdf', requireRole('admin', 'publisher', 'sup
 admin.patch(
   '/nda-requests/:id/review',
   requireRole('admin', 'publisher', 'super_admin'),
+  requireRecentMfa('/dashboard/nda-requests/ui'),
   async (c) => {
     const parsed = z
       .object({

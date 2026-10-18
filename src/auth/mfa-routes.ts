@@ -7,11 +7,13 @@ import type { StaffIdentity, StaffSessionState } from './staff-session';
 import { portalPage } from './portal-page';
 import * as mfa from './mfa';
 import * as repo from './mfa-repo';
+import { safeReturnPath, stepUpDecision, stepUpMessage } from './step-up-policy';
 
 type App = { Bindings: Env; Variables: { requestId: string } };
 type Session = StaffIdentity & StaffSessionState;
 const mfaRoutes = new Hono<App>();
 const nowIso = () => new Date().toISOString();
+const escapeAttr = (v: string) => v.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
 const json = (
   c: Context<App>,
@@ -33,7 +35,8 @@ async function session(c: Context<App>): Promise<Session | Response> {
 mfaRoutes.get('/admin/mfa', async (c) => {
   const identity = await session(c);
   if (identity instanceof Response) return identity;
-  if (identity.mfa.verified && identity.mfa.required) return c.redirect('/dashboard', 302);
+  const stepUp = c.req.query('stepup') === '1' && identity.mfa.enrolled;
+  if (identity.mfa.verified && identity.mfa.required && !stepUp) return c.redirect('/dashboard', 302);
   if (!identity.mfa.required && !identity.mfa.enrolled && !mfa.mfaAvailable(c.env))
     return c.redirect('/dashboard', 302);
   const links = '<a href="/admin/logout">Sign out</a>';
@@ -43,7 +46,7 @@ mfaRoutes.get('/admin/mfa', async (c) => {
         title: 'Two-factor check',
         heading: 'Enter your verification code.',
         intro: 'Open your authenticator app and enter the 6-digit code for Casinos of Mayfair.',
-        body: `<form id="mfa-verify" data-mfa-form="verify" novalidate><div class="field"><label for="mfa-code">Authenticator code</label><input id="mfa-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></div><div class="field" id="mfa-recovery-field" hidden><label for="mfa-recovery">Recovery code</label><input id="mfa-recovery" name="recoveryCode" autocomplete="off" maxlength="12"></div><button type="submit">Verify</button><p class="notice" role="status" aria-live="polite"></p><p class="fine"><a href="#" id="mfa-use-recovery">Use a recovery code instead</a></p></form><script src="/static/js/staff-mfa.js" defer></script>`,
+        body: `<form id="mfa-verify" data-mfa-form="verify" data-next="${escapeAttr(safeReturnPath(c.req.query('next')))}" novalidate><div class="field"><label for="mfa-code">Authenticator code</label><input id="mfa-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></div><div class="field" id="mfa-recovery-field" hidden><label for="mfa-recovery">Recovery code</label><input id="mfa-recovery" name="recoveryCode" autocomplete="off" maxlength="12"></div><button type="submit">Verify</button><p class="notice" role="status" aria-live="polite"></p><p class="fine"><a href="#" id="mfa-use-recovery">Use a recovery code instead</a></p></form><script src="/static/js/staff-mfa.js" defer></script>`,
         links,
       }),
     );
@@ -106,6 +109,7 @@ const verifySchema = z
   .object({
     code: z.string().trim().min(6).max(8).optional(),
     recoveryCode: z.string().trim().min(8).max(16).optional(),
+    next: z.string().max(200).optional(),
   })
   .refine((value) => Boolean(value.code) !== Boolean(value.recoveryCode));
 
@@ -144,7 +148,7 @@ mfaRoutes.post('/api/admin/mfa/verify', async (c) => {
   return c.json({
     data: {
       verified: true,
-      redirectTo: '/dashboard',
+      redirectTo: safeReturnPath(input.data.next),
       ...(result.method === 'recovery' ? { recoveryCodesLeft: result.recoveryCodesLeft ?? 0 } : {}),
     },
   });
@@ -156,6 +160,11 @@ mfaRoutes.post('/api/admin/mfa/reset/:userId', async (c) => {
   if (identity instanceof Response) return identity;
   if (identity.mfa.required && !identity.mfa.verified)
     return json(c, 403, 'MFA_REQUIRED', 'Complete two-factor verification first.');
+  if (
+    identity.role === 'super_admin' &&
+    stepUpDecision({ enrolled: identity.mfa.enrolled, verifiedAt: identity.mfa.verifiedAt }, Date.now()) !== 'ok'
+  )
+    return json(c, 403, 'STEP_UP_REQUIRED', stepUpMessage('/staff/ui'));
   if (identity.role !== 'super_admin')
     return json(c, 403, 'FORBIDDEN', 'Only a super administrator can reset two-factor.');
   const targetId = c.req.param('userId');

@@ -1,4 +1,5 @@
 import { requireRole } from '../../auth/staff-session';
+import { requireRecentMfa } from '../../auth/step-up';
 import { z } from 'zod';
 import { issueResetToken } from '../../auth/password';
 import { Hono } from 'hono';
@@ -41,7 +42,7 @@ admin.patch('/buyers/:id', requireRole('admin', 'super_admin'), async (c) => {
   return c.json({ data: { id: user.id, status: parsed.data.status } });
 });
 
-admin.post('/buyers/:id/temporary-password', requireRole('admin', 'super_admin'), async (c) => {
+admin.post('/buyers/:id/temporary-password', requireRole('admin', 'super_admin'), requireRecentMfa('/dashboard'), async (c) => {
   const body = z
     .object({ password: z.string().max(200).optional() })
     .safeParse(await c.req.json().catch(() => ({})));
@@ -58,7 +59,7 @@ admin.post('/buyers/:id/temporary-password', requireRole('admin', 'super_admin')
   });
 });
 
-admin.post('/buyers/:id/reset-password', requireRole('admin', 'super_admin'), async (c) => {
+admin.post('/buyers/:id/reset-password', requireRole('admin', 'super_admin'), requireRecentMfa('/dashboard'), async (c) => {
   const user = await findActiveBuyerContact(c.env.DB, c.req.param('id'));
   if (!user)
     return c.json(
@@ -70,7 +71,7 @@ admin.post('/buyers/:id/reset-password', requireRole('admin', 'super_admin'), as
   return c.json({ data: { emailQueued } });
 });
 
-admin.post('/buyers/provision', requireRole('admin', 'super_admin'), async (c) => {
+admin.post('/buyers/provision', requireRole('admin', 'super_admin'), requireRecentMfa('/dashboard'), async (c) => {
   const parsed = z
     .object({
       email: z.string().trim().email().max(254),
