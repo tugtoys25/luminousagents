@@ -1,7 +1,7 @@
 /** All SQL for the staff seller-enquiry workflow. Brokers are scoped to enquiries assigned to them (`brokerOnly`). */
 type Row = Record<string, unknown>;
 export interface Scope { brokerOnly: 0 | 1; staffId: string }
-export interface EnquiryRef { id: string; reference: string; status: string; assignedTo: string | null; version: number; firstResponseAt: string | null }
+export interface EnquiryRef { id: string; reference: string; status: string; assignedTo: string | null; version: number; firstResponseAt: string | null; sellerId: string | null }
 
 const AUDIT_SQL =
   "INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) VALUES (?, ?, 'staff', ?, 'seller_enquiry', ?, ?, ?, ?)";
@@ -13,7 +13,7 @@ const HISTORY_IF_CHANGED_SQL =
 
 export function findRef(db: D1Database, reference: string, s: Scope): Promise<EnquiryRef | null> {
   return db
-    .prepare('SELECT id, reference, status, assigned_to AS assignedTo, version, first_response_at AS firstResponseAt FROM seller_enquiries WHERE reference = ? AND (? = 0 OR assigned_to = ?)')
+    .prepare('SELECT id, reference, status, assigned_to AS assignedTo, version, first_response_at AS firstResponseAt, seller_id AS sellerId FROM seller_enquiries WHERE reference = ? AND (? = 0 OR assigned_to = ?)')
     .bind(reference, s.brokerOnly, s.staffId)
     .first<EnquiryRef>();
 }
@@ -70,7 +70,7 @@ export function getEnquiry(db: D1Database, reference: string, s: Scope): Promise
         e.accuracy_declaration_version AS accuracyDeclarationVersion, e.accuracy_declared_at AS accuracyDeclaredAt,
         e.marketing_consent AS marketingConsent, e.marketing_consent_text_version AS marketingConsentTextVersion, e.marketing_consent_at AS marketingConsentAt,
         e.marketing_consent_withdrawn_at AS marketingConsentWithdrawnAt, e.status, e.assigned_to AS assignedTo, u.display_name AS assignedName,
-        e.first_response_at AS firstResponseAt, e.closed_at AS closedAt, e.closure_reason AS closureReason, e.version, e.created_at AS createdAt, e.updated_at AS updatedAt
+        (SELECT reference FROM sellers WHERE id = e.seller_id) AS sellerReference, e.first_response_at AS firstResponseAt, e.closed_at AS closedAt, e.closure_reason AS closureReason, e.version, e.created_at AS createdAt, e.updated_at AS updatedAt
        FROM seller_enquiries e LEFT JOIN users u ON u.id = e.assigned_to WHERE e.reference = ? AND e.anonymised_at IS NULL AND (? = 0 OR e.assigned_to = ?)`,
     )
     .bind(reference, s.brokerOnly, s.staffId)

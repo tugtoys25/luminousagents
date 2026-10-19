@@ -62,3 +62,40 @@ describe('seller staff workflow (static checks)', () => {
     expect(shared).toMatch(/sellerAssignRoles = \['admin', 'super_admin'\]/);
   });
 });
+
+describe('seller phase 3 (static checks)', () => {
+  it('publication gate trigger and append-only triggers exist', () => {
+    const m = read('migrations/0037_seller_publication_gate_triggers.sql');
+    expect(m).toContain('trg_opportunities_seller_publication_gate');
+    for (const t of ['seller_changes', 'seller_authority_events', 'seller_publication_events']) {
+      expect(m).toContain(`BEFORE UPDATE ON ${t}`);
+      expect(m).toContain(`BEFORE DELETE ON ${t}`);
+    }
+    expect(read('migrations/0036_sellers_authority_publication.sql')).not.toMatch(/\bDROP\s+(TABLE|COLUMN)|\bDELETE\s+FROM/i);
+  });
+  it('both existing publication endpoints call the seller gate before going live', () => {
+    const src = read('src/admin/routes/opportunity-lifecycle.ts');
+    expect(src.match(/sellerGateResult\(/g)?.length).toBe(2);
+    expect(src).toContain('SELLER_GATES_NOT_MET');
+  });
+  it('every phase 3 staff route is role-guarded', () => {
+    for (const file of ['sellers', 'seller-links', 'seller-authority', 'seller-publication']) {
+      const src = read(`src/admin/routes/${file}.ts`);
+      expect(src.match(/requireRole\(/g)?.length, file).toBe(src.match(/admin\.(get|post)\(/g)?.length);
+    }
+  });
+  it('seller routes and helpers contain no direct SQL', () => {
+    for (const file of ['src/admin/routes/sellers.ts', 'src/admin/routes/seller-links.ts', 'src/admin/routes/seller-authority.ts', 'src/admin/routes/seller-publication.ts', 'src/seller/authority-expiry.ts', 'src/seller/gate-check.ts'])
+      expect(read(file), file).not.toMatch(/\.prepare\(/);
+  });
+  it('the new staff UI renders with textContent only', () => {
+    expect(read('public/static/js/dashboard-sellers.js')).not.toMatch(/innerHTML|insertAdjacentHTML|document\.write|eval\(/);
+  });
+  it('conversion never copies enquiry text into public opportunity fields', () => {
+    const repo = read('src/seller/publication-repo.ts');
+    const insert = repo.slice(repo.indexOf('INSERT INTO opportunities'), repo.indexOf('INSERT INTO opportunity_versions'));
+    expect(insert).not.toMatch(/asset_description|asset_name|additional_information|asking_price/);
+    expect(insert).toContain("'confidential'");
+    expect(insert).toContain("'draft'");
+  });
+});

@@ -98,11 +98,11 @@ export function findForDelete(db: D1Database, opportunityId: string): Promise<{ 
 export async function hasLinkedRecords(db: D1Database, opportunityId: string): Promise<boolean> {
   const used = await db
     .prepare(
-      'SELECT (SELECT COUNT(*) FROM nda_requests WHERE opportunity_id = ?1) AS ndas, (SELECT COUNT(*) FROM access_grants WHERE opportunity_id = ?1) AS grants, (SELECT COUNT(*) FROM documents WHERE opportunity_id = ?1) AS docs, (SELECT COUNT(*) FROM managed_form_submissions WHERE opportunity_id = ?1) AS forms',
+      'SELECT (SELECT COUNT(*) FROM nda_requests WHERE opportunity_id = ?1) AS ndas, (SELECT COUNT(*) FROM access_grants WHERE opportunity_id = ?1) AS grants, (SELECT COUNT(*) FROM documents WHERE opportunity_id = ?1) AS docs, (SELECT COUNT(*) FROM managed_form_submissions WHERE opportunity_id = ?1) AS forms, (SELECT COUNT(*) FROM seller_opportunity_links WHERE opportunity_id = ?1) AS sellerLinks',
     )
     .bind(opportunityId)
-    .first<{ ndas: number; grants: number; docs: number; forms: number }>();
-  return Boolean(used && (used.ndas || used.grants || used.docs || used.forms));
+    .first<{ ndas: number; grants: number; docs: number; forms: number; sellerLinks: number }>();
+  return Boolean(used && (used.ndas || used.grants || used.docs || used.forms || used.sellerLinks));
 }
 
 /** Image files stay in storage: the media library is reference-aware and may share them. */

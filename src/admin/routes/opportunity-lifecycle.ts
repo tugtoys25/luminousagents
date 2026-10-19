@@ -3,6 +3,7 @@ import { requireRole } from '../../auth/staff-session';
 import { slugify } from '../../domain/opportunities/slug';
 import { checkLifecycleTransition } from '../../domain/opportunities/lifecycle';
 import { Hono } from 'hono';
+import { sellerGateResult } from '../../seller/gate-check';
 import {
   type AdminApp,
   audit,
@@ -148,6 +149,11 @@ admin.post('/opportunities/:id/publication', requireRole(...publisherRoles), asy
       },
       409,
     );
+  if (publicVisibility || lifecycle === 'published') {
+    const gates = await sellerGateResult(c.env.DB, String(existing.id));
+    if (gates.unmet.length)
+      return c.json({ error: { code: 'SELLER_GATES_NOT_MET', message: 'This seller-sourced opportunity cannot be published until every authority, mandate and review gate is satisfied.', unmet: gates.unmet } }, 409);
+  }
   const timestamp = now();
   await setPublication(c.env.DB, { opportunityId: String(existing.id), lifecycle, publicVisibility, timestamp });
   const cachePurge = await purgeOpportunityPublicCache(
@@ -226,6 +232,9 @@ admin.post(
             'NOT_PUBLIC',
             `This listing is classified ${row.classification.replace('_', ' ')}. Publishing makes it visible to everyone.`,
           );
+        const gates = await sellerGateResult(c.env.DB, row.id);
+        if (gates.unmet.length)
+          return c.json({ error: { code: 'SELLER_GATES_NOT_MET', message: 'This seller-sourced opportunity cannot be published until every authority, mandate and review gate is satisfied.', unmet: gates.unmet } }, 409);
         // A draft must pass through "in review" first; both hops are checked.
         const route =
           row.lifecycle === 'draft' ? ['in_review', 'published'] : row.lifecycle === 'published' ? [] : ['published'];

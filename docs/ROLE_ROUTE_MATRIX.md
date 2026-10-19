@@ -9,7 +9,7 @@ session. `yes` means the role is named in that route's `requireRole(...)`; `·` 
 This matrix describes route-level access only. Record-level rules (for example a broker seeing only
 assigned records) are enforced inside the handlers and are covered by their own tests.
 
-109 routes · 1 open to any signed-in staff role.
+123 routes · 1 open to any signed-in staff role.
 
 | Method | Path | super_admin | admin | editor | broker | publisher | auditor |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -21,6 +21,7 @@ assigned records) are enforced inside the handlers and are covered by their own 
 | GET | `/dashboard/audit` | yes | yes | · | · | · | yes |
 | GET | `/dashboard/audit/export.csv` | yes | yes | · | · | · | yes |
 | GET | `/dashboard/audit/ui` | yes | yes | · | · | · | yes |
+| POST | `/dashboard/authority/:ref/transition` | yes | yes | · | · | · | · |
 | GET | `/dashboard/brokers` | yes | yes | yes | yes | yes | · |
 | GET | `/dashboard/buyer-sessions` | yes | · | · | · | · | · |
 | POST | `/dashboard/buyer-sessions/:id/revoke` | yes | · | · | · | · | · |
@@ -76,6 +77,8 @@ assigned records) are enforced inside the handlers and are covered by their own 
 | POST | `/dashboard/opportunities/:id/media/from-library` | yes | yes | yes | yes | yes | · |
 | POST | `/dashboard/opportunities/:id/publication` | yes | yes | · | · | yes | · |
 | POST | `/dashboard/opportunities/:id/review` | yes | yes | · | · | yes | · |
+| GET | `/dashboard/opportunities/:id/seller-gates` | yes | yes | · | yes | yes | · |
+| POST | `/dashboard/opportunities/:id/seller-publication-review` | yes | yes | · | yes | yes | · |
 | POST | `/dashboard/opportunities/:id/verify` | yes | yes | · | · | yes | · |
 | GET | `/dashboard/opportunities/:id/versions` | yes | yes | yes | yes | yes | · |
 | POST | `/dashboard/opportunities/:id/versions/:versionNumber/restore` | yes | yes | yes | yes | · | · |
@@ -100,12 +103,23 @@ assigned records) are enforced inside the handlers and are covered by their own 
 | GET | `/dashboard/seller-enquiries/:ref` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/assign` | yes | yes | · | · | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/communications` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/convert` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/followups` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/followups/:taskId/complete` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/notes` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/qualification` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/seller` | yes | yes | · | yes | · | · |
+| GET | `/dashboard/seller-enquiries/:ref/seller-candidates` | yes | yes | · | · | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/status` | yes | yes | · | yes | · | · |
 | GET | `/dashboard/seller-enquiries/ui` | yes | yes | · | yes | · | · |
+| GET | `/dashboard/sellers` | yes | yes | · | yes | · | · |
+| GET | `/dashboard/sellers/:ref` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/sellers/:ref/links` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/sellers/:ref/links/:linkId/authority` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/sellers/:ref/links/:linkId/end` | yes | yes | · | · | · | · |
+| POST | `/dashboard/sellers/:ref/links/:linkId/review` | yes | yes | · | · | · | · |
+| POST | `/dashboard/sellers/:ref/update` | yes | yes | · | yes | · | · |
+| GET | `/dashboard/sellers/ui` | yes | yes | · | yes | · | · |
 | GET | `/dashboard/sessions` | yes | · | · | · | · | · |
 | POST | `/dashboard/sessions/:id/revoke` | yes | · | · | · | · | · |
 | GET | `/dashboard/sessions/ui` | yes | · | · | · | · | · |

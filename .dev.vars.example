@@ -47,3 +47,4 @@
 # SELLER_REMINDER_INTERVAL_HOURS=24
 # SELLER_ESCALATION_AFTER_HOURS=48          (unset or 0 disables escalation)
 # SELLER_ESCALATION_RECIPIENTS=manager@example.com
+# SELLER_SEPARATION_OF_DUTIES=true   (set false only if you have a single approver; default enforces a second person)

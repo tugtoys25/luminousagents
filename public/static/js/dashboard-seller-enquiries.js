@@ -125,6 +125,17 @@
       ['Received', when(d.createdAt)], ['First response', when(d.firstResponseAt)], ['Closure', d.closureReason ? `${when(d.closedAt)}: ${d.closureReason}` : ''],
     ]));
     const open_ = !['CONVERTED', 'DECLINED', 'CLOSED'].includes(d.status);
+    if (d.sellerReference) parts.push(h('p', {}, 'Seller: ', h('a', { href: `/dashboard/sellers/ui?selected=${encodeURIComponent(d.sellerReference)}`, text: d.sellerReference })));
+    else if (['QUALIFICATION', 'AUTHORITY_REVIEW', 'QUALIFIED'].includes(d.status) && d.assignedName) {
+      parts.push(h('h3', { text: 'Seller record' }), h('p', { class: 'muted', text: 'Creating a seller copies the contact details from this enquiry. It does not verify authority and does not convert the enquiry.' }),
+        h('button', { type: 'button', class: 'button', text: 'Create seller from this enquiry', onclick: async () => { if (await confirmAction(`Create a seller record from ${d.reference}?`, false)) try { await post(d.reference, 'seller', { mode: 'create', expectedVersion: d.version, confirm: true }, 'Seller created.'); } catch (e) { say(e.message, true); } } }));
+    }
+    if (d.sellerReference && d.status === 'QUALIFIED') {
+      parts.push(h('h3', { text: 'Convert to private draft opportunity' }), h('p', { class: 'muted', text: 'Staff-written, neutral title only. Nothing from the enquiry is copied into public fields; the draft is confidential, unreviewed and not public.' }),
+        form([field('title', 'Neutral title'), field('role', 'Seller role', opts('role', ['OWNER', 'AUTHORISED_REPRESENTATIVE', 'BROKER_INTERMEDIARY', 'PROFESSIONAL_ADVISER', 'OTHER'])), field('opportunityType', 'Type', opts('opportunityType', ['casino-hotel', 'casino', 'hotel', 'resort', 'gaming-venue', 'other']))], 'Convert', async (v) => {
+          if (await confirmAction(`Convert ${d.reference}? The enquiry becomes CONVERTED and a private draft opportunity is created.`, false)) await post(d.reference, 'convert', { title: v.title, role: v.role, opportunityType: v.opportunityType, expectedVersion: d.version, confirm: true }, 'Converted to a private draft opportunity.');
+        }));
+    }
     if (b.canAssign && open_) {
       parts.push(h('h3', { text: 'Assign owner' }), form([field('assigneeId', 'Broker', h('select', { name: 'assigneeId', required: true }, h('option', { value: '', text: 'Select…' }), ...assignees.filter((a) => ['broker', 'admin', 'super_admin'].includes(a.role)).map((a) => h('option', { value: a.id, text: `${a.displayName || a.email} (${a.role})` }))))], 'Assign', async (v) => {
         if (await confirmAction(`Assign ${d.reference} to the selected broker?`, false)) await post(d.reference, 'assign', { assigneeId: v.assigneeId, expectedVersion: d.version, confirm: true }, 'Owner assigned.');

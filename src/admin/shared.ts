@@ -22,6 +22,7 @@ export const publisherRoles = ['admin', 'publisher', 'super_admin'];
 export const sellerReadRoles = ['admin', 'broker', 'super_admin'];
 export const sellerWorkRoles = ['admin', 'broker', 'super_admin'];
 export const sellerAssignRoles = ['admin', 'super_admin'];
+export const authorityReviewRoles = ['admin', 'super_admin'];
 
 export const now = () => new Date().toISOString();
 
