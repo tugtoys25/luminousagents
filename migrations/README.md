@@ -57,3 +57,5 @@ Sprint 32 adds no migration. The numbered set remains 0001 through 0030.
 - `0033_audit_append_only.sql`: triggers making `audit_logs` append-only (rollback: drop the two triggers). Apply to staging first.
 - `0034_seller_staff_workflow.sql`: seller notes, communications, status history, qualification reviews; extra columns on `staff_tasks` (task_type, outcome, reminder/escalation state). Additive.
 - `0035_seller_history_append_only.sql`: append-only triggers for the four tables above (rollback: drop the eight triggers).
+- `0036_sellers_authority_publication.sql`: sellers, seller changes, seller-opportunity links, authority/mandate records and events, publication reviews and events; `seller_enquiries.seller_id`. Additive.
+- `0037_seller_publication_gate_triggers.sql`: append-only triggers for the new history tables and the seller publication gate on `opportunities` (rollback: drop the triggers named in the file). Apply to staging first and confirm existing publication flows still work.

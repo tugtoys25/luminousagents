@@ -21,6 +21,16 @@ export const PERMISSIONS = {
   'seller_enquiries.add_note': ['super_admin', 'admin', 'broker'],
   'seller_enquiries.record_communication': ['super_admin', 'admin', 'broker'],
   'seller_followups.manage': ['super_admin', 'admin', 'broker'],
+  // Phase 3. Brokers act only on sellers they own; verification and approval stay with managers.
+  'sellers.read': ['super_admin', 'admin', 'broker'],
+  'sellers.create': ['super_admin', 'admin', 'broker'],
+  'sellers.update': ['super_admin', 'admin', 'broker'],
+  'authority.read': ['super_admin', 'admin', 'broker'],
+  'authority.submit_evidence': ['super_admin', 'admin', 'broker'],
+  'authority.review': ['super_admin', 'admin'],
+  'authority.approve': ['super_admin', 'admin'],
+  'opportunities.create_draft': ['super_admin', 'admin', 'broker'],
+  'opportunities.approve_publication': ['super_admin', 'admin', 'publisher'],
 } as const satisfies Record<string, readonly StaffRoleName[]>;
 export type Permission = keyof typeof PERMISSIONS;
 

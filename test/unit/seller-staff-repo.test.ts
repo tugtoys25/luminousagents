@@ -13,7 +13,7 @@ const fake = (changes = 1) => {
   };
   return { db: db as unknown as D1Database, batches, queries };
 };
-const enquiry: EnquiryRef = { id: 'e1', reference: 'CM-S-ABC234', status: 'NEW', assignedTo: null, version: 3, firstResponseAt: null };
+const enquiry: EnquiryRef = { id: 'e1', reference: 'CM-S-ABC234', status: 'NEW', assignedTo: null, version: 3, firstResponseAt: null, sellerId: null };
 const actor = { id: 'u1', requestId: 'r1', ts: '2026-10-18T10:00:00.000Z' };
 
 describe('staff repository', () => {

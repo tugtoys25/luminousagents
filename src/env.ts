@@ -34,6 +34,8 @@ export interface Env {
   /** 'true' only after legal review of marketing consent; otherwise the checkbox is not offered and consent is never recorded. */
   SELLER_MARKETING_CONSENT_ENABLED?: string;
   /** 'false' disables follow-up reminders. */
+  /** 'false' disables separation of duties (verifier/approver must differ from the preparer). Default: enforced. */
+  SELLER_SEPARATION_OF_DUTIES?: string;
   SELLER_REMINDERS_ENABLED?: string;
   SELLER_REMINDER_INTERVAL_HOURS?: string;
   /** Hours overdue before a one-off escalation email; unset or 0 disables escalation. Needs SELLER_ESCALATION_RECIPIENTS. */

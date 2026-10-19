@@ -9,6 +9,16 @@ export function generateReference(): string {
   return `CM-S-${out}`;
 }
 
+/** Non-sequential references for other seller entities: sellers CM-C-, authority/mandate records CM-A-. */
+export const SELLER_REF_PATTERN = /^CM-C-[A-HJ-NP-Z2-9]{6}$/;
+export const AUTHORITY_REF_PATTERN = /^CM-A-[A-HJ-NP-Z2-9]{6}$/;
+export function generateRef(prefix: 'CM-C' | 'CM-A'): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  let out = '';
+  for (const b of bytes) out += ALPHABET[b & 31];
+  return `${prefix}-${out}`;
+}
+
 export async function keyedHash(secret: string, value: string): Promise<string> {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value));

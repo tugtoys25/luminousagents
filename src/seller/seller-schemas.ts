@@ -1,0 +1,61 @@
+import { z } from 'zod';
+import { AUTHORITY_STATUSES, AUTHORITY_TYPES, EVIDENCE_TYPES, isSafeEvidenceRef } from './authority';
+import { OPPORTUNITY_TYPES } from './seller-constants';
+
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
+const text = (min: number, max: number) => z.string().trim().min(min).max(max).refine((v) => !CONTROL.test(v), 'Unsupported characters');
+const optionalText = (max: number) => z.string().trim().max(max).refine((v) => !CONTROL.test(v), 'Unsupported characters').optional();
+const uuid = z.string().uuid();
+const version = z.number().int().min(1);
+const isoDate = z.string().datetime();
+export const LINK_ROLES = ['OWNER', 'AUTHORISED_REPRESENTATIVE', 'BROKER_INTERMEDIARY', 'PROFESSIONAL_ADVISER', 'OTHER'] as const;
+
+export const sellerListQuery = z.object({
+  q: z.string().trim().max(100).optional().catch(undefined),
+  status: z.enum(['ACTIVE', 'RESTRICTED', 'INACTIVE']).optional().catch(undefined),
+  page: z.coerce.number().int().min(1).max(10_000).catch(1),
+});
+export const sellerFromEnquirySchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('create'), expectedVersion: version, confirm: z.literal(true) }),
+  z.object({ mode: z.literal('link'), sellerReference: z.string().regex(/^CM-C-[A-HJ-NP-Z2-9]{6}$/), expectedVersion: version, confirm: z.literal(true) }),
+]);
+export const sellerUpdateSchema = z.object({
+  expectedVersion: version,
+  reason: text(5, 500),
+  changes: z.object({
+    displayName: text(2, 160), organisation: text(1, 160).nullable(), contactName: text(2, 120), contactEmail: z.string().trim().max(254).email(),
+    contactTelephone: text(5, 40).nullable(), status: z.enum(['ACTIVE', 'RESTRICTED', 'INACTIVE']), confidentialityRestrictions: optionalText(2000),
+  }).partial().refine((v) => Object.keys(v).length > 0, 'Provide at least one change'),
+});
+export const linkSchema = z.object({ opportunityId: uuid, role: z.enum(LINK_ROLES), confidentialityRestrictions: optionalText(2000), confirm: z.literal(true) });
+export const linkReviewSchema = z.object({ confirm: z.literal(true) });
+export const convertSchema = z.object({
+  title: text(3, 180),
+  country: optionalText(100),
+  opportunityType: z.enum(OPPORTUNITY_TYPES).default('casino-hotel'),
+  role: z.enum(LINK_ROLES),
+  expectedVersion: version,
+  confirm: z.literal(true),
+});
+export const authorityCreateSchema = z.object({
+  authorityType: z.enum(AUTHORITY_TYPES),
+  evidenceType: z.enum(EVIDENCE_TYPES).default('NONE'),
+  evidenceRef: z.string().trim().refine(isSafeEvidenceRef, 'Use a storage or compliance-system reference, not a URL').optional(),
+  scope: optionalText(1000), limitations: optionalText(1000), exclusive: z.boolean().default(false),
+  validFrom: isoDate.optional(), validUntil: isoDate.optional(),
+});
+export const authorityTransitionSchema = z.object({
+  to: z.enum(AUTHORITY_STATUSES), expectedVersion: version, note: text(3, 1000), confirm: z.boolean().optional(),
+  evidenceType: z.enum(EVIDENCE_TYPES).optional(),
+  evidenceRef: z.string().trim().refine(isSafeEvidenceRef, 'Use a storage or compliance-system reference, not a URL').optional(),
+  scope: optionalText(1000), limitations: optionalText(1000), validFrom: isoDate.optional(), validUntil: isoDate.optional(),
+});
+export const publicationReviewSchema = z.object({
+  action: z.enum(['save', 'approve', 'reject', 'revoke']),
+  expectedVersion: version.optional(),
+  scopeText: optionalText(1000),
+  scopeConfirmed: z.boolean().optional(), confidentialityReviewed: z.boolean().optional(), publicFieldsApproved: z.boolean().optional(),
+  sensitiveDataReviewed: z.boolean().optional(), imageRightsChecked: z.boolean().optional(), legalReviewCompleted: z.boolean().optional(),
+  notes: optionalText(2000), reason: optionalText(500), confirm: z.boolean().optional(),
+});
