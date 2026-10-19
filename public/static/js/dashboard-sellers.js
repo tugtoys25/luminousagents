@@ -138,7 +138,7 @@
             const note = await confirmAction(`Move ${r.reference} to ${label(to)}? Enter a review note.`, true);
             if (!note) return;
             const body = { to, note, expectedVersion: r.version, confirm: true };
-            if (to === 'VERIFIED') { const t = window.prompt('Evidence type (POWER_OF_ATTORNEY, BOARD_RESOLUTION, SIGNED_MANDATE, OWNERSHIP_RECORD, OTHER):', r.evidenceType === 'NONE' ? '' : r.evidenceType); const s = prompt('Scope of authority:', r.scope || ''); const u = prompt('Valid until (ISO date-time, blank for none):', r.validUntil || ''); if (t) body.evidenceType = t; if (s) body.scope = s; if (u) body.validUntil = u; }
+            if (to === 'VERIFIED') { const t = window.prompt('Evidence type (POWER_OF_ATTORNEY, BOARD_RESOLUTION, SIGNED_MANDATE, OWNERSHIP_RECORD, OTHER):', r.evidenceType === 'NONE' ? '' : r.evidenceType); const s = window.prompt('Scope of authority:', r.scope || ''); const u = window.prompt('Valid until (ISO date-time, blank for none):', r.validUntil || ''); if (t) body.evidenceType = t; if (s) body.scope = s; if (u) body.validUntil = u; }
             try { await post(`/dashboard/authority/${r.reference}/transition`, body, `Moved to ${label(to)}.`, ref); } catch (e) { say(e.message, true); }
           } })) : [])));
       }
