@@ -16,6 +16,10 @@ export default defineWorkersConfig(async () => {
         'test/unit/sprint3[01]-*.test.ts',
       ],
       setupFiles: ['./test/apply-migrations.ts'],
+      // Several repo tests run many ordered steps inside one `it` and took 6 to 7 seconds on a busy
+      // CI runner, past the 5 second default. A longer limit only stops false timeouts.
+      testTimeout: 30_000,
+      hookTimeout: 30_000,
       poolOptions: {
         workers: {
           wrangler: { configPath: './wrangler.jsonc' },
