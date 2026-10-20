@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { requireRecentMfa } from '../../auth/step-up';
 import { requireRole } from '../../auth/staff-session';
 import { APPROVAL_STATUSES, canAuthorityTransition, isAuthorityStatus, WITHDRAWING_STATUSES } from '../../seller/authority';
 import { changeAuthority, findAuthority, insertAuthority, opportunityForLink } from '../../seller/authority-repo';
@@ -43,7 +44,7 @@ admin.post('/sellers/:ref/links/:linkId/authority', requireRole(...sellerWorkRol
 });
 
 /** Review and approval. Brokers cannot call this; verification also needs a different person from the preparer when separation is enforced. */
-admin.post('/authority/:ref/transition', requireRole(...authorityReviewRoles), async (c) => {
+admin.post('/authority/:ref/transition', requireRole(...authorityReviewRoles), requireRecentMfa('/dashboard/sellers/ui'), async (c) => {
   const parsed = authorityTransitionSchema.safeParse(await readJson(c));
   if (!parsed.success) return jsonError(c, 422, 'VALIDATION_ERROR', 'Provide the new status, a note of at least 3 characters and the record version.');
   const ref = c.req.param('ref') ?? '';

@@ -5,6 +5,7 @@ import {
   CONFIRM_REQUIRED, GENERIC_ENDPOINT_BLOCKED, QUALIFICATION_ITEMS, REASON_REQUIRED, canTransition, genericTransitions, isStatus, isTerminal,
 } from '../../seller/lifecycle';
 import { assignSchema, listQuerySchema, statusSchema } from '../../seller/staff-schemas';
+import { listMessages } from '../../seller/message-repo';
 import { jsonError, loadEnquiry, readJson, scopeOf } from '../../seller/staff-access';
 import {
   applyStatusOrAssignment, getEnquiry, hasPassingQualification, isAssignableOwner, latestQualification, listAuditFor, listCommunications,
@@ -33,9 +34,9 @@ admin.get('/seller-enquiries/:ref', requireRole(...sellerReadRoles), async (c) =
   const row = await getEnquiry(c.env.DB, ref, scopeOf(c));
   if (!row) return jsonError(c, 404, 'NOT_FOUND', 'Enquiry not found.');
   const { id: enquiryId, ...data } = row as Record<string, unknown> & { id: string };
-  const [notes, communications, followups, history, auditTrail, qualification] = await Promise.all([
+  const [notes, communications, followups, history, auditTrail, qualification, messages] = await Promise.all([
     listNotes(c.env.DB, enquiryId), listCommunications(c.env.DB, enquiryId), listFollowups(c.env.DB, enquiryId),
-    listHistory(c.env.DB, enquiryId), listAuditFor(c.env.DB, enquiryId), latestQualification(c.env.DB, enquiryId),
+    listHistory(c.env.DB, enquiryId), listAuditFor(c.env.DB, enquiryId), latestQualification(c.env.DB, enquiryId), listMessages(c.env.DB, enquiryId),
   ]);
   const role = c.get('staff').role;
   const status = String(data.status);
@@ -43,7 +44,7 @@ admin.get('/seller-enquiries/:ref', requireRole(...sellerReadRoles), async (c) =
     ? genericTransitions(status).filter((t) => t !== 'ASSIGNED' && (!MANAGER_ONLY_STATUSES.includes(t) || sellerAssignRoles.includes(role)))
     : [];
   return c.json({
-    data, notes, communications, followups, history, audit: auditTrail,
+    data, notes, communications, followups, history, audit: auditTrail, messages,
     qualification: qualification ? { ...qualification, checklist: JSON.parse(String(qualification.checklistJson)), checklistJson: undefined } : null,
     allowedTransitions: transitions,
     qualificationItems: QUALIFICATION_ITEMS,

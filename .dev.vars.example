@@ -48,3 +48,5 @@
 # SELLER_ESCALATION_AFTER_HOURS=48          (unset or 0 disables escalation)
 # SELLER_ESCALATION_RECIPIENTS=manager@example.com
 # SELLER_SEPARATION_OF_DUTIES=true   (set false only if you have a single approver; default enforces a second person)
+# SELLER_MATERIAL_INTEREST_DUAL_APPROVAL=false   (true requires a second person to approve a material-interest notice)
+# SELLER_RETENTION_REVIEW_DAYS=                    (leave unset until the business approves a retention period)

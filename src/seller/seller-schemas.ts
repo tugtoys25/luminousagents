@@ -59,3 +59,30 @@ export const publicationReviewSchema = z.object({
   sensitiveDataReviewed: z.boolean().optional(), imageRightsChecked: z.boolean().optional(), legalReviewCompleted: z.boolean().optional(),
   notes: optionalText(2000), reason: optionalText(500), confirm: z.boolean().optional(),
 });
+
+// ---- Phase 4 ----
+const PHONE = /^[0-9+()\-.\s/xX#]{5,40}$/;
+export const followupDraftSchema = z.object({
+  questions: z.array(text(5, 300)).min(1).max(8),
+  brokerTitle: text(2, 80),
+  brokerTelephone: z.string().trim().regex(PHONE).optional(),
+});
+export const sendMessageSchema = z.object({ expectedVersion: version, confirm: z.literal(true) });
+export const cancelMessageSchema = z.object({ reason: text(5, 500), confirm: z.literal(true) });
+export const INTEREST_TYPES = ['INITIAL_ENQUIRY', 'REQUEST_FOR_INFORMATION', 'MEETING_REQUEST', 'INDICATION_OF_INTEREST', 'INDICATIVE_PROPOSAL', 'FORMAL_OFFER'] as const;
+export const interestRecordSchema = z.object({
+  interestType: z.enum(INTEREST_TYPES), receivedAt: isoDate.optional(), source: text(2, 200), summary: text(2, 2000), buyerReference: optionalText(120),
+});
+export const interestReviewSchema = z.object({
+  action: z.enum(['start_review', 'approve', 'reject', 'withdraw']), expectedVersion: version, note: text(3, 1000), confirm: z.boolean().optional(),
+  approvedSummary: optionalText(1500), proposedNextStep: optionalText(500), stageLabel: optionalText(120),
+  confidentialityChecked: z.boolean().optional(), notificationEligible: z.boolean().optional(),
+});
+export const notificationDraftSchema = z.object({ brokerTitle: text(2, 80), brokerTelephone: z.string().trim().regex(PHONE).optional() });
+export const anonymiseSchema = z.object({ reason: text(5, 500), confirmReference: z.string().regex(/^CM-S-[A-HJ-NP-Z2-9]{6}$/), confirm: z.literal(true) });
+export const legalHoldSchema = z.object({ hold: z.boolean(), reason: text(5, 500), confirm: z.literal(true) });
+export const privacyRequestSchema = z.object({
+  requestType: z.enum(['ACCESS', 'ERASURE', 'RECTIFICATION', 'RESTRICTION', 'MARKETING_WITHDRAWAL', 'OTHER']),
+  enquiryReference: z.string().regex(/^CM-S-[A-HJ-NP-Z2-9]{6}$/).optional(), receivedAt: isoDate.optional(), dueAt: isoDate.optional(),
+});
+export const privacyUpdateSchema = z.object({ status: z.enum(['IN_PROGRESS', 'COMPLETED', 'REFUSED']), outcomeNote: text(5, 1000), expectedVersion: version, confirm: z.literal(true) });

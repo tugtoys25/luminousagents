@@ -105,6 +105,13 @@
           kw: 'sellers sell casino brokerage leads',
         },
         {
+          label: 'Seller privacy',
+          href: '/dashboard/seller-privacy/ui',
+          icon: 'shield',
+          match: ['/dashboard/seller-privacy'],
+          kw: 'retention anonymise privacy request legal hold',
+        },
+        {
           label: 'NDA requests',
           href: '/dashboard/nda-requests/ui',
           icon: 'shield',

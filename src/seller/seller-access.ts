@@ -14,3 +14,6 @@ export async function loadSeller(c: Ctx): Promise<SellerRef | Response> {
 
 /** Separation of duties is on unless explicitly disabled by configuration. */
 export const separationEnforced = (env: Env): boolean => env.SELLER_SEPARATION_OF_DUTIES !== 'false';
+
+/** Dual approval of material-interest notices is OFF unless the business adopts it. */
+export const dualApprovalEnabled = (env: Env): boolean => env.SELLER_MATERIAL_INTEREST_DUAL_APPROVAL === 'true';

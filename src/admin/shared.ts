@@ -23,6 +23,9 @@ export const sellerReadRoles = ['admin', 'broker', 'super_admin'];
 export const sellerWorkRoles = ['admin', 'broker', 'super_admin'];
 export const sellerAssignRoles = ['admin', 'super_admin'];
 export const authorityReviewRoles = ['admin', 'super_admin'];
+export const sellerInterestApproveRoles = ['admin', 'super_admin'];
+export const sellerRetentionRoles = ['admin', 'super_admin'];
+export const sellerExportRoles = ['super_admin'];
 
 export const now = () => new Date().toISOString();
 

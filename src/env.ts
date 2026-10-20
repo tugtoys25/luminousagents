@@ -36,6 +36,10 @@ export interface Env {
   /** 'false' disables follow-up reminders. */
   /** 'false' disables separation of duties (verifier/approver must differ from the preparer). Default: enforced. */
   SELLER_SEPARATION_OF_DUTIES?: string;
+  /** 'true' requires a second person to approve a material-interest notice (and its interest review). Default: not required. */
+  SELLER_MATERIAL_INTEREST_DUAL_APPROVAL?: string;
+  /** Days after closure before a declined/closed unlinked enquiry is listed for retention review. Unset = no approved policy; nothing is listed. */
+  SELLER_RETENTION_REVIEW_DAYS?: string;
   SELLER_REMINDERS_ENABLED?: string;
   SELLER_REMINDER_INTERVAL_HOURS?: string;
   /** Hours overdue before a one-off escalation email; unset or 0 disables escalation. Needs SELLER_ESCALATION_RECIPIENTS. */
