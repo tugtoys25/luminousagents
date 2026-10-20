@@ -135,3 +135,30 @@ describe('seller phase 4 (static checks)', () => {
     expect(read('migrations/0038_seller_messages_interest_privacy.sql')).not.toMatch(/\bDROP\s+(TABLE|COLUMN)|\bDELETE\s+FROM/i);
   });
 });
+
+describe('seller gap closure (static checks)', () => {
+  it('closing or declining requires step-up, and assignment notifies through the outbox', () => {
+    const src = read('src/admin/routes/seller-enquiries.ts');
+    expect(src).toContain("stepUpResponse(c, '/dashboard/seller-enquiries/ui')");
+    expect(src).toContain('seller_assignment:');
+    expect(read('src/seller/staff-repo.ts')).toContain('INSERT OR IGNORE INTO notification_jobs');
+  });
+  it('seller routes are covered by the denial audit', () => {
+    const routes = read('src/admin/routes.ts');
+    for (const p of ["'/sellers/*'", "'/seller-enquiries/*'", "'/authority/*'", "'/seller-material-notices/*'", "'/seller-retention/*'"]) expect(routes, p).toContain(p);
+    expect(read('src/seller/denial-audit.ts')).toContain('routePattern(c.req.path)');
+  });
+  it('seller erasure carries every precondition in the single update that gates all redactions', () => {
+    const repo = read('src/seller/privacy-repo.ts');
+    const body = repo.slice(repo.indexOf('export async function anonymiseSeller'));
+    for (const needle of ["status = 'INACTIVE'", "relationship_status = 'ACTIVE'", 'legal_hold = 0', "e.legal_hold = 1", "i.stage IN ('RECORDED','UNDER_REVIEW','APPROVED')", 'public_visibility = 1']) expect(body, needle).toContain(needle);
+    expect(read('src/admin/routes/seller-privacy.ts')).toMatch(/\/sellers\/:ref\/anonymise', requireRole\(\.\.\.sellerRetentionRoles\), requireRecentMfa/);
+  });
+  it('additional contacts are never used as notice recipients', () => {
+    expect(read('src/admin/routes/seller-interest.ts')).not.toMatch(/seller_contacts|listSellerContacts/);
+    expect(read('src/seller/jobs.ts')).not.toMatch(/seller_contacts|listSellerContacts/);
+  });
+  it('the e2e suite never targets production and ships a seller spec', () => {
+    expect(read('e2e/tests/seller-workflow.spec.ts')).toContain('/sell-a-casino');
+  });
+});

@@ -123,6 +123,9 @@
       if (!Object.keys(changes).length) { say('Nothing changed.', true); return; }
       await post(`/dashboard/sellers/${ref}/update`, { expectedVersion: d.version, reason: v.reason, changes }, 'Seller updated.', ref);
     }));
+    parts.push(h('h3', { text: 'Additional contacts' }), h('p', { class: 'muted', text: 'Informational only. Seller notices go to the primary contact above, never automatically to these people.' }));
+    for (const c of b.contacts) parts.push(h('p', {}, `${c.name}${c.roleTitle ? `, ${c.roleTitle}` : ''} · ${c.email}${c.telephone ? ` · ${c.telephone}` : ''} `, h('button', { type: 'button', text: 'Remove', onclick: async () => { if (await confirmAction(`Remove ${c.name} from this seller?`, false)) try { await post(`/dashboard/sellers/${ref}/contacts/${c.id}/remove`, {}, 'Contact removed.', ref); } catch (e) { say(e.message, true); } } })));
+    parts.push(form([field('Name', input('name', { required: true, maxlength: 120 })), field('Role', input('roleTitle', { maxlength: 120 })), field('Email', input('email', { type: 'email', required: true, maxlength: 254 })), field('Telephone', input('telephone', { maxlength: 40 }))], 'Add contact', (v) => post(`/dashboard/sellers/${ref}/contacts`, { name: v.name, roleTitle: v.roleTitle || undefined, email: v.email, telephone: v.telephone || undefined }, 'Contact added.', ref)));
     parts.push(...list('Linked enquiries', b.enquiries, (e) => `${e.reference} · ${label(e.status)} · ${label(e.assetType)} · ${e.assetCountry} · ${when(e.createdAt)}`));
     parts.push(h('h3', { text: 'Linked opportunities' }));
     if (!b.links.length) parts.push(h('p', { class: 'muted', text: 'None.' }));

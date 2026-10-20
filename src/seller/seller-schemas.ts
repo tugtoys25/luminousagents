@@ -86,3 +86,10 @@ export const privacyRequestSchema = z.object({
   enquiryReference: z.string().regex(/^CM-S-[A-HJ-NP-Z2-9]{6}$/).optional(), receivedAt: isoDate.optional(), dueAt: isoDate.optional(),
 });
 export const privacyUpdateSchema = z.object({ status: z.enum(['IN_PROGRESS', 'COMPLETED', 'REFUSED']), outcomeNote: text(5, 1000), expectedVersion: version, confirm: z.literal(true) });
+
+// ---- Gap closure ----
+export const contactSchema = z.object({
+  name: text(2, 120), roleTitle: optionalText(120), email: z.string().trim().max(254).email(),
+  telephone: z.string().trim().regex(/^[0-9+()\-.\s/xX#]{5,40}$/).optional(),
+});
+export const sellerAnonymiseSchema = z.object({ reason: text(5, 500), confirmReference: z.string().regex(/^CM-C-[A-HJ-NP-Z2-9]{6}$/), confirm: z.literal(true) });

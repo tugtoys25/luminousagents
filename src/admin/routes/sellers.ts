@@ -5,7 +5,7 @@ import { listInterests } from '../../seller/interest-repo';
 import { loadSeller, sellerScopeOf } from '../../seller/seller-access';
 import {
   getSeller, listSellerAuthority, listSellerChanges, listSellerCommunications, listSellerEnquiries, listSellerFollowups, listSellerLinks, listSellerNotes,
-  listSellers, SELLER_PAGE_SIZE, updateSeller,
+  listSellerContacts, listSellers, SELLER_PAGE_SIZE, updateSeller,
 } from '../../seller/seller-repo';
 import { sellerListQuery, sellerUpdateSchema } from '../../seller/seller-schemas';
 import { jsonError, readJson } from '../../seller/staff-access';
@@ -37,12 +37,12 @@ admin.get('/sellers/:ref', requireRole(...sellerWorkRoles), async (c) => {
   if (!row) return jsonError(c, 404, 'NOT_FOUND', 'Seller not found.');
   const { id: sellerId, ownerId: _owner, ...data } = row as Record<string, unknown> & { id: string; ownerId: unknown };
   void _owner;
-  const [enquiries, links, authority, changes, followups, communications, notes, auditTrail, interests] = await Promise.all([
+  const [enquiries, links, authority, changes, followups, communications, notes, auditTrail, interests, contacts] = await Promise.all([
     listSellerEnquiries(c.env.DB, sellerId), listSellerLinks(c.env.DB, sellerId), listSellerAuthority(c.env.DB, sellerId), listSellerChanges(c.env.DB, sellerId),
-    listSellerFollowups(c.env.DB, sellerId), listSellerCommunications(c.env.DB, sellerId), listSellerNotes(c.env.DB, sellerId), listAuditForEntity(c.env.DB, 'seller', sellerId), listInterests(c.env.DB, sellerId),
+    listSellerFollowups(c.env.DB, sellerId), listSellerCommunications(c.env.DB, sellerId), listSellerNotes(c.env.DB, sellerId), listAuditForEntity(c.env.DB, 'seller', sellerId), listInterests(c.env.DB, sellerId), listSellerContacts(c.env.DB, sellerId),
   ]);
   const withActions = authority.map((r) => ({ ...r, allowedTransitions: isAuthorityStatus(r.status) ? authorityTransitions(r.status) : [] }));
-  return c.json({ data, enquiries, links, interests, authority: withActions, changes, followups, communications, notes, audit: auditTrail, canReview: ['admin', 'super_admin'].includes(c.get('staff').role) });
+  return c.json({ data, contacts, enquiries, links, interests, authority: withActions, changes, followups, communications, notes, audit: auditTrail, canReview: ['admin', 'super_admin'].includes(c.get('staff').role) });
 });
 
 /** Corrections are version-checked, need a reason, and keep the previous value in seller_changes. */

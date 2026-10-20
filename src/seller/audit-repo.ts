@@ -18,3 +18,8 @@ export async function listAuditForEntity(db: D1Database, entityType: string, ent
     .all<Record<string, unknown>>();
   return r.results ?? [];
 }
+
+/** A refused request to a seller route. Stores the route PATTERN (never raw identifiers) and the actor's role. */
+export async function recordDenial(db: D1Database, d: { id: string; actorId: string; role: string; method: string; routePath: string; code: string; requestId: string; ts: string }): Promise<void> {
+  await auditStmt(db, { id: d.id, actorId: d.actorId, action: d.code === 'STEP_UP_REQUIRED' ? 'seller.step_up_required' : 'seller.permission_denied', entityType: 'seller_access', entityId: d.routePath.slice(0, 120), requestId: d.requestId, details: { method: d.method, role: d.role, code: d.code }, ts: d.ts }).run();
+}

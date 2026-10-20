@@ -87,3 +87,57 @@ export async function listPrivacyRequests(db: D1Database, status: string): Promi
 export async function recordExport(db: D1Database, p: Actor & { enquiryId: string; reference: string; auditId: string }): Promise<void> {
   await auditStmt(db, { id: p.auditId, actorId: p.id, action: 'seller_enquiry.exported', entityType: 'seller_enquiry', entityId: p.enquiryId, requestId: p.requestId, details: { reference: p.reference }, ts: p.ts }).run();
 }
+
+export interface PrivacySeller { id: string; reference: string; status: string; legalHold: number; anonymisedAt: string | null }
+export function findPrivacySeller(db: D1Database, reference: string): Promise<PrivacySeller | null> {
+  return db.prepare('SELECT id, reference, status, legal_hold AS legalHold, anonymised_at AS anonymisedAt FROM sellers WHERE reference = ?').bind(reference).first<PrivacySeller>();
+}
+
+export async function setSellerLegalHold(db: D1Database, p: Actor & { seller: PrivacySeller; hold: boolean; reason: string; auditId: string }): Promise<boolean> {
+  const r = await db.batch([
+    db.prepare('UPDATE sellers SET legal_hold = ?, version = version + 1, updated_at = ? WHERE id = ? AND anonymised_at IS NULL AND legal_hold <> ?').bind(p.hold ? 1 : 0, p.ts, p.seller.id, p.hold ? 1 : 0),
+    auditIfChangedStmt(db, { id: p.auditId, actorId: p.id, action: p.hold ? 'seller.legal_hold_set' : 'seller.legal_hold_cleared', entityType: 'seller', entityId: p.seller.id, requestId: p.requestId, details: { reference: p.seller.reference, reason: p.reason }, ts: p.ts }),
+  ]);
+  return (r[0]?.meta?.changes ?? 0) > 0;
+}
+
+/**
+ * Irreversible erasure of a seller and everything personal that hangs off it, in ONE transaction. The seller UPDATE carries every precondition
+ * (INACTIVE, no hold, no active relationship, no open or held enquiry, no open material interest, no live listing); every later redaction is
+ * guarded on that UPDATE having happened. Structure, references, dates and the audit log are kept.
+ */
+export async function anonymiseSeller(db: D1Database, p: Actor & { seller: PrivacySeller; reason: string; auditId: string }): Promise<boolean> {
+  const s = p.seller;
+  const done = 'EXISTS (SELECT 1 FROM sellers WHERE id = ? AND anonymised_at = ?)';
+  const enquiries = '(SELECT id FROM seller_enquiries WHERE seller_id = ?)';
+  const r = await db.batch([
+    db.prepare(`UPDATE sellers SET display_name = 'Anonymised seller', organisation = NULL, contact_name = 'Anonymised', contact_email = 'anonymised-' || id || '@invalid.example', contact_telephone = NULL, contact_country = NULL,
+        preferred_contact_method = NULL, confidentiality_restrictions = '', anonymised_at = ?, version = version + 1, updated_at = ?
+      WHERE id = ? AND anonymised_at IS NULL AND legal_hold = 0 AND status = 'INACTIVE'
+        AND NOT EXISTS (SELECT 1 FROM seller_opportunity_links l WHERE l.seller_id = sellers.id AND l.relationship_status = 'ACTIVE')
+        AND NOT EXISTS (SELECT 1 FROM seller_opportunity_links l JOIN opportunities o ON o.id = l.opportunity_id WHERE l.seller_id = sellers.id AND (o.public_visibility = 1 OR o.lifecycle = 'published'))
+        AND NOT EXISTS (SELECT 1 FROM seller_enquiries e WHERE e.seller_id = sellers.id AND (e.legal_hold = 1 OR e.status NOT IN ('CONVERTED','DECLINED','CLOSED')))
+        AND NOT EXISTS (SELECT 1 FROM seller_material_interests i WHERE i.seller_id = sellers.id AND i.stage IN ('RECORDED','UNDER_REVIEW','APPROVED'))`).bind(p.ts, p.ts, s.id),
+    db.prepare(`UPDATE seller_enquiries SET contact_name = 'Anonymised', contact_role_other = NULL, email = 'anonymised-' || id || '@invalid.example', telephone = NULL, organisation = NULL, asset_type_other = NULL, asset_name = NULL,
+        asset_description = '[removed]', additional_information = NULL, asking_price_text = NULL, currency_other = NULL, original_submission_json = '{}', source_ip_hash = NULL, idempotency_hash = 'anonymised:' || id,
+        anonymised_at = ?, version = version + 1, updated_at = ? WHERE seller_id = ? AND anonymised_at IS NULL AND ${done}`).bind(p.ts, p.ts, s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_contacts SET name = 'Anonymised', role_title = '', email = 'anonymised-' || id || '@invalid.example', telephone = NULL, status = 'REMOVED', updated_at = ? WHERE seller_id = ? AND ${done}`).bind(p.ts, s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_changes SET old_value = CASE WHEN old_value IS NULL THEN NULL ELSE '[redacted]' END, new_value = CASE WHEN new_value IS NULL THEN NULL ELSE '[redacted]' END WHERE seller_id = ? AND ${done}`).bind(s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_opportunity_links SET confidentiality_restrictions = '', updated_at = ? WHERE seller_id = ? AND ${done}`).bind(p.ts, s.id, s.id, p.ts),
+    // CHECK constraints require a scope of 5+ characters on VERIFIED rows and 10+ characters of reason on NOT_REQUIRED rows: '[redacted]' satisfies both.
+    db.prepare(`UPDATE seller_authority_records SET scope = '[redacted]', limitations = '', review_notes = '[redacted]', evidence_ref = NULL WHERE link_id IN (SELECT id FROM seller_opportunity_links WHERE seller_id = ?) AND ${done}`).bind(s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_authority_events SET note = '[redacted]' WHERE record_id IN (SELECT r.id FROM seller_authority_records r JOIN seller_opportunity_links l ON l.id = r.link_id WHERE l.seller_id = ?) AND note <> '[redacted]' AND ${done}`).bind(s.id, s.id, p.ts),
+    // The approved-stage CHECK needs 20+ characters of approved text, so the placeholder is deliberately long enough.
+    db.prepare(`UPDATE seller_material_interests SET buyer_reference = '', source = '', summary_internal = '[redacted]', approved_summary = CASE WHEN approved_summary = '' THEN '' ELSE '[redacted under retention policy]' END, proposed_next_step = '', stage_label = '' WHERE seller_id = ? AND ${done}`).bind(s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_material_interest_events SET note = '[redacted]' WHERE interest_id IN (SELECT id FROM seller_material_interests WHERE seller_id = ?) AND note <> '[redacted]' AND ${done}`).bind(s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_enquiry_notes SET note = '[redacted]' WHERE enquiry_id IN ${enquiries} AND note <> '[redacted]' AND ${done}`).bind(s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_communications SET summary = '[redacted]' WHERE enquiry_id IN ${enquiries} AND summary <> '[redacted]' AND ${done}`).bind(s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_enquiry_status_history SET reason = '[redacted]' WHERE enquiry_id IN ${enquiries} AND reason IS NOT NULL AND reason <> '[redacted]' AND ${done}`).bind(s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_enquiry_qualifications SET checklist_json = '[]', next_action = '[redacted]' WHERE enquiry_id IN ${enquiries} AND (checklist_json <> '[]' OR next_action <> '[redacted]') AND ${done}`).bind(s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_outbound_messages SET subject = '[redacted]', body_text = '[redacted]', body_html = '[redacted]', recipient_email = 'redacted@invalid.example' WHERE (enquiry_id IN ${enquiries} OR seller_id = ?) AND body_text <> '[redacted]' AND ${done}`).bind(s.id, s.id, s.id, p.ts),
+    db.prepare(`UPDATE staff_tasks SET title = '[redacted]', description = '', outcome = NULL WHERE related_entity_type = 'seller_enquiry' AND related_entity_id IN ${enquiries} AND ${done}`).bind(s.id, s.id, p.ts),
+    db.prepare(`INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', 'seller.anonymised', 'seller', ?, ?, ?, ? WHERE ${done}`)
+      .bind(p.auditId, p.id, s.id, p.requestId, JSON.stringify({ reference: s.reference, reason: p.reason }), p.ts, s.id, p.ts),
+  ]);
+  return (r[0]?.meta?.changes ?? 0) > 0;
+}

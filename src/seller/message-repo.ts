@@ -114,3 +114,9 @@ export async function listMessages(db: D1Database, enquiryId: string): Promise<R
     WHERE m.enquiry_id = ? ORDER BY m.created_at DESC LIMIT 50`).bind(enquiryId).all<Row>();
   return r.results ?? [];
 }
+
+/** Subject export includes the text sent about the person (it is their own correspondence). */
+export async function listMessagesForExport(db: D1Database, enquiryId: string): Promise<Row[]> {
+  const r = await db.prepare("SELECT m.kind, m.status, m.subject, m.body_text AS bodyText, m.template_id AS templateId, m.created_at AS createdAt, m.sent_at AS sentAt FROM seller_outbound_messages m WHERE m.enquiry_id = ? AND m.status IN ('SENT','CANCELLED','QUEUED','SENDING') ORDER BY m.created_at").bind(enquiryId).all<Row>();
+  return r.results ?? [];
+}

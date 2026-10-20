@@ -2,13 +2,14 @@
 import type { Env } from '../env';
 import { PermanentEmailError, type SendEmailFn } from '../operations/email-errors';
 import { renderSellerAcknowledgement, renderSellerFollowupDue, renderSellerInternalAlert, TEMPLATE_ACK, type SellerEmailConfig } from './emails';
-import { JOB_ACK, JOB_FOLLOWUP_DUE, JOB_INTERNAL_ALERT, findSellerEnquiryForEmail } from './repo';
+import { JOB_ACK, JOB_ASSIGNMENT, JOB_FOLLOWUP_DUE, JOB_INTERNAL_ALERT, findSellerEnquiryForEmail } from './repo';
 import { contentHash } from './emails-outbound';
 import { cancelIneligible, claimForSend, completeSend, dispatchView } from './message-repo';
-import { findFollowupForReminder, recordSystemCommunication } from './staff-repo';
+import { renderSellerAssignment } from './emails-internal';
+import { findAssignmentNotice, findFollowupForReminder, recordSystemCommunication } from './staff-repo';
 
 export const JOB_SELLER_MESSAGE = 'seller.message_send';
-export const isSellerJob = (type: string): boolean => type === JOB_ACK || type === JOB_INTERNAL_ALERT || type === JOB_FOLLOWUP_DUE || type === JOB_SELLER_MESSAGE;
+export const isSellerJob = (type: string): boolean => type === JOB_ACK || type === JOB_INTERNAL_ALERT || type === JOB_FOLLOWUP_DUE || type === JOB_SELLER_MESSAGE || type === JOB_ASSIGNMENT;
 
 export const parseRecipients = (raw: string | undefined): string[] =>
   (raw ?? '').split(',').map((v) => v.trim()).filter((v) => /^[^\s@,]+@[^\s@,]+$/.test(v));
@@ -46,6 +47,15 @@ export async function handleSellerJob(env: Env, job: { id: string; job_type: str
     if (!(await claimForSend(env.DB, m.id, ts))) return true; // revoked between the checks and the claim
     await send(env, m.recipient, m.subject, m.bodyHtml, m.bodyText, idem, { from, replyTo: env.SELLER_REPLY_TO });
     await completeSend(env.DB, { message: m, jobId: job.id, commId: crypto.randomUUID(), eventId: crypto.randomUUID(), auditId: crypto.randomUUID(), ts: new Date().toISOString() });
+    return true;
+  }
+
+  if (job.job_type === JOB_ASSIGNMENT) {
+    const notice = await findAssignmentNotice(env.DB, String(payload['enquiryId'] ?? ''));
+    // Reassigned again (or the person left) before this ran: the new assignment has its own notice.
+    if (!notice || notice.assigneeId !== String(payload['assigneeId'] ?? '')) return true;
+    const mail = renderSellerAssignment(notice, cfg);
+    await send(env, [notice.assigneeEmail], mail.subject, mail.html, mail.text, idem, { from });
     return true;
   }
 
