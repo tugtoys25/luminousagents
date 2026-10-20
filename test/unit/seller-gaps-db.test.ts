@@ -32,7 +32,7 @@ describe('assignment notification (real D1)', () => {
     const { admin, broker, e, ref } = await newEnquiry();
     const stale = { ...ref, version: ref.version - 1 };
     expect(await assign(admin, stale, broker, true)).toBe(false);
-    expect((await db.prepare("SELECT COUNT(*) AS n FROM notification_jobs WHERE dedupe_key LIKE 'seller_assignment:%' || ?").bind(e.id).first<{ n: number }>())?.n).toBe(0);
+    expect((await db.prepare("SELECT COUNT(*) AS n FROM notification_jobs WHERE instr(dedupe_key, ?) > 0").bind(`seller_assignment:${e.id}:`).first<{ n: number }>())?.n).toBe(0);
     expect(await assign(admin, ref, broker, true)).toBe(true);
     const job = await db.prepare("SELECT payload_json AS p FROM notification_jobs WHERE dedupe_key = ?").bind(`seller_assignment:${e.id}:${ref.version + 1}`).first<{ p: string }>();
     expect(JSON.parse(job!.p)).toEqual({ enquiryId: e.id, assigneeId: broker });
