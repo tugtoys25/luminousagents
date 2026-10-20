@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { safeReturnPath, stepUpDecision, stepUpMessage } from '../auth/step-up-policy';
 import type { AdminApp } from '../admin/shared';
 import { REFERENCE_PATTERN } from './reference';
 import { findRef, type EnquiryRef, type Scope } from './staff-repo';
@@ -27,4 +28,10 @@ export async function readJson(c: Ctx): Promise<unknown> {
   const text = await c.req.text().catch(() => '');
   if (text.length > 16_384) return null;
   try { return JSON.parse(text); } catch { return null; }
+}
+
+/** Inline equivalent of requireRecentMfa for actions that are only sensitive for some inputs. Returns a 403 response, or null if the check passes. */
+export function stepUpResponse(c: Ctx, returnTo: string): Response | null {
+  if (stepUpDecision(c.get('mfa'), Date.now()) === 'ok') return null;
+  return c.json({ error: { code: 'STEP_UP_REQUIRED', message: stepUpMessage(safeReturnPath(returnTo)) }, requestId: c.get('requestId') }, 403);
 }

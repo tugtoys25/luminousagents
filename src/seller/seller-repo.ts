@@ -129,3 +129,23 @@ export async function endLink(db: D1Database, p: Actor & { link: LinkRef; seller
   ]);
   return (r[0]?.meta?.changes ?? 0) > 0;
 }
+
+export const listSellerContacts = (db: D1Database, sellerId: string) =>
+  all(db.prepare("SELECT c.id, c.name, c.role_title AS roleTitle, c.email, c.telephone, c.created_at AS createdAt, u.display_name AS createdByName FROM seller_contacts c JOIN users u ON u.id = c.created_by WHERE c.seller_id = ? AND c.status = 'ACTIVE' ORDER BY c.created_at LIMIT 50").bind(sellerId));
+
+/** Additional contacts are informational. Seller notices still go only to the seller's primary contact email. */
+export async function insertContact(db: D1Database, p: Actor & { seller: SellerRef; contactId: string; name: string; roleTitle: string; email: string; telephone: string | null; auditId: string }): Promise<boolean> {
+  const r = await db.batch([
+    db.prepare("INSERT INTO seller_contacts (id, seller_id, name, role_title, email, telephone, status, created_by, created_at, updated_at) SELECT ?, id, ?, ?, ?, ?, 'ACTIVE', ?, ?, ? FROM sellers WHERE id = ? AND anonymised_at IS NULL AND status <> 'INACTIVE'")
+      .bind(p.contactId, p.name, p.roleTitle, p.email, p.telephone, p.id, p.ts, p.ts, p.seller.id),
+    auditIfChangedStmt(db, { id: p.auditId, actorId: p.id, action: 'seller.contact_added', entityType: 'seller', entityId: p.seller.id, requestId: p.requestId, details: { reference: p.seller.reference, contactId: p.contactId }, ts: p.ts }),
+  ]);
+  return (r[0]?.meta?.changes ?? 0) > 0;
+}
+export async function removeContact(db: D1Database, p: Actor & { seller: SellerRef; contactId: string; auditId: string }): Promise<boolean> {
+  const r = await db.batch([
+    db.prepare("UPDATE seller_contacts SET status = 'REMOVED', removed_by = ?, removed_at = ?, updated_at = ? WHERE id = ? AND seller_id = ? AND status = 'ACTIVE'").bind(p.id, p.ts, p.ts, p.contactId, p.seller.id),
+    auditIfChangedStmt(db, { id: p.auditId, actorId: p.id, action: 'seller.contact_removed', entityType: 'seller', entityId: p.seller.id, requestId: p.requestId, details: { reference: p.seller.reference, contactId: p.contactId }, ts: p.ts }),
+  ]);
+  return (r[0]?.meta?.changes ?? 0) > 0;
+}

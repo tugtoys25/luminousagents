@@ -9,7 +9,7 @@ session. `yes` means the role is named in that route's `requireRole(...)`; `·` 
 This matrix describes route-level access only. Record-level rules (for example a broker seeing only
 assigned records) are enforced inside the handlers and are covered by their own tests.
 
-139 routes · 1 open to any signed-in staff role.
+143 routes · 1 open to any signed-in staff role.
 
 | Method | Path | super_admin | admin | editor | broker | publisher | auditor |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -129,6 +129,10 @@ assigned records) are enforced inside the handlers and are covered by their own 
 | GET | `/dashboard/seller-retention/candidates` | yes | yes | · | · | · | · |
 | GET | `/dashboard/sellers` | yes | yes | · | yes | · | · |
 | GET | `/dashboard/sellers/:ref` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/sellers/:ref/anonymise` | yes | yes | · | · | · | · |
+| POST | `/dashboard/sellers/:ref/contacts` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/sellers/:ref/contacts/:contactId/remove` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/sellers/:ref/legal-hold` | yes | yes | · | · | · | · |
 | POST | `/dashboard/sellers/:ref/links` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/sellers/:ref/links/:linkId/authority` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/sellers/:ref/links/:linkId/end` | yes | yes | · | · | · | · |

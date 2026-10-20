@@ -98,10 +98,10 @@ export interface Actor { id: string; requestId: string; ts: string }
 /** Optimistic-concurrency update: history and audit rows are written only if the version still matched. */
 export async function applyStatusOrAssignment(
   db: D1Database,
-  p: Actor & { enquiry: EnquiryRef; toStatus: string; toAssignee: string | null; reason: string | null; closing: boolean; ids: [string, string]; action: string },
+  p: Actor & { enquiry: EnquiryRef; toStatus: string; toAssignee: string | null; reason: string | null; closing: boolean; ids: [string, string]; action: string; notify?: { jobId: string; dedupeKey: string } },
 ): Promise<boolean> {
   const e = p.enquiry;
-  const results = await db.batch([
+  const stmts: D1PreparedStatement[] = [
     db
       .prepare(
         `UPDATE seller_enquiries SET status = ?, assigned_to = ?, version = version + 1, updated_at = ?,
@@ -112,7 +112,13 @@ export async function applyStatusOrAssignment(
     db.prepare(HISTORY_IF_CHANGED_SQL).bind(p.ids[0], e.id, e.status, p.toStatus, e.assignedTo, p.toAssignee, p.reason, p.id, p.ts),
     db.prepare(AUDIT_IF_CHANGED_SQL).bind(p.ids[1], p.id, p.action, e.id, p.requestId,
       JSON.stringify({ reference: e.reference, from: e.status, to: p.toStatus, fromAssignee: e.assignedTo, toAssignee: p.toAssignee, hasReason: Boolean(p.reason) }), p.ts),
-  ]);
+  ];
+  if (p.notify && p.toAssignee) {
+    // Created only if the update and audit rows were written; the unique key makes a repeat harmless.
+    stmts.push(db.prepare("INSERT OR IGNORE INTO notification_jobs (id, job_type, payload_json, status, attempts, available_at, created_at, updated_at, dedupe_key) SELECT ?, 'seller.enquiry_assigned', ?, 'queued', 0, ?, ?, ?, ? WHERE changes() > 0")
+      .bind(p.notify.jobId, JSON.stringify({ enquiryId: e.id, assigneeId: p.toAssignee }), p.ts, p.ts, p.ts, p.notify.dedupeKey));
+  }
+  const results = await db.batch(stmts);
   return (results[0]?.meta?.changes ?? 0) > 0;
 }
 
@@ -225,4 +231,11 @@ export function findFollowupForReminder(db: D1Database, taskId: string): Promise
     )
     .bind(taskId)
     .first<FollowupForReminder>();
+}
+
+export interface AssignmentNotice { reference: string; status: string; assetType: string; assetCountry: string; confidentialityPreference: string; assetNameConfidential: number; assigneeId: string; assigneeName: string; assigneeEmail: string }
+/** Current assignment only: if the enquiry has since been reassigned, the caller sees a different assigneeId and skips. */
+export function findAssignmentNotice(db: D1Database, enquiryId: string): Promise<AssignmentNotice | null> {
+  return db.prepare(`SELECT e.reference, e.status, e.asset_type AS assetType, e.asset_country AS assetCountry, e.confidentiality_preference AS confidentialityPreference, e.asset_name_confidential AS assetNameConfidential,
+      u.id AS assigneeId, u.display_name AS assigneeName, u.email AS assigneeEmail FROM seller_enquiries e JOIN users u ON u.id = e.assigned_to WHERE e.id = ? AND e.anonymised_at IS NULL AND u.status = 'active'`).bind(enquiryId).first<AssignmentNotice>();
 }

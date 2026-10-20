@@ -6,7 +6,7 @@ import {
 } from '../../seller/lifecycle';
 import { assignSchema, listQuerySchema, statusSchema } from '../../seller/staff-schemas';
 import { listMessages } from '../../seller/message-repo';
-import { jsonError, loadEnquiry, readJson, scopeOf } from '../../seller/staff-access';
+import { jsonError, loadEnquiry, readJson, scopeOf, stepUpResponse } from '../../seller/staff-access';
 import {
   applyStatusOrAssignment, getEnquiry, hasPassingQualification, isAssignableOwner, latestQualification, listAuditFor, listCommunications,
   listEnquiries, listFollowups, listHistory, listNotes,
@@ -62,11 +62,15 @@ admin.post('/seller-enquiries/:ref/assign', requireRole(...sellerAssignRoles), a
   if (!(await isAssignableOwner(c.env.DB, parsed.data.assigneeId))) return jsonError(c, 422, 'VALIDATION_ERROR', 'Assignee must be an active broker or manager.');
   if (parsed.data.expectedVersion !== enquiry.version) return jsonError(c, 409, 'VERSION_CONFLICT', 'This enquiry changed. Reload and try again.');
   const toStatus = enquiry.status === 'NEW' ? 'ASSIGNED' : enquiry.status;
+  const jobId = id();
   const ok = await applyStatusOrAssignment(c.env.DB, {
     id: c.get('staff').id, requestId: c.get('requestId'), ts: now(), enquiry, toStatus, toAssignee: parsed.data.assigneeId, reason: null, closing: false,
     ids: [id(), id()], action: enquiry.assignedTo ? 'seller_enquiry.reassigned' : 'seller_enquiry.assigned',
+    // Tell the new owner (not when assigning to yourself). One job per assignment, keyed by enquiry and resulting version.
+    ...(parsed.data.assigneeId !== c.get('staff').id ? { notify: { jobId, dedupeKey: `seller_assignment:${enquiry.id}:${enquiry.version + 1}` } } : {}),
   });
   if (!ok) return jsonError(c, 409, 'VERSION_CONFLICT', 'This enquiry changed. Reload and try again.');
+  if (parsed.data.assigneeId !== c.get('staff').id) { try { await c.env.NOTIFICATIONS_QUEUE.send({ jobId, type: 'seller.enquiry_assigned' }); } catch { /* the recovery cron re-enqueues the durable job */ } }
   return c.json({ data: { reference: enquiry.reference, status: toStatus, version: enquiry.version + 1 } });
 });
 
@@ -82,6 +86,11 @@ admin.post('/seller-enquiries/:ref/status', requireRole(...sellerWorkRoles), asy
   if (to === 'ASSIGNED') return jsonError(c, 409, 'INVALID_TRANSITION', 'Use the assign action to assign an owner.');
   const role = c.get('staff').role;
   if (MANAGER_ONLY_STATUSES.includes(to) && !sellerAssignRoles.includes(role)) return jsonError(c, 403, 'FORBIDDEN', 'Only a manager can decline or close an enquiry.');
+  if (REASON_REQUIRED.includes(to)) {
+    // Closing or declining is consequential: require a recent second-factor check on top of the manager role.
+    const stepUp = stepUpResponse(c, '/dashboard/seller-enquiries/ui');
+    if (stepUp) return stepUp;
+  }
   if (REASON_REQUIRED.includes(to) && !reason) return jsonError(c, 422, 'REASON_REQUIRED', 'A reason is required to decline or close an enquiry.');
   if (CONFIRM_REQUIRED.includes(to) && confirm !== true) return jsonError(c, 422, 'CONFIRMATION_REQUIRED', 'Confirm this action to continue.');
   if (!enquiry.assignedTo && !MANAGER_ONLY_STATUSES.includes(to)) return jsonError(c, 409, 'GATE_NOT_MET', 'Assign an owner before progressing this enquiry.');

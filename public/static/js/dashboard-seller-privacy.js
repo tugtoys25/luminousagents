@@ -40,6 +40,18 @@
             try { await api(`/dashboard/seller-enquiries/${r.reference}/anonymise`, 'POST', { reason, confirmReference: typed, confirm: true }); say('Anonymised.'); load(); } catch (e) { say(e.message, true); }
           } }),
           h('button', { type: 'button', text: 'Place legal hold…', onclick: async () => { const reason = await ask('Reason for the legal hold.', 'Reason'); if (!reason) return; try { await api(`/dashboard/seller-enquiries/${r.reference}/legal-hold`, 'POST', { hold: true, reason, confirm: true }); say('Hold placed.'); load(); } catch (e) { say(e.message, true); } } })))) : h('p', { class: 'muted', text: 'Nothing is due for review.' }));
+      cand.append(h('h3', { text: 'Seller records' }), h('p', { class: 'muted', text: 'A seller can be anonymised only when it is INACTIVE with no active relationship, live listing, open or held enquiry or open material interest.' }),
+        h('button', { type: 'button', text: 'Anonymise a seller…', onclick: async () => {
+          const ref = await ask('Seller reference to anonymise (CM-C-XXXXXX). This permanently removes personal data and cannot be undone.', 'Seller reference'); if (!ref) return;
+          const reason = await ask('Reason (recorded in the audit log).', 'Reason'); if (!reason) return;
+          try { await api(`/dashboard/sellers/${ref}/anonymise`, 'POST', { reason, confirmReference: ref, confirm: true }); say('Seller anonymised.'); load(); } catch (e) { say(e.message, true); }
+        } }),
+        h('button', { type: 'button', text: 'Seller legal hold…', onclick: async () => {
+          const ref = await ask('Seller reference (CM-C-XXXXXX).', 'Seller reference'); if (!ref) return;
+          const mode = await ask('Type HOLD to place a legal hold or RELEASE to clear it.', 'HOLD or RELEASE'); if (!['HOLD', 'RELEASE'].includes(String(mode).toUpperCase())) return;
+          const reason = await ask('Reason.', 'Reason'); if (!reason) return;
+          try { await api(`/dashboard/sellers/${ref}/legal-hold`, 'POST', { hold: String(mode).toUpperCase() === 'HOLD', reason, confirm: true }); say('Updated.'); } catch (e) { say(e.message, true); }
+        } }));
       const q = (await api('/dashboard/seller-privacy-requests')).data;
       reqs.replaceChildren(h('h2', { text: 'Privacy requests' }),
         q.length ? h('ul', {}, ...q.map((r) => h('li', {}, `${r.reference} · ${label(r.requestType)} · ${r.status} · received ${when(r.receivedAt)}${r.dueAt ? ` · due ${when(r.dueAt)}` : ''}${r.enquiryReference ? ` · ${r.enquiryReference}` : ''}${r.outcomeNote ? ` · ${r.outcomeNote}` : ''} `,

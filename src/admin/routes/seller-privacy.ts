@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import { requireRole } from '../../auth/staff-session';
 import { requireRecentMfa } from '../../auth/step-up';
-import { listMessages } from '../../seller/message-repo';
+import { listMessagesForExport } from '../../seller/message-repo';
 import {
-  anonymiseEnquiry, findPrivacyEnquiry, findPrivacyRequest, insertPrivacyRequest, listPrivacyRequests, recordExport, retentionCandidates, setLegalHold, updatePrivacyRequest, withdrawMarketingConsent,
+  anonymiseEnquiry, anonymiseSeller, findPrivacyEnquiry, findPrivacySeller, setSellerLegalHold, findPrivacyRequest, insertPrivacyRequest, listPrivacyRequests, recordExport, retentionCandidates, setLegalHold, updatePrivacyRequest, withdrawMarketingConsent,
 } from '../../seller/privacy-repo';
-import { generateRef, REFERENCE_PATTERN } from '../../seller/reference';
-import { anonymiseSchema, legalHoldSchema, privacyRequestSchema, privacyUpdateSchema } from '../../seller/seller-schemas';
+import { generateRef, REFERENCE_PATTERN, SELLER_REF_PATTERN } from '../../seller/reference';
+import { anonymiseSchema, legalHoldSchema, privacyRequestSchema, privacyUpdateSchema, sellerAnonymiseSchema } from '../../seller/seller-schemas';
 import { isUniqueViolation } from '../../seller/repo';
 import { jsonError, loadEnquiry, readJson } from '../../seller/staff-access';
 import { getEnquiry, listAuditFor, listCommunications, listFollowups, listHistory, listNotes, latestQualification } from '../../seller/staff-repo';
@@ -100,7 +100,7 @@ admin.post('/seller-privacy-requests/:ref/update', requireRole(...sellerRetentio
   return c.json({ data: { reference: request.reference, status: parsed.data.status } });
 });
 
-/** Subject-data export for one enquiry. Super admin only, recent MFA, audited (without content), never cached. Message bodies are not included. */
+/** Subject-data export for one enquiry, including the text of emails sent about it. Super admin only, recent MFA, audited (without content), never cached. */
 admin.get('/seller-enquiries/:ref/export', requireRole(...sellerExportRoles), requireRecentMfa('/dashboard/seller-privacy/ui'), async (c) => {
   const ref = c.req.param('ref') ?? '';
   if (!REFERENCE_PATTERN.test(ref)) return jsonError(c, 404, 'NOT_FOUND', 'Enquiry not found.');
@@ -109,12 +109,37 @@ admin.get('/seller-enquiries/:ref/export', requireRole(...sellerExportRoles), re
   const { id: enquiryId, ...enquiry } = row as Record<string, unknown> & { id: string };
   const [notes, communications, followups, history, qualification, messages, auditTrail] = await Promise.all([
     listNotes(c.env.DB, enquiryId), listCommunications(c.env.DB, enquiryId), listFollowups(c.env.DB, enquiryId), listHistory(c.env.DB, enquiryId),
-    latestQualification(c.env.DB, enquiryId), listMessages(c.env.DB, enquiryId), listAuditFor(c.env.DB, enquiryId),
+    latestQualification(c.env.DB, enquiryId), listMessagesForExport(c.env.DB, enquiryId), listAuditFor(c.env.DB, enquiryId),
   ]);
   await recordExport(c.env.DB, { id: c.get('staff').id, requestId: c.get('requestId'), ts: now(), enquiryId, reference: ref, auditId: id() });
   c.header('Cache-Control', 'no-store');
   c.header('Content-Disposition', `attachment; filename="seller-enquiry-${ref}.json"`);
-  return c.json({ exportedAt: now(), enquiry, notes, communications, followups, statusHistory: history, qualification, messages: messages.map((m) => ({ kind: m.kind, status: m.status, subject: m.subject, templateId: m.templateId, createdAt: m.createdAt, sentAt: m.sentAt })), audit: auditTrail });
+  return c.json({ exportedAt: now(), enquiry, notes, communications, followups, statusHistory: history, qualification, messages, audit: auditTrail });
+});
+
+/** Seller erasure. The seller must already be INACTIVE; the database refuses it while any relationship, enquiry, interest or listing is still live or held. */
+admin.post('/sellers/:ref/anonymise', requireRole(...sellerRetentionRoles), requireRecentMfa('/dashboard/seller-privacy/ui'), async (c) => {
+  const parsed = sellerAnonymiseSchema.safeParse(await readJson(c));
+  const ref = c.req.param('ref') ?? '';
+  if (!parsed.success || parsed.data.confirmReference !== ref) return jsonError(c, 422, 'CONFIRMATION_REQUIRED', 'Type the seller reference exactly, give a reason, and confirm.');
+  const seller = SELLER_REF_PATTERN.test(ref) ? await findPrivacySeller(c.env.DB, ref) : null;
+  if (!seller) return jsonError(c, 404, 'NOT_FOUND', 'Seller not found.');
+  if (seller.anonymisedAt) return jsonError(c, 409, 'INVALID_STATE', 'Already anonymised.');
+  if (seller.legalHold) return jsonError(c, 409, 'LEGAL_HOLD', 'This seller is under a legal hold.');
+  if (seller.status !== 'INACTIVE') return jsonError(c, 409, 'INVALID_STATE', 'Set the seller to INACTIVE first (after ending relationships and closing enquiries).');
+  const ok = await anonymiseSeller(c.env.DB, { id: c.get('staff').id, requestId: c.get('requestId'), ts: now(), seller, reason: parsed.data.reason, auditId: id() });
+  if (!ok) return jsonError(c, 409, 'GATE_NOT_MET', 'Not anonymised: an active relationship, live listing, open or held enquiry, or open material interest still exists.');
+  return c.json({ data: { reference: ref, anonymised: true } });
+});
+
+admin.post('/sellers/:ref/legal-hold', requireRole(...sellerRetentionRoles), async (c) => {
+  const parsed = legalHoldSchema.safeParse(await readJson(c));
+  if (!parsed.success) return jsonError(c, 422, 'VALIDATION_ERROR', 'Provide hold true/false, a reason and confirmation.');
+  const ref = c.req.param('ref') ?? '';
+  const seller = SELLER_REF_PATTERN.test(ref) ? await findPrivacySeller(c.env.DB, ref) : null;
+  if (!seller) return jsonError(c, 404, 'NOT_FOUND', 'Seller not found.');
+  if (!(await setSellerLegalHold(c.env.DB, { id: c.get('staff').id, requestId: c.get('requestId'), ts: now(), seller, hold: parsed.data.hold, reason: parsed.data.reason, auditId: id() }))) return jsonError(c, 409, 'NO_CHANGE', 'Nothing to change.');
+  return c.json({ data: { reference: ref, legalHold: parsed.data.hold } });
 });
 
 export default admin;

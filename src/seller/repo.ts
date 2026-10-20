@@ -5,6 +5,7 @@ import { ACCURACY_DECLARATION_VERSION, MARKETING_CONSENT_VERSION, PRIVACY_ACK_VE
 export const JOB_ACK = 'seller.enquiry_ack';
 export const JOB_INTERNAL_ALERT = 'seller.enquiry_internal_alert';
 export const JOB_FOLLOWUP_DUE = 'seller.followup_due';
+export const JOB_ASSIGNMENT = 'seller.enquiry_assigned';
 
 export interface SellerEnquiryInsert {
   id: string;
