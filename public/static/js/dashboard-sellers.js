@@ -43,6 +43,9 @@
       dialog.showModal();
     });
   }
+  dlgText.style.whiteSpace = 'pre-wrap';
+  dlgText.style.maxHeight = '50vh';
+  dlgText.style.overflow = 'auto';
   const dl = (pairs) => h('dl', {}, ...pairs.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v == null || v === '' ? '—' : String(v) })]));
   const field = (text, el) => h('label', { text: `${text} ` }, el);
   const input = (name, extra = {}) => h('input', { name, ...extra });
@@ -145,6 +148,29 @@
       if (l.relationshipStatus === 'ACTIVE') block.append(form([field('Type', opts('authorityType', ['AUTHORITY_TO_MARKET', 'BROKERAGE_MANDATE', 'AUTHORITY_TO_REPRESENT', 'AUTHORITY_TO_NEGOTIATE', 'AUTHORITY_TO_SUBMIT'])), field('Evidence', opts('evidenceType', ['NONE', 'POWER_OF_ATTORNEY', 'BOARD_RESOLUTION', 'SIGNED_MANDATE', 'OWNERSHIP_RECORD', 'OTHER'])), field('Evidence reference (not a URL)', input('evidenceRef', { maxlength: 120 })), field('Scope', input('scope', { maxlength: 1000 }))],
         'Record authority claim', (v) => post(`/dashboard/sellers/${ref}/links/${l.id}/authority`, { authorityType: v.authorityType, evidenceType: v.evidenceType, evidenceRef: v.evidenceRef || undefined, scope: v.scope || undefined }, 'Recorded as NOT_REVIEWED.', ref)));
       parts.push(block); pending.push(gatePanel(l).then((p) => block.append(h('h4', { text: 'Publication gates' }), p)));
+    }
+    parts.push(h('h3', { text: 'Material interest' }), h('p', { class: 'muted', text: 'Internal record. Only the reviewed summary is ever sent to the seller; never name the buyer or disclose terms in it. Nothing is sent automatically.' }));
+    for (const i of b.interests) {
+      const row = h('div', { class: 'se-link' }, h('p', { text: `${i.reference} · ${label(i.interestType)} · ${label(i.stage)} · ${i.opportunityTitle} · received ${when(i.receivedAt)} · source: ${i.source} · internal: ${i.summaryInternal}${i.buyerReference ? ` · buyer ref (internal): ${i.buyerReference}` : ''}${i.approvedSummary ? ` · approved summary: ${i.approvedSummary}` : ''}` }));
+      const act = (text, fn) => h('button', { type: 'button', text, onclick: async () => { try { await fn(); } catch (e) { say(e.message, true); } } });
+      const review = (action, extra = {}) => async () => { const note = await confirmAction(`${label(action)} ${i.reference}? Enter a note.`, true); if (note) await post(`/dashboard/material-interests/${i.reference}/review`, { action, expectedVersion: i.version, note, confirm: true, ...extra }, 'Updated.', ref); };
+      if (i.stage === 'RECORDED') row.append(act('Start review', review('start_review')));
+      if (i.stage === 'UNDER_REVIEW' && b.canReview) row.append(act('Approve for seller notification…', async () => {
+        const approvedSummary = window.prompt('Approved summary for the seller (no buyer identity, no terms):', ''); const proposedNextStep = approvedSummary && window.prompt('Proposed next step:', ''); const stageLabel = proposedNextStep && window.prompt('Current stage (wording shown to the seller):', '');
+        if (stageLabel && confirm('I confirm the confidentiality review is complete and this seller is entitled to be told.')) await review('approve', { approvedSummary, proposedNextStep, stageLabel, confidentialityChecked: true, notificationEligible: true })();
+      }), act('Reject', review('reject')));
+      if (['RECORDED', 'UNDER_REVIEW', 'APPROVED'].includes(i.stage) && b.canReview) row.append(act('Withdraw', review('withdraw')));
+      if (i.stage === 'APPROVED') row.append(act('Draft seller notice…', async () => {
+        const brokerTitle = window.prompt('Your title for the signature:', ''); if (!brokerTitle) return;
+        const draft = (await api(`/dashboard/material-interests/${i.reference}/notification-draft`, 'POST', { brokerTitle })).data;
+        if (!b.canReview) { say('Draft created. An approver must review and send it.'); return; }
+        if (await confirmAction(`CONFIDENTIAL — to the seller only\nTo: ${draft.recipient}\nSubject: ${draft.subject}\n\n${draft.text}\n\nApprove and send exactly this email?`, false)) { await api(`/dashboard/seller-material-notices/${draft.id}/send`, 'POST', { expectedVersion: draft.version, confirm: true }); say('Queued. It re-checks eligibility just before sending.'); await open(ref); }
+      }));
+      parts.push(row);
+    }
+    for (const l of b.links.filter((x) => x.relationshipStatus === 'ACTIVE')) {
+      parts.push(form([field(`Record interest on “${l.opportunityTitle}”`, opts('interestType', ['INITIAL_ENQUIRY', 'REQUEST_FOR_INFORMATION', 'MEETING_REQUEST', 'INDICATION_OF_INTEREST', 'INDICATIVE_PROPOSAL', 'FORMAL_OFFER'])), field('Source', input('source', { required: true, maxlength: 200 })), field('Internal summary', input('summary', { required: true, maxlength: 2000 })), field('Buyer reference (internal)', input('buyerReference', { maxlength: 120 }))],
+        'Record interest', (v) => post(`/dashboard/sellers/${ref}/links/${l.id}/interests`, { interestType: v.interestType, source: v.source, summary: v.summary, buyerReference: v.buyerReference || undefined }, 'Interest recorded.', ref)));
     }
     parts.push(...list('Open and completed follow-ups', b.followups, (t) => `${t.status} · ${t.title} · due ${when(t.dueAt)}${t.outcome ? ` · ${t.outcome}` : ''}`),
       ...list('Communications', b.communications, (c) => `${when(c.occurredAt)} · ${c.direction} ${label(c.channel)} · ${label(c.outcome)} — ${c.summary}`),

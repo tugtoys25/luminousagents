@@ -9,7 +9,7 @@ session. `yes` means the role is named in that route's `requireRole(...)`; `·` 
 This matrix describes route-level access only. Record-level rules (for example a broker seeing only
 assigned records) are enforced inside the handlers and are covered by their own tests.
 
-123 routes · 1 open to any signed-in staff role.
+139 routes · 1 open to any signed-in staff role.
 
 | Method | Path | super_admin | admin | editor | broker | publisher | auditor |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -48,6 +48,8 @@ assigned records) are enforced inside the handlers and are covered by their own 
 | GET | `/dashboard/forms` | yes | yes | yes | · | · | · |
 | POST | `/dashboard/forms` | yes | yes | yes | · | · | · |
 | GET | `/dashboard/forms/ui` | yes | yes | yes | · | · | · |
+| POST | `/dashboard/material-interests/:ref/notification-draft` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/material-interests/:ref/review` | yes | yes | · | yes | · | · |
 | GET | `/dashboard/media` | yes | yes | yes | · | yes | · |
 | DELETE | `/dashboard/media/:id` | yes | yes | · | · | · | · |
 | PATCH | `/dashboard/media/:id` | yes | yes | yes | · | yes | · |
@@ -101,22 +103,36 @@ assigned records) are enforced inside the handlers and are covered by their own 
 | PUT | `/dashboard/scanner-settings` | yes | yes | · | · | · | · |
 | GET | `/dashboard/seller-enquiries` | yes | yes | · | yes | · | · |
 | GET | `/dashboard/seller-enquiries/:ref` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/anonymise` | yes | yes | · | · | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/assign` | yes | yes | · | · | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/communications` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/convert` | yes | yes | · | yes | · | · |
+| GET | `/dashboard/seller-enquiries/:ref/export` | yes | · | · | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/followup-drafts` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/followups` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/followups/:taskId/complete` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/legal-hold` | yes | yes | · | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/marketing-withdrawal` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/notes` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/qualification` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/seller` | yes | yes | · | yes | · | · |
 | GET | `/dashboard/seller-enquiries/:ref/seller-candidates` | yes | yes | · | · | · | · |
 | POST | `/dashboard/seller-enquiries/:ref/status` | yes | yes | · | yes | · | · |
 | GET | `/dashboard/seller-enquiries/ui` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-material-notices/:messageId/send` | yes | yes | · | · | · | · |
+| POST | `/dashboard/seller-messages/:messageId/cancel` | yes | yes | · | yes | · | · |
+| POST | `/dashboard/seller-messages/:messageId/send` | yes | yes | · | yes | · | · |
+| GET | `/dashboard/seller-privacy-requests` | yes | yes | · | · | · | · |
+| POST | `/dashboard/seller-privacy-requests` | yes | yes | · | · | · | · |
+| POST | `/dashboard/seller-privacy-requests/:ref/update` | yes | yes | · | · | · | · |
+| GET | `/dashboard/seller-privacy/ui` | yes | yes | · | · | · | · |
+| GET | `/dashboard/seller-retention/candidates` | yes | yes | · | · | · | · |
 | GET | `/dashboard/sellers` | yes | yes | · | yes | · | · |
 | GET | `/dashboard/sellers/:ref` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/sellers/:ref/links` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/sellers/:ref/links/:linkId/authority` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/sellers/:ref/links/:linkId/end` | yes | yes | · | · | · | · |
+| POST | `/dashboard/sellers/:ref/links/:linkId/interests` | yes | yes | · | yes | · | · |
 | POST | `/dashboard/sellers/:ref/links/:linkId/review` | yes | yes | · | · | · | · |
 | POST | `/dashboard/sellers/:ref/update` | yes | yes | · | yes | · | · |
 | GET | `/dashboard/sellers/ui` | yes | yes | · | yes | · | · |

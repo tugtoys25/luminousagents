@@ -99,3 +99,39 @@ describe('seller phase 3 (static checks)', () => {
     expect(insert).toContain("'draft'");
   });
 });
+
+describe('seller phase 4 (static checks)', () => {
+  it('every phase 4 staff route is role-guarded', () => {
+    for (const file of ['seller-messages', 'seller-interest', 'seller-privacy']) {
+      const src = read(`src/admin/routes/${file}.ts`);
+      expect(src.match(/requireRole\(/g)?.length, file).toBe(src.match(/admin\.(get|post)\(/g)?.length);
+    }
+  });
+  it('material-interest sending, anonymisation, export and authority verification require recent MFA', () => {
+    expect(read('src/admin/routes/seller-messages.ts')).toMatch(/seller-material-notices\/:messageId\/send', requireRole\(\.\.\.sellerInterestApproveRoles\), requireRecentMfa/);
+    const privacy = read('src/admin/routes/seller-privacy.ts');
+    expect(privacy).toMatch(/\/anonymise', requireRole\(\.\.\.sellerRetentionRoles\), requireRecentMfa/);
+    expect(privacy).toMatch(/\/export', requireRole\(\.\.\.sellerExportRoles\), requireRecentMfa/);
+    expect(read('src/admin/routes/seller-authority.ts')).toMatch(/\/authority\/:ref\/transition', requireRole\(\.\.\.authorityReviewRoles\), requireRecentMfa/);
+  });
+  it('the dispatcher re-checks eligibility, content hash and revocation before any send', () => {
+    const jobs = read('src/seller/jobs.ts');
+    for (const needle of ['contentHash(', 'interestStage !== \'APPROVED\'', 'currentInterestVersion', 'm.entitled', 'claimForSend', 'cancelIneligible']) expect(jobs, needle).toContain(needle);
+    expect(jobs.indexOf('cancelIneligible')).toBeLessThan(jobs.indexOf('await send(env, m.recipient'));
+  });
+  it('seller emails to sellers are only created from approved messages (no template call in the send path)', () => {
+    expect(read('src/seller/jobs.ts')).not.toMatch(/renderSellerMaterialInterest|renderSellerFollowup\b/);
+  });
+  it('phase 4 routes contain no direct SQL and the new UI uses no innerHTML', () => {
+    for (const f of ['seller-messages', 'seller-interest', 'seller-privacy']) expect(read(`src/admin/routes/${f}.ts`), f).not.toMatch(/\.prepare\(/);
+    for (const f of ['dashboard-seller-privacy.js', 'dashboard-sellers.js', 'dashboard-seller-enquiries.js']) expect(read(`public/static/js/${f}`), f).not.toMatch(/innerHTML|insertAdjacentHTML|document\.write|eval\(/);
+  });
+  it('retention lists nothing unless the business has configured an approved period', () => {
+    expect(read('src/admin/routes/seller-privacy.ts')).toContain('policyConfigured: false');
+  });
+  it('phase 4 triggers keep messages frozen and history redaction-only', () => {
+    const m = read('migrations/0039_seller_phase4_triggers.sql');
+    for (const t of ['trg_messages_content_frozen', 'trg_messages_no_delete', 'trg_messages_no_resurrect', 'trg_interest_events_no_update', 'trg_seller_notes_no_update']) expect(m).toContain(t);
+    expect(read('migrations/0038_seller_messages_interest_privacy.sql')).not.toMatch(/\bDROP\s+(TABLE|COLUMN)|\bDELETE\s+FROM/i);
+  });
+});

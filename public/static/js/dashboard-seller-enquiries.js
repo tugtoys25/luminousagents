@@ -8,6 +8,9 @@
   const dlgText = document.querySelector('#se-confirm-text');
   const reasonWrap = document.querySelector('#se-reason-wrap');
   const reasonEl = document.querySelector('#se-confirm-reason');
+  dlgText.style.whiteSpace = 'pre-wrap';
+  dlgText.style.maxHeight = '50vh';
+  dlgText.style.overflow = 'auto';
   const label = (s) => String(s ?? '').toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
   const when = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
   const h = (tag, props = {}, ...kids) => {
@@ -167,6 +170,20 @@
         form([field('direction', 'Direction', opts('direction', ['OUTBOUND', 'INBOUND'])), field('channel', 'Channel', opts('channel', ['TELEPHONE', 'EMAIL', 'MEETING', 'MESSAGE', 'OTHER'])), field('outcome', 'Outcome', opts('outcome', ['CONNECTED', 'NO_ANSWER', 'LEFT_MESSAGE', 'SENT', 'RECEIVED', 'OTHER'])), field('summary', 'Summary', h('textarea', { name: 'summary', required: true, maxlength: 1000, rows: 3 }))], 'Record', (v) => post(d.reference, 'communications', v, 'Communication recorded.')),
         h('h3', { text: 'Add staff-only note' }), form([field('classification', 'Type', opts('classification', ['GENERAL', 'QUALIFICATION', 'CONFIDENTIALITY', 'AUTHORITY', 'COMPLIANCE'])), field('note', 'Note', h('textarea', { name: 'note', required: true, maxlength: 3000, rows: 4 }))], 'Add note', (v) => post(d.reference, 'notes', v, 'Note added.')));
     }
+    if (open_ && d.assignedName) {
+      parts.push(h('h3', { text: 'Send follow-up email' }), h('p', { class: 'muted', text: 'You choose the questions, review the exact email, then confirm. Do not include confidential documents or financial detail. No brokerage authority is created by this email.' }),
+        form([field('questions', 'Questions (one per line, max 8)', h('textarea', { name: 'questions', required: true, rows: 4 })), field('brokerTitle', 'Your title'), h('label', { text: 'Your telephone (optional) ' }, h('input', { name: 'brokerTelephone', maxlength: 40 }))], 'Preview email', async (v) => {
+          const questions = String(v.questions).split('\n').map((q) => q.trim()).filter(Boolean);
+          const draft = (await api(`/dashboard/seller-enquiries/${encodeURIComponent(d.reference)}/followup-drafts`, 'POST', { questions, brokerTitle: v.brokerTitle, brokerTelephone: v.brokerTelephone || undefined })).data;
+          const ok = await confirmAction(`To: ${draft.recipient}\nSubject: ${draft.subject}\n\n${draft.text}\n\nSend this email exactly as shown?`, false);
+          if (ok) { await api(`/dashboard/seller-messages/${draft.id}/send`, 'POST', { expectedVersion: draft.version, confirm: true }); say('Queued. It will show as sent once the email provider accepts it.'); await open(d.reference); }
+          else await api(`/dashboard/seller-messages/${draft.id}/cancel`, 'POST', { reason: 'Draft discarded at preview', confirm: true }).catch(() => {});
+        }));
+    }
+    parts.push(...(b.messages.length ? [h('h3', { text: 'Emails sent by staff' }), h('ul', {}, ...b.messages.map((m) => h('li', {}, `${when(m.createdAt)} · ${label(m.kind)} · ${m.status}${m.status === 'SENT' ? ' (accepted by provider; inbox delivery not confirmed)' : ''}${m.jobStatus === 'dead' ? ' · SENDING FAILED (see notification monitor)' : ''}${m.cancelReason ? ` · ${m.cancelReason}` : ''} · ${m.subject} `,
+      m.status === 'QUEUED' ? h('button', { type: 'button', text: 'Revoke before sending', onclick: async () => { const r = await confirmAction('Revoke this queued email?', true); if (r) try { await api(`/dashboard/seller-messages/${m.id}/cancel`, 'POST', { reason: r, confirm: true }); say('Revoked.'); await open(d.reference); } catch (e) { say(e.message, true); } } }) : null)))] : []));
+    if (d.marketingConsent && !d.marketingConsentWithdrawnAt) parts.push(h('p', {}, 'Marketing consent given. ', h('button', { type: 'button', text: 'Record withdrawal', onclick: async () => { if (await confirmAction('Record that this person withdrew marketing consent?', false)) try { await post(d.reference, 'marketing-withdrawal', {}, 'Withdrawal recorded.'); } catch (e) { say(e.message, true); } } })));
+    parts.push(h('p', {}, h('a', { href: `/dashboard/seller-enquiries/${encodeURIComponent(d.reference)}/export`, text: 'Export this record (super admin, MFA)' })));
     const timeline = (title, rows, fmt) => [h('h3', { text: title }), rows.length ? h('ul', {}, ...rows.map((r) => h('li', { text: fmt(r) }))) : h('p', { class: 'muted', text: 'None.' })];
     parts.push(...timeline('Communications', b.communications, (c) => `${when(c.occurredAt)} · ${c.direction} ${label(c.channel)} · ${label(c.outcome)} · ${c.actorName || (c.actorType === 'system' ? 'System' : '')}${c.deliveryStatus === 'ACCEPTED_BY_PROVIDER' ? ' · accepted by provider (inbox delivery not confirmed)' : ''} — ${c.summary}`),
       ...timeline('Staff notes', b.notes, (n) => `${when(n.createdAt)} · ${n.authorName} · ${label(n.classification)} — ${n.note}`),

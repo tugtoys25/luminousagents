@@ -31,6 +31,13 @@ export const PERMISSIONS = {
   'authority.approve': ['super_admin', 'admin'],
   'opportunities.create_draft': ['super_admin', 'admin', 'broker'],
   'opportunities.approve_publication': ['super_admin', 'admin', 'publisher'],
+  // Phase 4. Drafting and recording are broker work; approving and sending a material-interest notice, retention and export are not.
+  'seller_communications.send': ['super_admin', 'admin', 'broker'],
+  'seller_material_interest.record': ['super_admin', 'admin', 'broker'],
+  'seller_material_interest.approve': ['super_admin', 'admin'],
+  'seller_material_interest.send': ['super_admin', 'admin'],
+  'seller_retention.manage': ['super_admin', 'admin'],
+  'seller_enquiries.export': ['super_admin'],
 } as const satisfies Record<string, readonly StaffRoleName[]>;
 export type Permission = keyof typeof PERMISSIONS;
 

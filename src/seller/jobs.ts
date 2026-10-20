@@ -3,9 +3,12 @@ import type { Env } from '../env';
 import { PermanentEmailError, type SendEmailFn } from '../operations/email-errors';
 import { renderSellerAcknowledgement, renderSellerFollowupDue, renderSellerInternalAlert, TEMPLATE_ACK, type SellerEmailConfig } from './emails';
 import { JOB_ACK, JOB_FOLLOWUP_DUE, JOB_INTERNAL_ALERT, findSellerEnquiryForEmail } from './repo';
+import { contentHash } from './emails-outbound';
+import { cancelIneligible, claimForSend, completeSend, dispatchView } from './message-repo';
 import { findFollowupForReminder, recordSystemCommunication } from './staff-repo';
 
-export const isSellerJob = (type: string): boolean => type === JOB_ACK || type === JOB_INTERNAL_ALERT || type === JOB_FOLLOWUP_DUE;
+export const JOB_SELLER_MESSAGE = 'seller.message_send';
+export const isSellerJob = (type: string): boolean => type === JOB_ACK || type === JOB_INTERNAL_ALERT || type === JOB_FOLLOWUP_DUE || type === JOB_SELLER_MESSAGE;
 
 export const parseRecipients = (raw: string | undefined): string[] =>
   (raw ?? '').split(',').map((v) => v.trim()).filter((v) => /^[^\s@,]+@[^\s@,]+$/.test(v));
@@ -20,6 +23,31 @@ export async function handleSellerJob(env: Env, job: { id: string; job_type: str
   const cfg = sellerEmailConfig(env);
   const from = env.SELLER_EMAIL_FROM || env.EMAIL_FROM;
   const idem = `mayfair-${job.id}`;
+
+  if (job.job_type === JOB_SELLER_MESSAGE) {
+    const messageId = String(payload['messageId'] ?? '');
+    const ts = new Date().toISOString();
+    const m = messageId ? await dispatchView(env.DB, messageId, ts) : null;
+    if (!m) throw new PermanentEmailError('Message not found');
+    // Already finished or revoked before dispatch: nothing to send, and not an error.
+    if (m.status === 'SENT' || m.status === 'CANCELLED') return true;
+    if (m.status !== 'QUEUED' && m.status !== 'SENDING') throw new PermanentEmailError('Message was never approved');
+    const same = (a: string | null | undefined) => (a ?? '').toLowerCase() === m.recipient.toLowerCase();
+    let reason: string | null = null;
+    if ((await contentHash({ subject: m.subject, text: m.bodyText, html: m.bodyHtml, recipient: m.recipient })) !== m.contentHash) reason = 'Approved content no longer matches its recorded hash';
+    else if (m.kind === 'FOLLOWUP' && !same(m.enquiryEmail)) reason = 'The enquiry recipient changed or was anonymised';
+    else if (m.kind === 'MATERIAL_INTEREST') {
+      if (m.interestStage !== 'APPROVED') reason = 'The material-interest approval was revoked or the record is no longer approved';
+      else if (m.currentInterestVersion !== m.interestVersion) reason = 'The interest record changed after approval';
+      else if (!m.entitled) reason = 'The seller is no longer entitled to this notification';
+      else if (!same(m.sellerEmail)) reason = 'The seller email changed after approval';
+    }
+    if (reason) { await cancelIneligible(env.DB, m, reason, ts); return true; }
+    if (!(await claimForSend(env.DB, m.id, ts))) return true; // revoked between the checks and the claim
+    await send(env, m.recipient, m.subject, m.bodyHtml, m.bodyText, idem, { from, replyTo: env.SELLER_REPLY_TO });
+    await completeSend(env.DB, { message: m, jobId: job.id, commId: crypto.randomUUID(), eventId: crypto.randomUUID(), auditId: crypto.randomUUID(), ts: new Date().toISOString() });
+    return true;
+  }
 
   if (job.job_type === JOB_FOLLOWUP_DUE) {
     const taskId = String(payload['taskId'] ?? '');
