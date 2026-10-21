@@ -19,10 +19,15 @@ export const editorRoles = ['admin', 'editor', 'broker', 'super_admin'];
 export const publisherRoles = ['admin', 'publisher', 'super_admin'];
 
 // Seller workflow role lists (literal for scripts/role-matrix.mjs; test/unit/seller-staff.test.ts proves they equal the permission map).
-export const sellerReadRoles = ['admin', 'broker', 'super_admin'];
+export const sellerReadRoles = ['admin', 'broker', 'compliance', 'super_admin'];
 export const sellerWorkRoles = ['admin', 'broker', 'super_admin'];
 export const sellerAssignRoles = ['admin', 'super_admin'];
-export const authorityReviewRoles = ['admin', 'super_admin'];
+export const authorityReviewRoles = ['admin', 'compliance', 'super_admin'];
+export const sellerNoteRoles = ['admin', 'broker', 'compliance', 'super_admin'];
+export const sellerEvidenceRoles = ['admin', 'broker', 'compliance', 'super_admin'];
+export const sellerEvidenceDownloadRoles = ['admin', 'compliance', 'super_admin'];
+export const sellerEvidenceDeleteRoles = ['admin', 'super_admin'];
+export const sellerSettingsRoles = ['admin', 'super_admin'];
 export const sellerInterestApproveRoles = ['admin', 'super_admin'];
 export const sellerRetentionRoles = ['admin', 'super_admin'];
 export const sellerExportRoles = ['super_admin'];

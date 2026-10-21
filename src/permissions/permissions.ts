@@ -3,7 +3,7 @@
  * the shared role lists; those lists are derived from here so the two cannot drift
  * (see test/unit/permissions.test.ts). New code should prefer `requirePermission`.
  */
-export const STAFF_ROLES = ['super_admin', 'admin', 'publisher', 'editor', 'broker', 'auditor'] as const;
+export const STAFF_ROLES = ['super_admin', 'admin', 'publisher', 'editor', 'broker', 'auditor', 'compliance'] as const;
 export type StaffRoleName = (typeof STAFF_ROLES)[number];
 
 export const PERMISSIONS = {
@@ -13,22 +13,27 @@ export const PERMISSIONS = {
   'mfa.reset': ['super_admin'],
   'audit.read': ['super_admin', 'admin', 'auditor'],
   // Seller workflow. Brokers see and work only enquiries assigned to them (record-level check in the repository);
-  // assignment and closure decisions stay with managers (admin/super_admin). There is no separate compliance role yet.
-  'seller_enquiries.read': ['super_admin', 'admin', 'broker'],
+  // assignment and closure decisions stay with managers (admin/super_admin). `compliance` reads everything seller-related, reviews and
+  // verifies authority, may attach evidence and add notes, and may download evidence (MFA); it cannot assign, close, send, publish or retain.
+  'seller_enquiries.read': ['super_admin', 'admin', 'broker', 'compliance'],
   'seller_enquiries.assign': ['super_admin', 'admin'],
   'seller_enquiries.update_status': ['super_admin', 'admin', 'broker'],
   'seller_enquiries.close': ['super_admin', 'admin'],
-  'seller_enquiries.add_note': ['super_admin', 'admin', 'broker'],
+  'seller_enquiries.add_note': ['super_admin', 'admin', 'broker', 'compliance'],
   'seller_enquiries.record_communication': ['super_admin', 'admin', 'broker'],
   'seller_followups.manage': ['super_admin', 'admin', 'broker'],
   // Phase 3. Brokers act only on sellers they own; verification and approval stay with managers.
-  'sellers.read': ['super_admin', 'admin', 'broker'],
+  'sellers.read': ['super_admin', 'admin', 'broker', 'compliance'],
   'sellers.create': ['super_admin', 'admin', 'broker'],
   'sellers.update': ['super_admin', 'admin', 'broker'],
-  'authority.read': ['super_admin', 'admin', 'broker'],
-  'authority.submit_evidence': ['super_admin', 'admin', 'broker'],
-  'authority.review': ['super_admin', 'admin'],
-  'authority.approve': ['super_admin', 'admin'],
+  'authority.read': ['super_admin', 'admin', 'broker', 'compliance'],
+  'authority.submit_evidence': ['super_admin', 'admin', 'broker', 'compliance'],
+  'authority.review': ['super_admin', 'admin', 'compliance'],
+  'authority.download_evidence': ['super_admin', 'admin', 'compliance'],
+  'authority.delete_evidence': ['super_admin', 'admin'],
+  'seller_settings.manage': ['super_admin', 'admin'],
+  'seller_settings.manage_sensitive': ['super_admin'],
+  'authority.approve': ['super_admin', 'admin', 'compliance'],
   'opportunities.create_draft': ['super_admin', 'admin', 'broker'],
   'opportunities.approve_publication': ['super_admin', 'admin', 'publisher'],
   // Phase 4. Drafting and recording are broker work; approving and sending a material-interest notice, retention and export are not.

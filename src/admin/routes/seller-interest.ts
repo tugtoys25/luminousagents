@@ -5,7 +5,8 @@ import { findInterest, insertInterest, reviewInterest, interestFromStages } from
 import { insertDraft } from '../../seller/message-repo';
 import { generateRef } from '../../seller/reference';
 import { findLink } from '../../seller/seller-repo';
-import { dualApprovalEnabled, loadSeller, sellerScopeOf } from '../../seller/seller-access';
+import { loadSellerPolicy } from '../../seller/policy-load';
+import { loadSeller, sellerScopeOf } from '../../seller/seller-access';
 import { interestRecordSchema, interestReviewSchema, notificationDraftSchema } from '../../seller/seller-schemas';
 import { isUniqueViolation } from '../../seller/repo';
 import { jsonError, readJson } from '../../seller/staff-access';
@@ -57,7 +58,7 @@ admin.post('/material-interests/:ref/review', requireRole(...sellerWorkRoles), a
   if (d.action === 'approve') {
     if ((d.approvedSummary ?? '').length < 20 || (d.proposedNextStep ?? '').length < 3 || (d.stageLabel ?? '').length < 2) return jsonError(c, 422, 'GATE_NOT_MET', 'Write the approved summary (20+ characters), the current stage and the proposed next step. Do not identify the buyer or disclose terms.');
     if (d.confidentialityChecked !== true || d.notificationEligible !== true) return jsonError(c, 422, 'GATE_NOT_MET', 'Confirm the confidentiality review and that the seller is entitled to be told.');
-    if (dualApprovalEnabled(c.env) && staff.id === interest.recordedBy) return jsonError(c, 403, 'SEPARATION_OF_DUTIES', 'The person who recorded this interest cannot approve it.');
+    if ((await loadSellerPolicy(c.env)).materialInterestDualApproval && staff.id === interest.recordedBy) return jsonError(c, 403, 'SEPARATION_OF_DUTIES', 'The person who recorded this interest cannot approve it.');
   }
   const ok = await reviewInterest(c.env.DB, {
     id: staff.id, requestId: c.get('requestId'), ts: now(), interest, action: d.action, note: d.note, eventId: id(), auditId: id(),

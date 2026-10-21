@@ -129,6 +129,34 @@
     parts.push(...list('Linked enquiries', b.enquiries, (e) => `${e.reference} · ${label(e.status)} · ${label(e.assetType)} · ${e.assetCountry} · ${when(e.createdAt)}`));
     parts.push(h('h3', { text: 'Linked opportunities' }));
     if (!b.links.length) parts.push(h('p', { class: 'muted', text: 'None.' }));
+    const evidenceBlock = (r) => {
+      const wrap = h('div', { class: 'se-evidence' });
+      const act = (text, fn) => h('button', { type: 'button', text, onclick: async () => { try { await fn(); } catch (e) { say(e.message, true); } } });
+      for (const f of b.evidence.filter((x) => x.recordReference === r.reference)) {
+        const gone = f.purgedAt || f.purgePending;
+        wrap.append(h('p', {}, `File: ${f.filename} · ${(f.byteSize / 1024).toFixed(0)} KB · ${f.purgedAt ? 'DELETED' : f.purgePending ? 'deletion pending' : f.scanStatus === 'clean' ? (f.scanSkipped ? 'released WITHOUT a malware scan (scanner disabled)' : 'scanned clean') : f.scanStatus === 'rejected' ? 'REJECTED by scan; unavailable' : 'awaiting scan; unavailable'} · ${label(f.status)} · uploaded by ${f.uploadedByName} ${when(f.createdAt)} `,
+          b.canDownloadEvidence && f.scanStatus === 'clean' && !gone ? h('a', { href: `/dashboard/authority-evidence/${f.id}/download`, text: 'Download (MFA, logged)' }) : null,
+          b.canVerify && f.scanStatus === 'pending' && !gone ? act('Scan', async () => { await api(`/dashboard/authority-evidence/${f.id}/scan`, 'POST', {}); say('Scan complete.'); await open(ref); }) : null,
+          b.canVerify && f.status === 'ACTIVE' && !gone ? act('Retire', async () => { const note = await confirmAction('Retire this file? Enter a reason.', true); if (note) { await api(`/dashboard/authority-evidence/${f.id}/retire`, 'POST', { reason: note, confirm: true }); say('Retired.'); await open(ref); } }) : null,
+          b.canDeleteEvidence && !gone ? act('Delete permanently', async () => { const note = await confirmAction('Permanently delete the stored file? This cannot be undone. Enter a reason.', true); if (note) { await api(`/dashboard/authority-evidence/${f.id}/delete`, 'POST', { reason: note, confirmId: f.id, confirm: true }); say('Deleted.'); await open(ref); } }) : null));
+      }
+      if (r.status !== 'REVOKED') {
+        const input = h('input', { type: 'file', accept: '.pdf,.jpg,.jpeg,.png,.docx,.xlsx', required: true });
+        const f = h('form', { class: 'se-form' }, h('label', { text: 'Attach evidence file (PDF, JPEG, PNG, DOCX, XLSX; max 20 MB) ' }, input), h('button', { type: 'submit', class: 'button', text: 'Upload' }));
+        f.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          try {
+            const fd = new FormData(); fd.append('file', input.files[0]);
+            const res = await fetch(`/dashboard/authority/${r.reference}/evidence`, { method: 'POST', credentials: 'same-origin', body: fd });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error?.message || 'Upload failed.');
+            say(data.data.scanStatus === 'pending' ? 'Uploaded. It stays unavailable until it has been scanned.' : 'Uploaded.'); await open(ref);
+          } catch (err) { say(err.message, true); }
+        });
+        wrap.append(f);
+      }
+      return wrap;
+    };
     const pending = [];
     for (const l of b.links) {
       const recs = b.authority.filter((r) => r.linkId === l.id);
@@ -140,13 +168,14 @@
       }
       for (const r of recs) {
         block.append(h('p', {}, `${r.reference} · ${label(r.authorityType)} · ${label(r.status)} · evidence: ${label(r.evidenceType)}${r.evidenceRef ? ` (${r.evidenceRef})` : ''} · valid ${r.validFrom ? when(r.validFrom) : 'n/a'} → ${r.validUntil ? when(r.validUntil) : 'no expiry'} · scope: ${r.scope || '—'} · recorded by ${r.createdByName || '—'}${r.reviewerName ? `, reviewed by ${r.reviewerName} ${when(r.reviewedAt)}` : ''} `,
-          ...(b.canReview ? r.allowedTransitions.map((to) => h('button', { type: 'button', text: `→ ${label(to)}`, onclick: async () => {
+          ...(b.canVerify ? r.allowedTransitions.map((to) => h('button', { type: 'button', text: `→ ${label(to)}`, onclick: async () => {
             const note = await confirmAction(`Move ${r.reference} to ${label(to)}? Enter a review note.`, true);
             if (!note) return;
             const body = { to, note, expectedVersion: r.version, confirm: true };
             if (to === 'VERIFIED') { const t = window.prompt('Evidence type (POWER_OF_ATTORNEY, BOARD_RESOLUTION, SIGNED_MANDATE, OWNERSHIP_RECORD, OTHER):', r.evidenceType === 'NONE' ? '' : r.evidenceType); const s = window.prompt('Scope of authority:', r.scope || ''); const u = window.prompt('Valid until (ISO date-time, blank for none):', r.validUntil || ''); if (t) body.evidenceType = t; if (s) body.scope = s; if (u) body.validUntil = u; }
             try { await post(`/dashboard/authority/${r.reference}/transition`, body, `Moved to ${label(to)}.`, ref); } catch (e) { say(e.message, true); }
           } })) : [])));
+        block.append(evidenceBlock(r));
       }
       if (l.relationshipStatus === 'ACTIVE') block.append(form([field('Type', opts('authorityType', ['AUTHORITY_TO_MARKET', 'BROKERAGE_MANDATE', 'AUTHORITY_TO_REPRESENT', 'AUTHORITY_TO_NEGOTIATE', 'AUTHORITY_TO_SUBMIT'])), field('Evidence', opts('evidenceType', ['NONE', 'POWER_OF_ATTORNEY', 'BOARD_RESOLUTION', 'SIGNED_MANDATE', 'OWNERSHIP_RECORD', 'OTHER'])), field('Evidence reference (not a URL)', input('evidenceRef', { maxlength: 120 })), field('Scope', input('scope', { maxlength: 1000 }))],
         'Record authority claim', (v) => post(`/dashboard/sellers/${ref}/links/${l.id}/authority`, { authorityType: v.authorityType, evidenceType: v.evidenceType, evidenceRef: v.evidenceRef || undefined, scope: v.scope || undefined }, 'Recorded as NOT_REVIEWED.', ref)));

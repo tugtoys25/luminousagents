@@ -105,6 +105,13 @@
           kw: 'sellers sell casino brokerage leads',
         },
         {
+          label: 'Seller settings',
+          href: '/dashboard/seller-settings/ui',
+          icon: 'settings',
+          match: ['/dashboard/seller-settings'],
+          kw: 'seller policy reminders recipients separation retention',
+        },
+        {
           label: 'Seller privacy',
           href: '/dashboard/seller-privacy/ui',
           icon: 'shield',

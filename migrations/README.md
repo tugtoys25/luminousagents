@@ -62,3 +62,6 @@ Sprint 32 adds no migration. The numbered set remains 0001 through 0030.
 - `0038_seller_messages_interest_privacy.sql`: staff-sent seller messages, material-interest records and events, privacy requests, legal-hold flags. Additive.
 - `0039_seller_phase4_triggers.sql`: append-only triggers for interest events, frozen approved message content, and redaction-only versions of the notes, communications, changes, history and qualification triggers (rollback instructions in the file).
 - `0040_seller_contacts_erasure.sql`: `seller_contacts`; redaction-aware triggers for authority and interest events (rollback in the file header).
+- `0041_seller_policy_settings.sql`: editable seller policy (own table, not `platform_settings`).
+- `0042_seller_authority_evidence.sql`: evidence metadata and access log.
+- `0043_seller_evidence_triggers.sql`: evidence log append-only, rows not deletable, digest and scan verdict fixed (rollback: drop the triggers).

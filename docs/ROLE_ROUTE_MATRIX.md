@@ -9,153 +9,161 @@ session. `yes` means the role is named in that route's `requireRole(...)`; `·` 
 This matrix describes route-level access only. Record-level rules (for example a broker seeing only
 assigned records) are enforced inside the handlers and are covered by their own tests.
 
-143 routes · 1 open to any signed-in staff role.
+151 routes · 1 open to any signed-in staff role.
 
-| Method | Path | super_admin | admin | editor | broker | publisher | auditor |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| GET | `/dashboard` | any | any | any | any | any | any |
-| GET | `/dashboard/access-grants` | yes | yes | · | · | yes | yes |
-| POST | `/dashboard/access-grants/:id/revoke` | yes | yes | · | · | yes | · |
-| GET | `/dashboard/access-grants/ui` | yes | yes | · | · | yes | · |
-| GET | `/dashboard/assignees` | yes | yes | yes | · | · | · |
-| GET | `/dashboard/audit` | yes | yes | · | · | · | yes |
-| GET | `/dashboard/audit/export.csv` | yes | yes | · | · | · | yes |
-| GET | `/dashboard/audit/ui` | yes | yes | · | · | · | yes |
-| POST | `/dashboard/authority/:ref/transition` | yes | yes | · | · | · | · |
-| GET | `/dashboard/brokers` | yes | yes | yes | yes | yes | · |
-| GET | `/dashboard/buyer-sessions` | yes | · | · | · | · | · |
-| POST | `/dashboard/buyer-sessions/:id/revoke` | yes | · | · | · | · | · |
-| GET | `/dashboard/buyer-sessions/ui` | yes | · | · | · | · | · |
-| GET | `/dashboard/buyers` | yes | yes | · | · | · | · |
-| PATCH | `/dashboard/buyers/:id` | yes | yes | · | · | · | · |
-| POST | `/dashboard/buyers/:id/reset-password` | yes | yes | · | · | · | · |
-| POST | `/dashboard/buyers/:id/temporary-password` | yes | yes | · | · | · | · |
-| POST | `/dashboard/buyers/provision` | yes | yes | · | · | · | · |
-| GET | `/dashboard/buyers/ui` | yes | yes | · | · | · | · |
-| GET | `/dashboard/documents` | yes | yes | yes | · | yes | · |
-| DELETE | `/dashboard/documents/:id` | yes | yes | · | · | yes | · |
-| POST | `/dashboard/documents/:id/scan` | yes | yes | · | · | · | · |
-| PATCH | `/dashboard/documents/:id/scan-status` | yes | yes | · | · | · | · |
-| GET | `/dashboard/documents/ui` | yes | yes | yes | · | yes | · |
-| GET | `/dashboard/enquiries` | yes | yes | yes | yes | yes | yes |
-| GET | `/dashboard/enquiries/:id` | yes | yes | yes | yes | yes | yes |
-| PATCH | `/dashboard/enquiries/:id` | yes | yes | yes | yes | · | · |
-| POST | `/dashboard/enquiries/:id/notes` | yes | yes | yes | yes | · | · |
-| GET | `/dashboard/enquiries/ui` | yes | yes | yes | yes | yes | yes |
-| GET | `/dashboard/form-submissions` | yes | yes | yes | yes | · | yes |
-| PATCH | `/dashboard/form-submissions/:id` | yes | yes | yes | yes | · | · |
-| GET | `/dashboard/form-submissions/export.csv` | yes | yes | · | · | · | · |
-| GET | `/dashboard/forms` | yes | yes | yes | · | · | · |
-| POST | `/dashboard/forms` | yes | yes | yes | · | · | · |
-| GET | `/dashboard/forms/ui` | yes | yes | yes | · | · | · |
-| POST | `/dashboard/material-interests/:ref/notification-draft` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/material-interests/:ref/review` | yes | yes | · | yes | · | · |
-| GET | `/dashboard/media` | yes | yes | yes | · | yes | · |
-| DELETE | `/dashboard/media/:id` | yes | yes | · | · | · | · |
-| PATCH | `/dashboard/media/:id` | yes | yes | yes | · | yes | · |
-| GET | `/dashboard/media/:id/download` | yes | yes | yes | · | yes | · |
-| GET | `/dashboard/media/ui` | yes | yes | yes | · | yes | · |
-| POST | `/dashboard/media/upload` | yes | yes | yes | · | yes | · |
-| GET | `/dashboard/nda-requests` | yes | yes | · | yes | yes | · |
-| PATCH | `/dashboard/nda-requests/:id/review` | yes | yes | · | · | yes | · |
-| GET | `/dashboard/nda-requests/:id/signed-pdf` | yes | yes | · | · | yes | · |
-| GET | `/dashboard/nda-requests/ui` | yes | yes | · | yes | yes | · |
-| GET | `/dashboard/nda-templates` | yes | yes | · | · | yes | · |
-| POST | `/dashboard/nda-templates` | yes | yes | · | · | · | · |
-| POST | `/dashboard/nda-templates/:id/activate` | yes | yes | · | · | · | · |
-| GET | `/dashboard/nda-templates/ui` | yes | yes | · | · | · | · |
-| GET | `/dashboard/notifications/jobs` | yes | yes | · | · | · | yes |
-| POST | `/dashboard/notifications/jobs/:id/retry` | yes | yes | · | · | · | · |
-| GET | `/dashboard/notifications/ui` | yes | yes | · | · | · | yes |
-| GET | `/dashboard/opportunities` | yes | yes | yes | yes | yes | yes |
-| POST | `/dashboard/opportunities` | yes | yes | yes | yes | · | · |
-| DELETE | `/dashboard/opportunities/:id` | yes | yes | · | · | · | · |
-| GET | `/dashboard/opportunities/:id` | yes | yes | yes | yes | yes | yes |
-| PATCH | `/dashboard/opportunities/:id` | yes | yes | yes | yes | · | · |
-| POST | `/dashboard/opportunities/:id/documents` | yes | yes | yes | · | yes | · |
-| GET | `/dashboard/opportunities/:id/media` | yes | yes | yes | yes | yes | · |
-| POST | `/dashboard/opportunities/:id/media` | yes | yes | yes | yes | yes | · |
-| DELETE | `/dashboard/opportunities/:id/media/:mediaId` | yes | yes | yes | yes | yes | · |
-| POST | `/dashboard/opportunities/:id/media/from-library` | yes | yes | yes | yes | yes | · |
-| POST | `/dashboard/opportunities/:id/publication` | yes | yes | · | · | yes | · |
-| POST | `/dashboard/opportunities/:id/review` | yes | yes | · | · | yes | · |
-| GET | `/dashboard/opportunities/:id/seller-gates` | yes | yes | · | yes | yes | · |
-| POST | `/dashboard/opportunities/:id/seller-publication-review` | yes | yes | · | yes | yes | · |
-| POST | `/dashboard/opportunities/:id/verify` | yes | yes | · | · | yes | · |
-| GET | `/dashboard/opportunities/:id/versions` | yes | yes | yes | yes | yes | · |
-| POST | `/dashboard/opportunities/:id/versions/:versionNumber/restore` | yes | yes | yes | yes | · | · |
-| POST | `/dashboard/opportunities/:id/workflow` | yes | yes | yes | yes | yes | · |
-| POST | `/dashboard/opportunities/bulk-review` | yes | yes | · | · | yes | · |
-| GET | `/dashboard/opportunities/export.csv` | yes | yes | · | · | · | · |
-| POST | `/dashboard/opportunities/import.csv` | yes | yes | · | · | · | · |
-| GET | `/dashboard/opportunities/lifecycle-transitions` | yes | yes | yes | yes | yes | yes |
-| GET | `/dashboard/opportunities/reconciliation` | yes | yes | · | · | · | yes |
-| GET | `/dashboard/opportunities/review-queue` | yes | yes | yes | yes | yes | · |
-| GET | `/dashboard/opportunities/review-queue/ui` | yes | yes | yes | yes | yes | · |
-| GET | `/dashboard/opportunities/ui` | yes | yes | yes | yes | yes | · |
-| GET | `/dashboard/pages` | yes | yes | yes | · | · | · |
-| POST | `/dashboard/pages` | yes | yes | yes | · | · | · |
-| DELETE | `/dashboard/pages/:id` | yes | yes | · | · | · | · |
-| PATCH | `/dashboard/pages/:id/status` | yes | yes | yes | · | · | · |
-| GET | `/dashboard/pages/defaults` | yes | yes | yes | · | · | · |
-| GET | `/dashboard/pages/ui` | yes | yes | yes | · | · | · |
-| GET | `/dashboard/scanner-settings` | yes | yes | yes | · | yes | · |
-| PUT | `/dashboard/scanner-settings` | yes | yes | · | · | · | · |
-| GET | `/dashboard/seller-enquiries` | yes | yes | · | yes | · | · |
-| GET | `/dashboard/seller-enquiries/:ref` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/anonymise` | yes | yes | · | · | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/assign` | yes | yes | · | · | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/communications` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/convert` | yes | yes | · | yes | · | · |
-| GET | `/dashboard/seller-enquiries/:ref/export` | yes | · | · | · | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/followup-drafts` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/followups` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/followups/:taskId/complete` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/legal-hold` | yes | yes | · | · | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/marketing-withdrawal` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/notes` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/qualification` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/seller` | yes | yes | · | yes | · | · |
-| GET | `/dashboard/seller-enquiries/:ref/seller-candidates` | yes | yes | · | · | · | · |
-| POST | `/dashboard/seller-enquiries/:ref/status` | yes | yes | · | yes | · | · |
-| GET | `/dashboard/seller-enquiries/ui` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/seller-material-notices/:messageId/send` | yes | yes | · | · | · | · |
-| POST | `/dashboard/seller-messages/:messageId/cancel` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/seller-messages/:messageId/send` | yes | yes | · | yes | · | · |
-| GET | `/dashboard/seller-privacy-requests` | yes | yes | · | · | · | · |
-| POST | `/dashboard/seller-privacy-requests` | yes | yes | · | · | · | · |
-| POST | `/dashboard/seller-privacy-requests/:ref/update` | yes | yes | · | · | · | · |
-| GET | `/dashboard/seller-privacy/ui` | yes | yes | · | · | · | · |
-| GET | `/dashboard/seller-retention/candidates` | yes | yes | · | · | · | · |
-| GET | `/dashboard/sellers` | yes | yes | · | yes | · | · |
-| GET | `/dashboard/sellers/:ref` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/sellers/:ref/anonymise` | yes | yes | · | · | · | · |
-| POST | `/dashboard/sellers/:ref/contacts` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/sellers/:ref/contacts/:contactId/remove` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/sellers/:ref/legal-hold` | yes | yes | · | · | · | · |
-| POST | `/dashboard/sellers/:ref/links` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/sellers/:ref/links/:linkId/authority` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/sellers/:ref/links/:linkId/end` | yes | yes | · | · | · | · |
-| POST | `/dashboard/sellers/:ref/links/:linkId/interests` | yes | yes | · | yes | · | · |
-| POST | `/dashboard/sellers/:ref/links/:linkId/review` | yes | yes | · | · | · | · |
-| POST | `/dashboard/sellers/:ref/update` | yes | yes | · | yes | · | · |
-| GET | `/dashboard/sellers/ui` | yes | yes | · | yes | · | · |
-| GET | `/dashboard/sessions` | yes | · | · | · | · | · |
-| POST | `/dashboard/sessions/:id/revoke` | yes | · | · | · | · | · |
-| GET | `/dashboard/sessions/ui` | yes | · | · | · | · | · |
-| GET | `/dashboard/settings` | yes | yes | yes | · | · | · |
-| PUT | `/dashboard/settings` | yes | yes | · | · | · | · |
-| GET | `/dashboard/settings/ui` | yes | yes | yes | · | · | · |
-| GET | `/dashboard/staff` | yes | · | · | · | · | · |
-| POST | `/dashboard/staff` | yes | · | · | · | · | · |
-| PATCH | `/dashboard/staff/:id` | yes | · | · | · | · | · |
-| POST | `/dashboard/staff/:id/reset-password` | yes | · | · | · | · | · |
-| POST | `/dashboard/staff/:id/temporary-password` | yes | · | · | · | · | · |
-| GET | `/dashboard/staff/ui` | yes | · | · | · | · | · |
-| GET | `/dashboard/tasks` | yes | yes | yes | yes | yes | yes |
-| POST | `/dashboard/tasks` | yes | yes | yes | yes | yes | · |
-| PATCH | `/dashboard/tasks/:id` | yes | yes | yes | yes | yes | · |
-| GET | `/dashboard/tasks/ui` | yes | yes | yes | yes | yes | · |
+| Method | Path | super_admin | admin | editor | broker | publisher | auditor | compliance |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| GET | `/dashboard` | any | any | any | any | any | any | any |
+| GET | `/dashboard/access-grants` | yes | yes | · | · | yes | yes | · |
+| POST | `/dashboard/access-grants/:id/revoke` | yes | yes | · | · | yes | · | · |
+| GET | `/dashboard/access-grants/ui` | yes | yes | · | · | yes | · | · |
+| GET | `/dashboard/assignees` | yes | yes | yes | · | · | · | · |
+| GET | `/dashboard/audit` | yes | yes | · | · | · | yes | · |
+| GET | `/dashboard/audit/export.csv` | yes | yes | · | · | · | yes | · |
+| GET | `/dashboard/audit/ui` | yes | yes | · | · | · | yes | · |
+| POST | `/dashboard/authority-evidence/:evidenceId/delete` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/authority-evidence/:evidenceId/download` | yes | yes | · | · | · | · | yes |
+| POST | `/dashboard/authority-evidence/:evidenceId/retire` | yes | yes | · | · | · | · | yes |
+| POST | `/dashboard/authority-evidence/:evidenceId/scan` | yes | yes | · | · | · | · | yes |
+| POST | `/dashboard/authority/:ref/evidence` | yes | yes | · | yes | · | · | yes |
+| POST | `/dashboard/authority/:ref/transition` | yes | yes | · | · | · | · | yes |
+| GET | `/dashboard/brokers` | yes | yes | yes | yes | yes | · | · |
+| GET | `/dashboard/buyer-sessions` | yes | · | · | · | · | · | · |
+| POST | `/dashboard/buyer-sessions/:id/revoke` | yes | · | · | · | · | · | · |
+| GET | `/dashboard/buyer-sessions/ui` | yes | · | · | · | · | · | · |
+| GET | `/dashboard/buyers` | yes | yes | · | · | · | · | · |
+| PATCH | `/dashboard/buyers/:id` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/buyers/:id/reset-password` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/buyers/:id/temporary-password` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/buyers/provision` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/buyers/ui` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/documents` | yes | yes | yes | · | yes | · | · |
+| DELETE | `/dashboard/documents/:id` | yes | yes | · | · | yes | · | · |
+| POST | `/dashboard/documents/:id/scan` | yes | yes | · | · | · | · | · |
+| PATCH | `/dashboard/documents/:id/scan-status` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/documents/ui` | yes | yes | yes | · | yes | · | · |
+| GET | `/dashboard/enquiries` | yes | yes | yes | yes | yes | yes | · |
+| GET | `/dashboard/enquiries/:id` | yes | yes | yes | yes | yes | yes | · |
+| PATCH | `/dashboard/enquiries/:id` | yes | yes | yes | yes | · | · | · |
+| POST | `/dashboard/enquiries/:id/notes` | yes | yes | yes | yes | · | · | · |
+| GET | `/dashboard/enquiries/ui` | yes | yes | yes | yes | yes | yes | · |
+| GET | `/dashboard/form-submissions` | yes | yes | yes | yes | · | yes | · |
+| PATCH | `/dashboard/form-submissions/:id` | yes | yes | yes | yes | · | · | · |
+| GET | `/dashboard/form-submissions/export.csv` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/forms` | yes | yes | yes | · | · | · | · |
+| POST | `/dashboard/forms` | yes | yes | yes | · | · | · | · |
+| GET | `/dashboard/forms/ui` | yes | yes | yes | · | · | · | · |
+| POST | `/dashboard/material-interests/:ref/notification-draft` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/material-interests/:ref/review` | yes | yes | · | yes | · | · | · |
+| GET | `/dashboard/media` | yes | yes | yes | · | yes | · | · |
+| DELETE | `/dashboard/media/:id` | yes | yes | · | · | · | · | · |
+| PATCH | `/dashboard/media/:id` | yes | yes | yes | · | yes | · | · |
+| GET | `/dashboard/media/:id/download` | yes | yes | yes | · | yes | · | · |
+| GET | `/dashboard/media/ui` | yes | yes | yes | · | yes | · | · |
+| POST | `/dashboard/media/upload` | yes | yes | yes | · | yes | · | · |
+| GET | `/dashboard/nda-requests` | yes | yes | · | yes | yes | · | · |
+| PATCH | `/dashboard/nda-requests/:id/review` | yes | yes | · | · | yes | · | · |
+| GET | `/dashboard/nda-requests/:id/signed-pdf` | yes | yes | · | · | yes | · | · |
+| GET | `/dashboard/nda-requests/ui` | yes | yes | · | yes | yes | · | · |
+| GET | `/dashboard/nda-templates` | yes | yes | · | · | yes | · | · |
+| POST | `/dashboard/nda-templates` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/nda-templates/:id/activate` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/nda-templates/ui` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/notifications/jobs` | yes | yes | · | · | · | yes | · |
+| POST | `/dashboard/notifications/jobs/:id/retry` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/notifications/ui` | yes | yes | · | · | · | yes | · |
+| GET | `/dashboard/opportunities` | yes | yes | yes | yes | yes | yes | · |
+| POST | `/dashboard/opportunities` | yes | yes | yes | yes | · | · | · |
+| DELETE | `/dashboard/opportunities/:id` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/opportunities/:id` | yes | yes | yes | yes | yes | yes | · |
+| PATCH | `/dashboard/opportunities/:id` | yes | yes | yes | yes | · | · | · |
+| POST | `/dashboard/opportunities/:id/documents` | yes | yes | yes | · | yes | · | · |
+| GET | `/dashboard/opportunities/:id/media` | yes | yes | yes | yes | yes | · | · |
+| POST | `/dashboard/opportunities/:id/media` | yes | yes | yes | yes | yes | · | · |
+| DELETE | `/dashboard/opportunities/:id/media/:mediaId` | yes | yes | yes | yes | yes | · | · |
+| POST | `/dashboard/opportunities/:id/media/from-library` | yes | yes | yes | yes | yes | · | · |
+| POST | `/dashboard/opportunities/:id/publication` | yes | yes | · | · | yes | · | · |
+| POST | `/dashboard/opportunities/:id/review` | yes | yes | · | · | yes | · | · |
+| GET | `/dashboard/opportunities/:id/seller-gates` | yes | yes | · | yes | yes | · | yes |
+| POST | `/dashboard/opportunities/:id/seller-publication-review` | yes | yes | · | yes | yes | · | · |
+| POST | `/dashboard/opportunities/:id/verify` | yes | yes | · | · | yes | · | · |
+| GET | `/dashboard/opportunities/:id/versions` | yes | yes | yes | yes | yes | · | · |
+| POST | `/dashboard/opportunities/:id/versions/:versionNumber/restore` | yes | yes | yes | yes | · | · | · |
+| POST | `/dashboard/opportunities/:id/workflow` | yes | yes | yes | yes | yes | · | · |
+| POST | `/dashboard/opportunities/bulk-review` | yes | yes | · | · | yes | · | · |
+| GET | `/dashboard/opportunities/export.csv` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/opportunities/import.csv` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/opportunities/lifecycle-transitions` | yes | yes | yes | yes | yes | yes | · |
+| GET | `/dashboard/opportunities/reconciliation` | yes | yes | · | · | · | yes | · |
+| GET | `/dashboard/opportunities/review-queue` | yes | yes | yes | yes | yes | · | · |
+| GET | `/dashboard/opportunities/review-queue/ui` | yes | yes | yes | yes | yes | · | · |
+| GET | `/dashboard/opportunities/ui` | yes | yes | yes | yes | yes | · | · |
+| GET | `/dashboard/pages` | yes | yes | yes | · | · | · | · |
+| POST | `/dashboard/pages` | yes | yes | yes | · | · | · | · |
+| DELETE | `/dashboard/pages/:id` | yes | yes | · | · | · | · | · |
+| PATCH | `/dashboard/pages/:id/status` | yes | yes | yes | · | · | · | · |
+| GET | `/dashboard/pages/defaults` | yes | yes | yes | · | · | · | · |
+| GET | `/dashboard/pages/ui` | yes | yes | yes | · | · | · | · |
+| GET | `/dashboard/scanner-settings` | yes | yes | yes | · | yes | · | · |
+| PUT | `/dashboard/scanner-settings` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/seller-enquiries` | yes | yes | · | yes | · | · | yes |
+| GET | `/dashboard/seller-enquiries/:ref` | yes | yes | · | yes | · | · | yes |
+| POST | `/dashboard/seller-enquiries/:ref/anonymise` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/assign` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/communications` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/convert` | yes | yes | · | yes | · | · | · |
+| GET | `/dashboard/seller-enquiries/:ref/export` | yes | · | · | · | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/followup-drafts` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/followups` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/followups/:taskId/complete` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/legal-hold` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/marketing-withdrawal` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/notes` | yes | yes | · | yes | · | · | yes |
+| POST | `/dashboard/seller-enquiries/:ref/qualification` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/seller` | yes | yes | · | yes | · | · | · |
+| GET | `/dashboard/seller-enquiries/:ref/seller-candidates` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/seller-enquiries/:ref/status` | yes | yes | · | yes | · | · | · |
+| GET | `/dashboard/seller-enquiries/ui` | yes | yes | · | yes | · | · | yes |
+| POST | `/dashboard/seller-material-notices/:messageId/send` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/seller-messages/:messageId/cancel` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/seller-messages/:messageId/send` | yes | yes | · | yes | · | · | · |
+| GET | `/dashboard/seller-privacy-requests` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/seller-privacy-requests` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/seller-privacy-requests/:ref/update` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/seller-privacy/ui` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/seller-retention/candidates` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/seller-settings` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/seller-settings/:key` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/seller-settings/ui` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/sellers` | yes | yes | · | yes | · | · | yes |
+| GET | `/dashboard/sellers/:ref` | yes | yes | · | yes | · | · | yes |
+| POST | `/dashboard/sellers/:ref/anonymise` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/sellers/:ref/contacts` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/sellers/:ref/contacts/:contactId/remove` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/sellers/:ref/legal-hold` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/sellers/:ref/links` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/sellers/:ref/links/:linkId/authority` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/sellers/:ref/links/:linkId/end` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/sellers/:ref/links/:linkId/interests` | yes | yes | · | yes | · | · | · |
+| POST | `/dashboard/sellers/:ref/links/:linkId/review` | yes | yes | · | · | · | · | · |
+| POST | `/dashboard/sellers/:ref/update` | yes | yes | · | yes | · | · | · |
+| GET | `/dashboard/sellers/ui` | yes | yes | · | yes | · | · | yes |
+| GET | `/dashboard/sessions` | yes | · | · | · | · | · | · |
+| POST | `/dashboard/sessions/:id/revoke` | yes | · | · | · | · | · | · |
+| GET | `/dashboard/sessions/ui` | yes | · | · | · | · | · | · |
+| GET | `/dashboard/settings` | yes | yes | yes | · | · | · | · |
+| PUT | `/dashboard/settings` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/settings/ui` | yes | yes | yes | · | · | · | · |
+| GET | `/dashboard/staff` | yes | · | · | · | · | · | · |
+| POST | `/dashboard/staff` | yes | · | · | · | · | · | · |
+| PATCH | `/dashboard/staff/:id` | yes | · | · | · | · | · | · |
+| POST | `/dashboard/staff/:id/reset-password` | yes | · | · | · | · | · | · |
+| POST | `/dashboard/staff/:id/temporary-password` | yes | · | · | · | · | · | · |
+| GET | `/dashboard/staff/ui` | yes | · | · | · | · | · | · |
+| GET | `/dashboard/tasks` | yes | yes | yes | yes | yes | yes | · |
+| POST | `/dashboard/tasks` | yes | yes | yes | yes | yes | · | · |
+| PATCH | `/dashboard/tasks/:id` | yes | yes | yes | yes | yes | · | · |
+| GET | `/dashboard/tasks/ui` | yes | yes | yes | yes | yes | · | · |
 
 ## Routes open to any signed-in staff role
 

@@ -8,7 +8,7 @@ import { sellerEmailConfig } from '../../seller/jobs';
 import { isStatus, isTerminal } from '../../seller/lifecycle';
 import { jsonError, loadEnquiry, readJson, scopeOf, type Ctx } from '../../seller/staff-access';
 import { getEnquiry } from '../../seller/staff-repo';
-import { dualApprovalEnabled } from '../../seller/seller-access';
+import { loadSellerPolicy } from '../../seller/policy-load';
 import { type AdminApp, id, now, sellerInterestApproveRoles, sellerWorkRoles } from '../shared';
 
 const admin = new Hono<AdminApp>();
@@ -74,7 +74,7 @@ admin.post('/seller-material-notices/:messageId/send', requireRole(...sellerInte
   const message = await loadSendable(c, 'MATERIAL_INTEREST');
   if (message instanceof Response) return message;
   const staff = c.get('staff');
-  if (dualApprovalEnabled(c.env) && staff.id === message.createdBy) return jsonError(c, 403, 'SEPARATION_OF_DUTIES', 'The person who drafted this notice cannot approve it.');
+  if ((await loadSellerPolicy(c.env)).materialInterestDualApproval && staff.id === message.createdBy) return jsonError(c, 403, 'SEPARATION_OF_DUTIES', 'The person who drafted this notice cannot approve it.');
   const view = await dispatchView(c.env.DB, message.id, now());
   if (!view || view.interestStage !== 'APPROVED') return jsonError(c, 409, 'GATE_NOT_MET', 'The material-interest record is not approved for seller notification.');
   if (view.currentInterestVersion !== message.interestVersion) return jsonError(c, 409, 'GATE_NOT_MET', 'The interest record changed after this draft. Create a new draft.');

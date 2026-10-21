@@ -136,6 +136,7 @@ export async function anonymiseSeller(db: D1Database, p: Actor & { seller: Priva
     db.prepare(`UPDATE seller_enquiry_qualifications SET checklist_json = '[]', next_action = '[redacted]' WHERE enquiry_id IN ${enquiries} AND (checklist_json <> '[]' OR next_action <> '[redacted]') AND ${done}`).bind(s.id, s.id, p.ts),
     db.prepare(`UPDATE seller_outbound_messages SET subject = '[redacted]', body_text = '[redacted]', body_html = '[redacted]', recipient_email = 'redacted@invalid.example' WHERE (enquiry_id IN ${enquiries} OR seller_id = ?) AND body_text <> '[redacted]' AND ${done}`).bind(s.id, s.id, s.id, p.ts),
     db.prepare(`UPDATE staff_tasks SET title = '[redacted]', description = '', outcome = NULL WHERE related_entity_type = 'seller_enquiry' AND related_entity_id IN ${enquiries} AND ${done}`).bind(s.id, s.id, p.ts),
+    db.prepare(`UPDATE seller_authority_evidence SET purge_pending = 1, filename = '[redacted]', status = 'RETIRED', updated_at = ? WHERE record_id IN (SELECT r.id FROM seller_authority_records r JOIN seller_opportunity_links l ON l.id = r.link_id WHERE l.seller_id = ?) AND purged_at IS NULL AND purge_pending = 0 AND ${done}`).bind(p.ts, s.id, s.id, p.ts),
     db.prepare(`INSERT INTO audit_logs (id, actor_user_id, actor_type, action, entity_type, entity_id, request_id, details_json, created_at) SELECT ?, ?, 'staff', 'seller.anonymised', 'seller', ?, ?, ?, ? WHERE ${done}`)
       .bind(p.auditId, p.id, s.id, p.requestId, JSON.stringify({ reference: s.reference, reason: p.reason }), p.ts, s.id, p.ts),
   ]);

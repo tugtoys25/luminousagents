@@ -22,7 +22,7 @@ const source = readAdminSources(root);
 const outPath = join(root, 'docs/ROLE_ROUTE_MATRIX.md');
 const check = process.argv.includes('--check');
 
-const ALL_ROLES = ['super_admin', 'admin', 'editor', 'broker', 'publisher', 'auditor'];
+const ALL_ROLES = ['super_admin', 'admin', 'editor', 'broker', 'publisher', 'auditor', 'compliance'];
 
 // Resolve `const xRoles = ['a', 'b'];` arrays declared in the file.
 const named = {};
