@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PERMISSIONS } from '../../src/permissions/permissions';
-import { sellerAssignRoles, sellerReadRoles, sellerWorkRoles } from '../../src/admin/shared';
+import { sellerAssignRoles, sellerNoteRoles, sellerReadRoles, sellerWorkRoles } from '../../src/admin/shared';
 import { assignSchema, communicationSchema, followupSchema, listQuerySchema, noteSchema, qualificationSchema, statusSchema } from '../../src/seller/staff-schemas';
 import { QUALIFICATION_ITEMS } from '../../src/seller/lifecycle';
 import { reminderPolicy, reminderWindow } from '../../src/seller/reminders';
@@ -14,8 +14,10 @@ describe('seller permissions', () => {
   it('route role lists equal the permission map', () => {
     expect(sorted(sellerReadRoles)).toEqual(sorted(PERMISSIONS['seller_enquiries.read']));
     expect(sorted(sellerAssignRoles)).toEqual(sorted(PERMISSIONS['seller_enquiries.assign']));
-    for (const key of ['seller_enquiries.update_status', 'seller_enquiries.add_note', 'seller_enquiries.record_communication', 'seller_followups.manage'] as const)
+    for (const key of ['seller_enquiries.update_status', 'seller_enquiries.record_communication', 'seller_followups.manage'] as const)
       expect(sorted(sellerWorkRoles)).toEqual(sorted(PERMISSIONS[key]));
+    // Compliance may add notes but not change status or record communications, so notes have their own list.
+    expect(sorted(sellerNoteRoles)).toEqual(sorted(PERMISSIONS['seller_enquiries.add_note']));
   });
   it('does not grant seller data to editors, publishers or auditors, and keeps assignment/closure with managers', () => {
     for (const role of ['editor', 'publisher', 'auditor']) expect(sellerReadRoles).not.toContain(role);
