@@ -4,11 +4,11 @@ import type { Actor, SellerScope } from './seller-repo';
 
 export interface AuthorityRef {
   id: string; reference: string; linkId: string; sellerId: string; sellerReference: string; opportunityId: string; authorityType: string;
-  status: string; version: number; createdBy: string; evidenceType: string; scope: string; validFrom: string | null; validUntil: string | null;
+  status: string; version: number; createdBy: string; evidenceType: string; evidenceRef: string | null; scope: string; validFrom: string | null; validUntil: string | null;
 }
 export function findAuthority(db: D1Database, reference: string, s: SellerScope): Promise<AuthorityRef | null> {
   return db.prepare(`SELECT r.id, r.reference, r.link_id AS linkId, l.seller_id AS sellerId, x.reference AS sellerReference, l.opportunity_id AS opportunityId, r.authority_type AS authorityType,
-      r.status, r.version, r.created_by AS createdBy, r.evidence_type AS evidenceType, r.scope, r.valid_from AS validFrom, r.valid_until AS validUntil
+      r.status, r.version, r.created_by AS createdBy, r.evidence_type AS evidenceType, r.evidence_ref AS evidenceRef, r.scope, r.valid_from AS validFrom, r.valid_until AS validUntil
     FROM seller_authority_records r JOIN seller_opportunity_links l ON l.id = r.link_id JOIN sellers x ON x.id = l.seller_id
     WHERE r.reference = ? AND x.anonymised_at IS NULL AND (? = 0 OR x.relationship_owner = ?)`).bind(reference, s.brokerOnly, s.staffId).first<AuthorityRef>();
 }
@@ -76,7 +76,7 @@ export async function changeAuthority(db: D1Database, p: Actor & AuthorityChange
 /** VERIFIED records whose validity window has closed. The publication gate already ignores them; this makes the status honest. */
 export async function listExpiredVerified(db: D1Database, nowIso: string, limit: number): Promise<AuthorityRef[]> {
   const r = await db.prepare(`SELECT r.id, r.reference, r.link_id AS linkId, l.seller_id AS sellerId, x.reference AS sellerReference, l.opportunity_id AS opportunityId, r.authority_type AS authorityType,
-      r.status, r.version, r.created_by AS createdBy, r.evidence_type AS evidenceType, r.scope, r.valid_from AS validFrom, r.valid_until AS validUntil FROM seller_authority_records r JOIN seller_opportunity_links l ON l.id = r.link_id JOIN sellers x ON x.id = l.seller_id
+      r.status, r.version, r.created_by AS createdBy, r.evidence_type AS evidenceType, r.evidence_ref AS evidenceRef, r.scope, r.valid_from AS validFrom, r.valid_until AS validUntil FROM seller_authority_records r JOIN seller_opportunity_links l ON l.id = r.link_id JOIN sellers x ON x.id = l.seller_id
     WHERE r.status = 'VERIFIED' AND r.valid_until IS NOT NULL AND r.valid_until <= ? ORDER BY r.valid_until LIMIT ?`).bind(nowIso, limit).all<AuthorityRef>();
   return r.results ?? [];
 }

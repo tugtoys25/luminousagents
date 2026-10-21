@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { requireRole } from '../../auth/staff-session';
 import { evaluatePublicationGates } from '../../seller/gates';
 import { createReview, decideReview, getReview, listPublicationEvents, loadGateInput, opportunityInScope, saveReview, type ReviewFlags, type ReviewRow } from '../../seller/publication-repo';
-import { sellerScopeOf, separationEnforced } from '../../seller/seller-access';
+import { loadSellerPolicy } from '../../seller/policy-load';
+import { sellerScopeOf } from '../../seller/seller-access';
 import { publicationReviewSchema } from '../../seller/seller-schemas';
 import { jsonError, readJson } from '../../seller/staff-access';
 import { type AdminApp, id, now, publisherRoles, purgeOpportunityPublicCache, sellerReadRoles, sellerWorkRoles } from '../shared';
@@ -51,7 +52,7 @@ admin.post('/opportunities/:id/seller-publication-review', requireRole(...seller
   if (d.confirm !== true) return jsonError(c, 422, 'CONFIRMATION_REQUIRED', 'Confirm this decision to continue.');
   if (d.action !== 'approve' && (d.reason?.length ?? 0) < 5) return jsonError(c, 422, 'REASON_REQUIRED', 'A reason of at least 5 characters is required.');
   if (d.action === 'approve') {
-    const problem = approvalProblem(review, separationEnforced(c.env) ? staff.id : null);
+    const problem = approvalProblem(review, (await loadSellerPolicy(c.env)).separationOfDuties ? staff.id : null);
     if (problem) return jsonError(c, 409, 'GATE_NOT_MET', problem);
     const gates = evaluatePublicationGates({ ...(await loadGateInput(c.env.DB, opp.id)) }, actor.ts);
     const blockers = gates.unmet.filter((m) => !m.startsWith('Publication review'));

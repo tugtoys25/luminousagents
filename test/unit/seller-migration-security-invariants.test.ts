@@ -162,3 +162,48 @@ describe('seller gap closure (static checks)', () => {
     expect(read('e2e/tests/seller-workflow.spec.ts')).toContain('/sell-a-casino');
   });
 });
+
+describe('seller compliance, settings and evidence (static checks)', () => {
+  it('evidence routes are role-guarded, and download, delete and verification need recent MFA', () => {
+    const src = read('src/admin/routes/seller-evidence.ts');
+    expect(src.match(/requireRole\(/g)?.length).toBe(src.match(/admin\.(get|post)\(/g)?.length);
+    expect(src).toMatch(/\/download', requireRole\(\.\.\.sellerEvidenceDownloadRoles\), requireRecentMfa/);
+    expect(src).toMatch(/\/delete', requireRole\(\.\.\.sellerEvidenceDeleteRoles\), requireRecentMfa/);
+    expect(src).not.toMatch(/\.prepare\(/);
+  });
+  it('downloads fail closed: the access log is written before any bytes are read', () => {
+    const src = read('src/admin/routes/seller-evidence.ts');
+    expect(src.indexOf('logDownload(')).toBeGreaterThan(-1);
+    expect(src.indexOf('logDownload(')).toBeLessThan(src.indexOf('PRIVATE_FILES.get('));
+    expect(src).toContain("scanStatus !== 'clean'");
+    expect(src).toContain("'X-Content-Type-Options': 'nosniff'");
+    expect(src).toContain("'Cache-Control': 'private, no-store'");
+  });
+  it('verification requires real evidence, and no code builds a public or pre-signed evidence URL', () => {
+    expect(read('src/admin/routes/seller-authority.ts')).toContain('usableEvidenceCount(');
+    for (const f of ['src/admin/routes/seller-evidence.ts', 'src/seller/evidence-repo.ts', 'src/seller/evidence-files.ts']) expect(read(f), f).not.toMatch(/createSignedUrl|presign|public.*r2\.dev|https?:\/\//i);
+  });
+  it('editable policy is stored outside platform_settings, validated, audited, and sensitive keys need a super admin plus MFA', () => {
+    const route = read('src/admin/routes/seller-settings.ts');
+    expect(route).toContain("def.sensitive");
+    expect(route).toContain("staff.role !== 'super_admin'");
+    expect(route).toContain('stepUpResponse(');
+    expect(read('src/seller/policy-repo.ts')).toContain('seller_policy_settings');
+    expect(read('src/seller/policy-repo.ts')).not.toContain('platform_settings');
+    expect(read('src/seller/policy-repo.ts')).toContain('seller_policy.changed');
+  });
+  it('seller code no longer reads the editable settings straight from the environment', () => {
+    for (const f of ['src/admin/routes/seller-authority.ts', 'src/admin/routes/seller-publication.ts', 'src/admin/routes/seller-messages.ts', 'src/admin/routes/seller-interest.ts', 'src/admin/routes/seller-privacy.ts', 'src/seller/jobs.ts', 'src/seller/routes.ts', 'src/web/pages/public-sell.tsx'])
+      expect(read(f), f).not.toMatch(/env\.SELLER_(SEPARATION|MATERIAL|RETENTION|MARKETING|ALERT_RECIPIENTS|ESCALATION_RECIPIENTS)/);
+  });
+  it('compliance is a staff role with MFA required by default, and cannot reach publication or sending', () => {
+    expect(read('src/permissions/permissions.ts')).toContain("'compliance'] as const");
+    expect(read('src/auth/mfa.ts')).toContain("'compliance'");
+    expect(read('src/admin/shared.ts')).toMatch(/sellerWorkRoles = \['admin', 'broker', 'super_admin'\]/);
+  });
+  it('evidence and policy migrations are additive and the evidence log is append-only', () => {
+    expect(read('migrations/0042_seller_authority_evidence.sql')).not.toMatch(/\bDROP\s+(TABLE|COLUMN)|\bDELETE\s+FROM/i);
+    expect(read('migrations/0043_seller_evidence_triggers.sql')).toContain('trg_evidence_log_no_update');
+    expect(read('migrations/0041_seller_policy_settings.sql')).not.toMatch(/platform_settings\s*\(/);
+  });
+});

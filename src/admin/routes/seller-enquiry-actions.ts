@@ -4,12 +4,12 @@ import { isStatus, isTerminal } from '../../seller/lifecycle';
 import { completeFollowupSchema, communicationSchema, followupSchema, noteSchema, qualificationSchema } from '../../seller/staff-schemas';
 import { jsonError, loadEnquiry, readJson } from '../../seller/staff-access';
 import { completeFollowup, insertCommunication, insertFollowup, insertNote, insertQualification, isAssignableOwner } from '../../seller/staff-repo';
-import { type AdminApp, id, now, sellerWorkRoles } from '../shared';
+import { type AdminApp, id, now, sellerNoteRoles, sellerWorkRoles } from '../shared';
 
 const admin = new Hono<AdminApp>();
 const bad = 'Check the highlighted fields and try again.';
 
-admin.post('/seller-enquiries/:ref/notes', requireRole(...sellerWorkRoles), async (c) => {
+admin.post('/seller-enquiries/:ref/notes', requireRole(...sellerNoteRoles), async (c) => {
   const parsed = noteSchema.safeParse(await readJson(c));
   if (!parsed.success) return jsonError(c, 422, 'VALIDATION_ERROR', 'Provide a note of 2 to 3000 characters.');
   const enquiry = await loadEnquiry(c);

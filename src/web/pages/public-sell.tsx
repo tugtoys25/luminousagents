@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { BaseLayout } from '../layouts/base';
 import { COUNTRIES } from '../../seller/countries';
+import { loadSellerPolicy } from '../../seller/policy-load';
 import {
   ACCURACY_DECLARATION_TEXT,
   MARKETING_CONSENT_TEXT,
@@ -86,8 +87,8 @@ const Radios = (p: { name: string; legend: string; options: Array<[string, strin
 
 const publicSell = new Hono<PublicApp>();
 
-publicSell.get('/sell-a-casino', (c) => {
-  const marketing = c.env.SELLER_MARKETING_CONSENT_ENABLED === 'true';
+publicSell.get('/sell-a-casino', async (c) => {
+  const marketing = (await loadSellerPolicy(c.env)).marketingConsentEnabled;
   const countries = COUNTRIES.map(([code, name]) => [code, name] as [string, string]);
   return c.html(
     <BaseLayout

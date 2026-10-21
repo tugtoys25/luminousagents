@@ -1,6 +1,6 @@
 (() => {
   const { esc, api, toast, modal, badge, fmtDate, debounce, generatePassword, copy } = window.DX;
-  const roles = ['super_admin', 'admin', 'editor', 'broker', 'publisher', 'auditor'];
+  const roles = ['super_admin', 'admin', 'editor', 'broker', 'publisher', 'auditor', 'compliance'];
   const roleLabel = (r) => r.replace('_', ' ');
   const list = document.getElementById('staff-list');
   const search = document.getElementById('staff-search');

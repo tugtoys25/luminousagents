@@ -4,6 +4,8 @@ import { PermanentEmailError, type SendEmailFn } from '../operations/email-error
 import { renderSellerAcknowledgement, renderSellerFollowupDue, renderSellerInternalAlert, TEMPLATE_ACK, type SellerEmailConfig } from './emails';
 import { JOB_ACK, JOB_ASSIGNMENT, JOB_FOLLOWUP_DUE, JOB_INTERNAL_ALERT, findSellerEnquiryForEmail } from './repo';
 import { contentHash } from './emails-outbound';
+import type { SellerPolicy } from './policy';
+import { loadSellerPolicy } from './policy-load';
 import { cancelIneligible, claimForSend, completeSend, dispatchView } from './message-repo';
 import { renderSellerAssignment } from './emails-internal';
 import { findAssignmentNotice, findFollowupForReminder, recordSystemCommunication } from './staff-repo';
@@ -14,14 +16,15 @@ export const isSellerJob = (type: string): boolean => type === JOB_ACK || type =
 export const parseRecipients = (raw: string | undefined): string[] =>
   (raw ?? '').split(',').map((v) => v.trim()).filter((v) => /^[^\s@,]+@[^\s@,]+$/.test(v));
 
-export function sellerEmailConfig(env: Env): SellerEmailConfig {
+export function sellerEmailConfig(env: Env, policy?: SellerPolicy): SellerEmailConfig {
   const baseUrl = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
-  return { baseUrl, companyWebsite: env.SELLER_COMPANY_WEBSITE || baseUrl, includePhone: env.SELLER_ALERT_INCLUDE_PHONE === 'true', includePrice: env.SELLER_ALERT_INCLUDE_PRICE === 'true' };
+  return { baseUrl, companyWebsite: env.SELLER_COMPANY_WEBSITE || baseUrl, includePhone: policy?.alertIncludePhone ?? env.SELLER_ALERT_INCLUDE_PHONE === 'true', includePrice: policy?.alertIncludePrice ?? env.SELLER_ALERT_INCLUDE_PRICE === 'true' };
 }
 
 export async function handleSellerJob(env: Env, job: { id: string; job_type: string }, payload: Record<string, unknown>, send: SendEmailFn): Promise<boolean> {
   if (!isSellerJob(job.job_type)) return false;
-  const cfg = sellerEmailConfig(env);
+  const policy = await loadSellerPolicy(env);
+  const cfg = sellerEmailConfig(env, policy);
   const from = env.SELLER_EMAIL_FROM || env.EMAIL_FROM;
   const idem = `mayfair-${job.id}`;
 
@@ -66,7 +69,7 @@ export async function handleSellerJob(env: Env, job: { id: string; job_type: str
     if (!task) throw new PermanentEmailError('Follow-up not found');
     // Completed, cancelled or closed-out work no longer needs a reminder: finish the job without sending.
     if (!['open', 'in_progress', 'blocked'].includes(task.taskStatus) || ['CONVERTED', 'DECLINED', 'CLOSED'].includes(task.enquiryStatus)) return true;
-    const to = escalate ? parseRecipients(env.SELLER_ESCALATION_RECIPIENTS) : task.assigneeEmail ? [task.assigneeEmail] : [];
+    const to = escalate ? policy.escalationRecipients : task.assigneeEmail ? [task.assigneeEmail] : [];
     if (!to.length) throw new PermanentEmailError('No reminder recipient');
     const mail = renderSellerFollowupDue(task, cfg, escalate);
     await send(env, to, mail.subject, mail.html, mail.text, idem, { from });
@@ -86,8 +89,8 @@ export async function handleSellerJob(env: Env, job: { id: string; job_type: str
     return true;
   }
 
-  const recipients = parseRecipients(env.SELLER_ALERT_RECIPIENTS);
-  if (!recipients.length) throw new Error('SELLER_ALERT_RECIPIENTS is not configured');
+  const recipients = policy.alertRecipients;
+  if (!recipients.length) throw new Error('No new-enquiry alert recipients are configured (Seller settings, or SELLER_ALERT_RECIPIENTS)');
   const mail = renderSellerInternalAlert(enquiry, cfg);
   await send(env, recipients, mail.subject, mail.html, mail.text, idem, { from });
   return true;

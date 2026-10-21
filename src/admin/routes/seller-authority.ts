@@ -3,9 +3,11 @@ import { requireRecentMfa } from '../../auth/step-up';
 import { requireRole } from '../../auth/staff-session';
 import { APPROVAL_STATUSES, canAuthorityTransition, isAuthorityStatus, WITHDRAWING_STATUSES } from '../../seller/authority';
 import { changeAuthority, findAuthority, insertAuthority, opportunityForLink } from '../../seller/authority-repo';
+import { usableEvidenceCount } from '../../seller/evidence-repo';
 import { generateRef, AUTHORITY_REF_PATTERN } from '../../seller/reference';
 import { findLink } from '../../seller/seller-repo';
-import { loadSeller, sellerScopeOf, separationEnforced } from '../../seller/seller-access';
+import { loadSellerPolicy } from '../../seller/policy-load';
+import { loadSeller, sellerScopeOf } from '../../seller/seller-access';
 import { authorityCreateSchema, authorityTransitionSchema } from '../../seller/seller-schemas';
 import { isUniqueViolation } from '../../seller/repo';
 import { jsonError, readJson } from '../../seller/staff-access';
@@ -56,7 +58,8 @@ admin.post('/authority/:ref/transition', requireRole(...authorityReviewRoles), r
   if (d.expectedVersion !== record.version) return jsonError(c, 409, 'VERSION_CONFLICT', 'This record changed. Reload and try again.');
   const staff = c.get('staff');
   if (APPROVAL_STATUSES.includes(d.to) && d.confirm !== true) return jsonError(c, 422, 'CONFIRMATION_REQUIRED', 'Confirm this decision to continue.');
-  if ((d.to === 'VERIFIED' || d.to === 'NOT_REQUIRED_WITH_RECORDED_REASON') && separationEnforced(c.env) && staff.id === record.createdBy)
+  const policy = await loadSellerPolicy(c.env);
+  if ((d.to === 'VERIFIED' || d.to === 'NOT_REQUIRED_WITH_RECORDED_REASON') && policy.separationOfDuties && staff.id === record.createdBy)
     return jsonError(c, 403, 'SEPARATION_OF_DUTIES', 'The person who recorded this authority cannot verify it.');
   const validFrom = iso(d.validFrom) ?? record.validFrom;
   const validUntil = iso(d.validUntil) ?? record.validUntil;
@@ -64,6 +67,8 @@ admin.post('/authority/:ref/transition', requireRole(...authorityReviewRoles), r
   if (d.to === 'VERIFIED') {
     if ((d.evidenceType ?? record.evidenceType) === 'NONE') return jsonError(c, 422, 'GATE_NOT_MET', 'Record the type and reference of the evidence reviewed.');
     if ((d.scope ?? record.scope).length < 5) return jsonError(c, 422, 'GATE_NOT_MET', 'Record the scope of the authority.');
+    // Evidence must actually exist: a recorded reference, or at least one uploaded file that has been scanned clean.
+    if (!(d.evidenceRef ?? record.evidenceRef) && (await usableEvidenceCount(c.env.DB, record.id)) === 0) return jsonError(c, 422, 'GATE_NOT_MET', 'Attach a scanned evidence file or record an evidence reference before verifying.');
     if (validUntil && validUntil <= ts) return jsonError(c, 422, 'GATE_NOT_MET', 'The validity period has already ended.');
     if (validFrom && validUntil && validUntil <= validFrom) return jsonError(c, 422, 'VALIDATION_ERROR', 'The end date must be after the start date.');
   }

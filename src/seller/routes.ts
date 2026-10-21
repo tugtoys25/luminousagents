@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Context, MiddlewareHandler } from 'hono';
 import type { Env } from '../env';
+import { loadSellerPolicy } from './policy-load';
 import { JOB_ACK, JOB_INTERNAL_ALERT, findByIdempotencyHash, insertSellerEnquiry, isUniqueViolation } from './repo';
 import { generateReference, keyedHash } from './reference';
 import { MAX_BODY_BYTES, fieldErrors, normaliseSellerEnquiry, sellerEnquirySchema } from './schema';
@@ -62,7 +63,7 @@ seller.post(SELLER_SUBMIT_PATH, async (c) => {
   const existing = await findByIdempotencyHash(c.env.DB, idempotencyHash);
   if (existing) return c.json({ data: { accepted: true, reference: existing.reference } }, 202);
 
-  const data = normaliseSellerEnquiry(parsed.data, c.env.SELLER_MARKETING_CONSENT_ENABLED === 'true');
+  const data = normaliseSellerEnquiry(parsed.data, (await loadSellerPolicy(c.env)).marketingConsentEnabled);
   const id = crypto.randomUUID();
   const timestamp = new Date().toISOString();
   const ackJobId = crypto.randomUUID();

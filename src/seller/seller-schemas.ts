@@ -93,3 +93,12 @@ export const contactSchema = z.object({
   telephone: z.string().trim().regex(/^[0-9+()\-.\s/xX#]{5,40}$/).optional(),
 });
 export const sellerAnonymiseSchema = z.object({ reason: text(5, 500), confirmReference: z.string().regex(/^CM-C-[A-HJ-NP-Z2-9]{6}$/), confirm: z.literal(true) });
+
+// ---- Editable policy ----
+export const policyChangeSchema = z.object({
+  value: z.unknown().optional(), reset: z.boolean().optional(), expectedVersion: z.number().int().min(0), reason: text(5, 500), confirm: z.literal(true),
+});
+
+// ---- Evidence ----
+export const evidenceReasonSchema = z.object({ reason: text(5, 500), confirm: z.literal(true) });
+export const evidenceDeleteSchema = z.object({ reason: text(5, 500), confirmId: uuid, confirm: z.literal(true) });

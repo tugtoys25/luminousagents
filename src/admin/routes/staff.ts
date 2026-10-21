@@ -9,7 +9,7 @@ import { type AdminApp, audit, id, issueTemporaryPassword, now } from '../shared
 const admin = new Hono<AdminApp>();
 
 /* ---------------------------------------------------------------- staff accounts (super administrators only) */
-const staffRoles = ['super_admin', 'admin', 'editor', 'broker', 'publisher', 'auditor'] as const;
+const staffRoles = ['super_admin', 'admin', 'editor', 'broker', 'publisher', 'auditor', 'compliance'] as const;
 
 admin.get('/staff/ui', requireRole('super_admin'), async (c) =>
   c.html(

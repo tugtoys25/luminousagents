@@ -82,7 +82,20 @@ test.describe('seller areas are closed to anonymous visitors', () => {
       expect(await response.text()).not.toMatch(/"data"\s*:|CM-S-[A-Z0-9]{6}/);
     });
   }
-  for (const path of ['/dashboard/seller-enquiries/CM-S-AAAAAA/assign', '/dashboard/seller-enquiries/CM-S-AAAAAA/status', '/dashboard/seller-messages/x/send', '/dashboard/seller-material-notices/x/send', '/dashboard/authority/CM-A-AAAAAA/transition']) {
+  for (const path of ['/dashboard/seller-settings/ui', '/dashboard/seller-settings']) {
+    test(`${path} is not readable without a session`, async ({ request }) => {
+      const response = await request.get(path, { maxRedirects: 0 });
+      expect([301, 302, 303, 307, 308, 401, 403]).toContain(response.status());
+    });
+  }
+  for (const path of ['/dashboard/authority-evidence/00000000-0000-4000-8000-000000000000/download']) {
+    test(`${path} is not downloadable without a session`, async ({ request }) => {
+      const response = await request.get(path, { maxRedirects: 0 });
+      expect([301, 302, 303, 307, 308, 401, 403, 404]).toContain(response.status());
+      expect(response.headers()['content-type'] ?? '').not.toMatch(/pdf|image|officedocument/);
+    });
+  }
+  for (const path of ['/dashboard/seller-enquiries/CM-S-AAAAAA/assign', '/dashboard/seller-enquiries/CM-S-AAAAAA/status', '/dashboard/seller-messages/x/send', '/dashboard/seller-material-notices/x/send', '/dashboard/authority/CM-A-AAAAAA/transition', '/dashboard/authority/CM-A-AAAAAA/evidence', '/dashboard/authority-evidence/x/scan', '/dashboard/authority-evidence/x/delete', '/dashboard/seller-settings/reminders_enabled']) {
     test(`POST ${path} is refused without a session`, async ({ request }) => {
       const response = await request.post(path, { data: {}, maxRedirects: 0 });
       expect([301, 302, 303, 307, 308, 401, 403, 404]).toContain(response.status());
@@ -115,6 +128,14 @@ test.describe('admin signed in (needs E2E_STAFF_EMAIL / E2E_STAFF_PASSWORD, an a
     if (!body.policyConfigured) expect(body.data).toEqual([]);
   });
 
+  test('seller settings list every setting with its source and flag the sensitive ones', async ({ request }) => {
+    const response = await request.get('/dashboard/seller-settings');
+    expect(response.status()).toBe(200);
+    const body = (await response.json()) as { data: Array<{ key: string; source: string; sensitive: boolean }> };
+    expect(body.data.length).toBeGreaterThanOrEqual(11);
+    expect(body.data.filter((x) => x.sensitive).map((x) => x.key).sort()).toEqual(['marketing_consent_enabled', 'material_interest_dual_approval', 'retention_review_days', 'separation_of_duties']);
+  });
+
   test('a seller email cannot be sent without confirmation, and export needs a super admin with recent MFA', async ({ request }) => {
     const send = await request.post('/dashboard/seller-messages/00000000-0000-4000-8000-000000000000/send', { data: { expectedVersion: 1 } });
     expect([404, 422]).toContain(send.status());
@@ -130,6 +151,13 @@ test.describe('broker signed in (needs E2E_BROKER_EMAIL / E2E_BROKER_PASSWORD)',
 
   test('is refused assignment, retention, privacy requests and material-interest approval', async ({ request }) => {
     for (const [method, path] of [['post', '/dashboard/seller-enquiries/CM-S-AAAAAA/assign'], ['get', '/dashboard/seller-retention/candidates'], ['get', '/dashboard/seller-privacy-requests'], ['post', '/dashboard/seller-material-notices/x/send'], ['post', '/dashboard/authority/CM-A-AAAAAA/transition']] as const) {
+      const response = method === 'get' ? await request.get(path) : await request.post(path, { data: {} });
+      expect(response.status(), path).toBe(403);
+    }
+  });
+
+  test('is refused settings, evidence download, evidence deletion and scanning', async ({ request }) => {
+    for (const [method, path] of [['get', '/dashboard/seller-settings'], ['post', '/dashboard/seller-settings/reminders_enabled'], ['get', '/dashboard/authority-evidence/00000000-0000-4000-8000-000000000000/download'], ['post', '/dashboard/authority-evidence/00000000-0000-4000-8000-000000000000/delete'], ['post', '/dashboard/authority-evidence/00000000-0000-4000-8000-000000000000/scan']] as const) {
       const response = method === 'get' ? await request.get(path) : await request.post(path, { data: {} });
       expect(response.status(), path).toBe(403);
     }

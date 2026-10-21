@@ -7,6 +7,8 @@ import {
 } from '../../seller/privacy-repo';
 import { generateRef, REFERENCE_PATTERN, SELLER_REF_PATTERN } from '../../seller/reference';
 import { anonymiseSchema, legalHoldSchema, privacyRequestSchema, privacyUpdateSchema, sellerAnonymiseSchema } from '../../seller/seller-schemas';
+import { runEvidencePurge } from '../../seller/evidence-purge';
+import { loadSellerPolicy } from '../../seller/policy-load';
 import { isUniqueViolation } from '../../seller/repo';
 import { jsonError, loadEnquiry, readJson } from '../../seller/staff-access';
 import { getEnquiry, listAuditFor, listCommunications, listFollowups, listHistory, listNotes, latestQualification } from '../../seller/staff-repo';
@@ -23,8 +25,8 @@ admin.get('/seller-privacy/ui', requireRole(...sellerRetentionRoles), async (c) 
 
 /** Lists enquiries due for retention REVIEW. Only works once the business has configured an approved period; the system assumes none. */
 admin.get('/seller-retention/candidates', requireRole(...sellerRetentionRoles), async (c) => {
-  const days = Number.parseInt(c.env.SELLER_RETENTION_REVIEW_DAYS ?? '', 10);
-  if (!Number.isFinite(days) || days < 1) return c.json({ policyConfigured: false, data: [], note: 'No approved retention period is configured (SELLER_RETENTION_REVIEW_DAYS), so nothing is listed.' });
+  const days = (await loadSellerPolicy(c.env)).retentionReviewDays;
+  if (days === null) return c.json({ policyConfigured: false, data: [], note: 'No approved retention period is configured (Seller settings, or SELLER_RETENTION_REVIEW_DAYS), so nothing is listed.' });
   const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
   return c.json({ policyConfigured: true, reviewAfterDays: days, data: await retentionCandidates(c.env.DB, cutoff, 100) });
 });
@@ -129,6 +131,7 @@ admin.post('/sellers/:ref/anonymise', requireRole(...sellerRetentionRoles), requ
   if (seller.status !== 'INACTIVE') return jsonError(c, 409, 'INVALID_STATE', 'Set the seller to INACTIVE first (after ending relationships and closing enquiries).');
   const ok = await anonymiseSeller(c.env.DB, { id: c.get('staff').id, requestId: c.get('requestId'), ts: now(), seller, reason: parsed.data.reason, auditId: id() });
   if (!ok) return jsonError(c, 409, 'GATE_NOT_MET', 'Not anonymised: an active relationship, live listing, open or held enquiry, or open material interest still exists.');
+  await runEvidencePurge(c.env).catch(() => undefined); // best effort now; the scheduled purge retries anything left
   return c.json({ data: { reference: ref, anonymised: true } });
 });
 

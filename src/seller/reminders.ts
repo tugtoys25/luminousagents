@@ -1,5 +1,7 @@
 /** Scheduled follow-up reminders. Idempotent: one reminder per task per reminder window, one escalation per task. */
 import type { Env } from '../env';
+import type { SellerPolicy } from './policy';
+import { loadSellerPolicy } from './policy-load';
 import { JOB_FOLLOWUP_DUE } from './repo';
 import { enqueueReminderJob, listDueFollowups } from './staff-repo';
 
@@ -22,8 +24,12 @@ export function reminderPolicy(env: Env): ReminderPolicy {
 /** Index of the reminder window containing `nowMs`, counted from the due time. Stable within a window. */
 export const reminderWindow = (dueMs: number, nowMs: number, intervalMs: number): number => Math.max(0, Math.floor((nowMs - dueMs) / intervalMs));
 
+export function reminderPolicyFrom(p: SellerPolicy): ReminderPolicy {
+  return { enabled: p.remindersEnabled, intervalMs: p.reminderIntervalHours * 3_600_000, escalateAfterMs: p.escalationAfterHours * 3_600_000, hasEscalationRecipients: p.escalationRecipients.length > 0 };
+}
+
 export async function runSellerReminders(env: Env, nowIso = new Date().toISOString()): Promise<{ reminders: number; escalations: number }> {
-  const policy = reminderPolicy(env);
+  const policy = reminderPolicyFrom(await loadSellerPolicy(env));
   if (!policy.enabled) return { reminders: 0, escalations: 0 };
   const nowMs = Date.parse(nowIso);
   const created: string[] = [];

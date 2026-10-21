@@ -18,6 +18,8 @@ import sellerMessagesRoutes from './routes/seller-messages';
 import sellerInterestRoutes from './routes/seller-interest';
 import sellerPrivacyRoutes from './routes/seller-privacy';
 import sellerContactsRoutes from './routes/seller-contacts';
+import sellerSettingsRoutes from './routes/seller-settings';
+import sellerEvidenceRoutes from './routes/seller-evidence';
 import buyersRoutes from './routes/buyers';
 import ndaRoutes from './routes/nda';
 import opportunityDocumentsRoutes from './routes/opportunity-documents';
@@ -48,7 +50,7 @@ admin.route('/', opportunityQueueRoutes);
 admin.route('/', opportunitiesRoutes);
 admin.route('/', opportunityLifecycleRoutes);
 admin.route('/', enquiriesRoutes);
-for (const path of ['/seller-enquiries', '/seller-enquiries/*', '/sellers', '/sellers/*', '/authority/*', '/material-interests/*', '/seller-messages/*', '/seller-material-notices/*', '/seller-retention/*', '/seller-privacy', '/seller-privacy/*', '/seller-privacy-requests', '/seller-privacy-requests/*', '/opportunities/:id/seller-gates', '/opportunities/:id/seller-publication-review'])
+for (const path of ['/seller-enquiries', '/seller-enquiries/*', '/sellers', '/sellers/*', '/authority/*', '/authority-evidence/*', '/material-interests/*', '/seller-messages/*', '/seller-material-notices/*', '/seller-retention/*', '/seller-privacy', '/seller-privacy/*', '/seller-privacy-requests', '/seller-privacy-requests/*', '/seller-settings', '/seller-settings/*', '/opportunities/:id/seller-gates', '/opportunities/:id/seller-publication-review'])
   admin.use(path, auditSellerDenials);
 admin.route('/', sellerEnquiriesRoutes);
 admin.route('/', sellerEnquiryActionsRoutes);
@@ -60,6 +62,8 @@ admin.route('/', sellerMessagesRoutes);
 admin.route('/', sellerInterestRoutes);
 admin.route('/', sellerPrivacyRoutes);
 admin.route('/', sellerContactsRoutes);
+admin.route('/', sellerSettingsRoutes);
+admin.route('/', sellerEvidenceRoutes);
 admin.route('/', buyersRoutes);
 admin.route('/', ndaRoutes);
 admin.route('/', opportunityDocumentsRoutes);
