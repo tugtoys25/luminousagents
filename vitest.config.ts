@@ -20,6 +20,9 @@ export default defineWorkersConfig(async () => {
       // CI runner, past the 5 second default. A longer limit only stops false timeouts.
       testTimeout: 30_000,
       hookTimeout: 30_000,
+      // The Workers test pool occasionally loses its storage connection on busy CI runners ("Network connection lost"),
+      // failing one heavy test at random. Retry in CI only, so a real failure still fails after three attempts.
+      retry: (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CI ? 2 : 0,
       poolOptions: {
         workers: {
           wrangler: { configPath: './wrangler.jsonc' },
