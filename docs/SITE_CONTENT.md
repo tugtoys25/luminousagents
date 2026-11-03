@@ -28,3 +28,10 @@ Read and write: admin, super_admin, editor. Delete and reset: admin, super_admin
 ## Safety
 Links are same-site paths, `#anchors` or https; colours are `#rrggbb`; fonts are a fixed list plus a sanitised stack;
 all output is escaped by the JSX renderer. No custom CSS or script is accepted.
+
+## One footer everywhere
+The footer is a single component (`src/web/components/site-footer.tsx`). Public pages render it through `BaseLayout`;
+dashboard, buyer, seller and sign-in pages get the same markup injected by `withSharedFooter`
+(`src/web/shared-footer.tsx`), so editing **Footer and brand line** changes all of them. Two switches in that block
+turn it off for the staff dashboard or for buyer, seller and sign-in pages. The workspace shell places the dashboard
+copy under the page content.

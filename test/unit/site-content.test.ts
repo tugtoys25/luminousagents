@@ -10,6 +10,7 @@ import {
   addItem, deleteItem, isCustomised, listStored, loadAllStored, reorderItems, resetCollection, seedCollection, updateItem,
 } from '../../src/site-content/site-content-repo';
 import { loadSiteContent } from '../../src/site-content/load';
+import { withSharedFooter } from '../../src/web/shared-footer';
 
 const ts = '2026-10-30T10:00:00.000Z';
 const def = (key: string) => getCollection(key)!;
@@ -108,3 +109,29 @@ describe('site content storage', () => {
     expect(await isCustomised(env.DB, 'hero')).toBe(false);
   });
 });
+
+describe('shared footer on dashboard, buyer and sign-in pages', () => {
+  const page = '<!doctype html><html><head></head><body><main>Hi</main></body></html>';
+  it('injects the managed footer, wraps it for the dashboard shell and respects the switches', async () => {
+    const account = await withSharedFooter(env, page, { dashboard: false });
+    expect(account).toContain('class="site-footer"');
+    expect(account).toContain('/static/css/shared-footer.css');
+    expect(account.indexOf('site-footer')).toBeLessThan(account.indexOf('</body>'));
+
+    const dash = await withSharedFooter(env, page, { dashboard: true, siteName: 'Acme & Co' });
+    expect(dash).toContain('<template id="shared-footer">');
+    expect(dash).toContain('Acme &amp; Co');
+
+    expect(await withSharedFooter(env, account, { dashboard: false })).toBe(account);
+    expect(await withSharedFooter(env, '<p>fragment</p>', { dashboard: false })).toBe('<p>fragment</p>');
+
+    await env.DB.prepare(
+      "INSERT INTO users (id, email, display_name, role, user_type, status, created_at, updated_at) VALUES ('sf-staff', 'sf@example.com', 'SF', 'admin', 'staff', 'active', ?, ?)",
+    ).bind(ts, ts).run();
+    const footer = getCollection('footer')!;
+    await seedCollection(env.DB, 'footer', [{ id: 'f1', sortOrder: 0, enabled: true, data: { ...footer.defaults[0]!, showOnDashboard: false } }], 'sf-staff', ts);
+    expect(await withSharedFooter(env, page, { dashboard: true })).toBe(page);
+    expect(await withSharedFooter(env, page, { dashboard: false })).toContain('class="site-footer"');
+  });
+});
+

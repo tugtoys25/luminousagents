@@ -36,6 +36,7 @@ import {
 import { listSettings } from './admin/repos/settings-repo';
 import { findPublicMediaAsset } from './admin/repos/media-repo';
 import { BRAND } from './brand/defaults';
+import { withSharedFooter } from './web/shared-footer';
 
 const app = new Hono<{ Bindings: Env; Variables: { requestId: string } }>();
 
@@ -193,6 +194,7 @@ app.use('*', async (c, next) => {
         })
         .join('');
     let html = await c.res.text();
+    html = await withSharedFooter(c.env, html, { dashboard: c.req.path.startsWith('/dashboard'), siteName });
     if (isShellPage) {
       html = applyBrand(html, brandFromSettings(get), {
         includeFavicons: true,
