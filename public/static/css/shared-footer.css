@@ -1,0 +1,26 @@
+/* Managed site footer on pages that do not load site.css (dashboard, buyer, seller and sign-in pages). */
+.site-footer { clear: both; padding: 54px 0 0; background: #201e1c; color: #f5f0e6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; line-height: 1.5; text-align: left; }
+.site-footer .container { width: min(1160px, calc(100% - 48px)); margin-inline: auto; }
+.site-footer a { color: inherit; text-decoration: none; }
+.site-footer a:hover { color: #ead9b6; }
+.site-footer .footer-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1.3fr; gap: 40px; padding-bottom: 44px; }
+.site-footer .brand { display: inline-flex; align-items: center; gap: 12px; color: #fff; }
+.site-footer .brand-mark { display: inline-grid; place-items: center; width: 38px; height: 38px; border: 1px solid #c9a45c; color: #c9a45c; font-family: Georgia, 'Times New Roman', serif; font-size: 20px; }
+.site-footer .brand-logo-image { max-height: 38px; width: auto; }
+.site-footer .brand-copy { display: flex; flex-direction: column; }
+.site-footer .brand-copy strong { font-size: 13px; letter-spacing: .14em; }
+.site-footer .brand-copy small { color: #c1b8a9; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+.site-footer .footer-grid p { max-width: 300px; margin: 22px 0 0; color: #bdb4a7; font-size: 12px; }
+.site-footer .footer-grid > div:not(:first-child) { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; font-size: 12px; color: #d4cbbd; }
+.site-footer .footer-grid > div > strong { margin-bottom: 8px; color: #ead9b6; font-size: 10px; letter-spacing: .15em; text-transform: uppercase; }
+.site-footer .footer-bottom { display: flex; justify-content: space-between; gap: 20px; padding: 18px 0; border-top: 1px solid #ffffff20; color: #b8afa3; font-size: 10px; }
+.workspace-main > .site-footer { margin-top: auto; }
+body > .site-footer:last-of-type { margin-top: 48px; }
+@media (max-width: 900px) {
+  .site-footer .container { width: min(100% - 36px, 700px); }
+  .site-footer .footer-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .site-footer .footer-grid { grid-template-columns: 1fr; }
+  .site-footer .footer-bottom { flex-direction: column; }
+}

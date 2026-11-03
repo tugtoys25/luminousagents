@@ -21,6 +21,8 @@ const FOOTER_FIELDS: FieldDef[] = [
   { name: 'disclaimer', label: 'Legal line', type: 'text', max: 240 },
   { name: 'cookieLabel', label: 'Cookie settings link label', type: 'text', max: 40 },
   { name: 'showAccountLinks', label: 'Show buyer and staff sign-in links', type: 'toggle' },
+  { name: 'showOnDashboard', label: 'Show this footer in the staff dashboard', type: 'toggle' },
+  { name: 'showOnAccountPages', label: 'Show this footer on buyer, seller and sign-in pages', type: 'toggle' },
 ];
 
 const SEO_FIELDS: FieldDef[] = [
@@ -52,7 +54,7 @@ export const SITE_COLLECTIONS: CollectionDef[] = [
       exploreHeading: 'Explore', infoHeading: 'Information', contactHeading: 'Contact',
       copyright: `© {year} ${BRAND.name}. All rights reserved.`,
       disclaimer: 'All opportunities are subject to verification and qualification.',
-      cookieLabel: 'Cookie settings', showAccountLinks: true,
+      cookieLabel: 'Cookie settings', showAccountLinks: true, showOnDashboard: true, showOnAccountPages: true,
     }] },
   { key: 'seo', label: 'Search and sharing', group: 'Search and footer', kind: 'singleton', fields: SEO_FIELDS,
     help: 'Home page search-result text and the default picture shown when a link is shared.',

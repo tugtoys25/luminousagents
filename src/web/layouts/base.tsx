@@ -1,18 +1,11 @@
 import { BRAND } from '../../brand/defaults';
 import type { Child } from 'hono/jsx';
-import { raw } from 'hono/html';
-import { socialRowHtml } from '../branding';
-import { safeUrl } from '../../site-content/fields';
 import { defaultSiteContent } from '../../site-content/resolve';
 import { themeBodyClass, themeCss } from '../../site-content/theme-css';
-import type { NavItem, SiteContent } from '../../site-content/types';
-import { flag, text } from '../components/escape';
-import {
-  DEFAULT_CONTACT,
-  socialInputs,
-  telHref,
-  type ContactSettings,
-} from '../site-settings';
+import type { SiteContent } from '../../site-content/types';
+import { text } from '../components/escape';
+import { BrandCopy, SiteFooter, linkAttrs } from '../components/site-footer';
+import { DEFAULT_CONTACT, type ContactSettings } from '../site-settings';
 import {
   DEFAULT_SHARE_IMAGE,
   breadcrumbLd,
@@ -44,13 +37,6 @@ interface BaseProps {
 
 const SITE_URL: string = BRAND.siteUrl;
 
-/** href plus new-tab attributes for a managed navigation link (links were already validated when loaded). */
-function linkAttrs(item: NavItem): Record<string, string> {
-  const href = safeUrl(item.url);
-  return item['newTab'] === true
-    ? { href, target: '_blank', rel: 'noopener noreferrer' }
-    : { href };
-}
 
 export function BaseLayout({
   title,
@@ -77,19 +63,8 @@ export function BaseLayout({
   })();
   const shareAlt = imageAlt || (image ? title : text(content.seo, 'shareImageAlt') || BRAND.name);
   const trail = crumbs ?? crumbsFromPath(canonicalPath);
-  const footerSocial = socialRowHtml(
-    socialInputs(contact, contact.chairmanEmail),
-    'social-row footer-social',
-  );
   const breadcrumbSchema = breadcrumbLd(baseUrl, trail);
   const themeStyles = themeCss(content.theme);
-  const f = content.footer;
-  const brandCopy = (
-    <span class="brand-copy">
-      <strong>{BRAND.nameUpper}</strong>
-      {text(f, 'tagline') && <small>{text(f, 'tagline')}</small>}
-    </span>
-  );
   return (
     <html lang="en">
       <head>
@@ -174,7 +149,7 @@ export function BaseLayout({
               <span class="brand-mark" aria-hidden="true">
                 {BRAND.markLetter}
               </span>
-              {brandCopy}
+              <BrandCopy content={content} />
             </a>
             <button
               class="menu-toggle"
@@ -266,56 +241,7 @@ export function BaseLayout({
           </nav>
         )}
         <main id="main">{children}</main>
-        <footer class="site-footer">
-          <div class="container footer-grid">
-            <div>
-              <a class="brand brand-footer" href="/">
-                <span class="brand-mark">L</span>
-                <span class="brand-copy">
-                  <strong>LUMINOUS AGENTS</strong>
-                  <small>International Brokerage</small>
-                </span>
-              </a>
-              <p>Confidential brokerage for casino and hospitality investment opportunities.</p>
-              {footerSocial && raw(footerSocial)}
-            </div>
-            <div>
-              <strong>{text(f, 'exploreHeading')}</strong>
-              {content.navFooterExplore.map((item) => (
-                <a {...linkAttrs(item)}>{item.label}</a>
-              ))}
-            </div>
-            <div>
-              <strong>{text(f, 'infoHeading')}</strong>
-              {content.navFooterInfo.map((item) => (
-                <a {...linkAttrs(item)}>{item.label}</a>
-              ))}
-            </div>
-            <div>
-              <strong>{text(f, 'contactHeading')}</strong>
-              <a href={telHref(contact.phoneMobile)}>{contact.phoneMobile}</a>
-              <a href={telHref(contact.phoneOffice)}>{contact.phoneOffice}</a>
-              <a href={`mailto:${contact.email}`}>{contact.email}</a>
-              {flag(f, 'showAccountLinks') && (
-                <>
-                  <a href="/account">Buyer sign in</a>
-                  <a href="/admin/login">Staff sign in</a>
-                </>
-              )}
-            </div>
-          </div>
-          <div class="container footer-bottom">
-            <span>{text(f, 'copyright').replace('{year}', String(new Date().getUTCFullYear()))}</span>
-            <span>
-              {text(f, 'disclaimer')}{' '}
-              {text(f, 'cookieLabel') && (
-                <a href="/legal/cookies" data-cookie-settings>
-                  {text(f, 'cookieLabel')}
-                </a>
-              )}
-            </span>
-          </div>
-        </footer>
+        <SiteFooter content={content} contact={contact} />
       </body>
     </html>
   );

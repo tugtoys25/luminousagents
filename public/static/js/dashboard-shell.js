@@ -462,6 +462,8 @@
     const mainCol = el('div', 'workspace-main');
     const overlay = el('div', 'ws-overlay');
     mainCol.append(topbar, content);
+    const sharedFooter = document.getElementById('shared-footer');
+    if (sharedFooter) mainCol.append(sharedFooter.content.cloneNode(true));
     shell.append(sidebar, mainCol, overlay);
     main.replaceWith(shell);
     if (LS.get(SIDEBAR_KEY) === 'collapsed') shell.classList.add('is-collapsed');
