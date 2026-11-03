@@ -15,7 +15,7 @@ import {
 import * as repo from './mfa-repo';
 import type { MfaDb } from './mfa-repo';
 
-export const MFA_ISSUER = 'Casinos of Mayfair';
+export const MFA_ISSUER = 'Luminous Agents';
 const DEFAULT_REQUIRED_ROLES = ['super_admin', 'admin', 'compliance'];
 const ATTEMPT_LIMIT = 6;
 const ATTEMPT_WINDOW_SECONDS = 600;

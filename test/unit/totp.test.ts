@@ -77,8 +77,8 @@ describe('verifyTotp', () => {
 
 describe('otpauth URI', () => {
   it('encodes issuer, account and parameters', () => {
-    const uri = otpauthUri('Casinos of Mayfair', 'a.b@example.com', 'ABCDEFGH');
-    expect(uri).toContain('otpauth://totp/Casinos%20of%20Mayfair:a.b%40example.com?');
+    const uri = otpauthUri('Luminous Agents', 'a.b@example.com', 'ABCDEFGH');
+    expect(uri).toContain('otpauth://totp/Luminous%20Agents:a.b%40example.com?');
     expect(uri).toContain('secret=ABCDEFGH');
     expect(uri).toContain('digits=6');
     expect(uri).toContain('period=30');

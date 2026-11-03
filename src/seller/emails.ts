@@ -39,7 +39,7 @@ export function renderSellerAcknowledgement(e: Pick<SellerEnquiryForEmail, 'cont
   const site = cfg.companyWebsite;
   const text = `Dear ${name},
 
-Thank you for contacting Casinos of Mayfair regarding your potential sale or investment opportunity.
+Thank you for contacting Luminous Agents regarding your potential sale or investment opportunity.
 
 Your enquiry has been received and recorded under reference:
 
@@ -55,16 +55,16 @@ Please do not send sensitive financial records, identity documents, ownership re
 
 IMPORTANT INFORMATION
 
-Receipt of your enquiry does not constitute acceptance of an engagement, appointment as your broker, a mandate to market or sell an asset, or confirmation that Casinos of Mayfair has verified your authority to act.
+Receipt of your enquiry does not constitute acceptance of an engagement, appointment as your broker, a mandate to market or sell an asset, or confirmation that Luminous Agents has verified your authority to act.
 
 Any proposed engagement or marketing activity will be subject to further review and, where applicable, a separate written agreement.
 
-Thank you for considering Casinos of Mayfair.
+Thank you for considering Luminous Agents.
 
 Yours sincerely,
 
 Brokerage Team
-Casinos of Mayfair International Ltd
+Luminous Agents
 
 Confidential Casino & Casino-Hotel Brokerage
 
@@ -76,22 +76,22 @@ This is an automated acknowledgement of receipt. Please reply to this email only
     BRAND_OPEN +
     paragraphs([
       `Dear ${escapeHtml(name)},`,
-      'Thank you for contacting Casinos of Mayfair regarding your potential sale or investment opportunity.',
+      'Thank you for contacting Luminous Agents regarding your potential sale or investment opportunity.',
       `Your enquiry has been received and recorded under reference:<br><strong style="font-size:1.2em">${escapeHtml(e.reference)}</strong>`,
       'Our brokerage team will review the information you have provided and determine the appropriate next steps. If we require further information or clarification, a member of the team may contact you using your preferred contact method.',
       '<strong>CONFIDENTIALITY</strong>',
       'We understand that the potential sale of a casino, casino-hotel or related hospitality asset may require discretion. We will review your stated confidentiality preferences when assessing your enquiry.',
       'Please do not send sensitive financial records, identity documents, ownership records or other confidential supporting documents in response to this automated email. If additional documentation is required, our team will explain the appropriate secure submission process.',
       '<strong>IMPORTANT INFORMATION</strong>',
-      'Receipt of your enquiry does not constitute acceptance of an engagement, appointment as your broker, a mandate to market or sell an asset, or confirmation that Casinos of Mayfair has verified your authority to act.',
+      'Receipt of your enquiry does not constitute acceptance of an engagement, appointment as your broker, a mandate to market or sell an asset, or confirmation that Luminous Agents has verified your authority to act.',
       'Any proposed engagement or marketing activity will be subject to further review and, where applicable, a separate written agreement.',
-      'Thank you for considering Casinos of Mayfair.',
-      'Yours sincerely,<br><br>Brokerage Team<br>Casinos of Mayfair International Ltd',
+      'Thank you for considering Luminous Agents.',
+      'Yours sincerely,<br><br>Brokerage Team<br>Luminous Agents',
       `<em>Confidential Casino &amp; Casino-Hotel Brokerage</em><br>${escapeHtml(site)}`,
       '<small>This is an automated acknowledgement of receipt. Please reply to this email only if your enquiry requires clarification; do not attach confidential documents.</small>',
     ]) +
     BRAND_CLOSE;
-  return { templateId: TEMPLATE_ACK, subject: 'Casinos of Mayfair — Enquiry Received', html, text };
+  return { templateId: TEMPLATE_ACK, subject: 'Luminous Agents — Enquiry Received', html, text };
 }
 
 const INTERNAL_NOTICE_1 =

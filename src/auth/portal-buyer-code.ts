@@ -31,9 +31,9 @@ async function sendBuyerCodeEmail(env: Env, email: string, code: string): Promis
     body: JSON.stringify({
       from: env.EMAIL_FROM,
       to: [email],
-      subject: 'Your sign-in code · Casinos of Mayfair',
-      html: `<p>Your Casinos of Mayfair sign-in code is <strong>${code}</strong>.</p><p>It expires in 10 minutes and can be used once. If you did not request it, you can ignore this email.</p>`,
-      text: `Your Casinos of Mayfair sign-in code is ${code}. It expires in 10 minutes and can be used once. If you did not request it, ignore this email.`,
+      subject: 'Your sign-in code · Luminous Agents',
+      html: `<p>Your Luminous Agents sign-in code is <strong>${code}</strong>.</p><p>It expires in 10 minutes and can be used once. If you did not request it, you can ignore this email.</p>`,
+      text: `Your Luminous Agents sign-in code is ${code}. It expires in 10 minutes and can be used once. If you did not request it, ignore this email.`,
     }),
   });
   if (!response.ok) throw new Error(`Email provider returned HTTP ${response.status}`);

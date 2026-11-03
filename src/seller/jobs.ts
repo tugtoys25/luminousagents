@@ -1,4 +1,5 @@
 /** Notification-queue handlers for seller email jobs. Called by operations/queue.ts; returns true when it handled the job. */
+import { BRAND } from '../brand/defaults';
 import type { Env } from '../env';
 import { PermanentEmailError, type SendEmailFn } from '../operations/email-errors';
 import { renderSellerAcknowledgement, renderSellerFollowupDue, renderSellerInternalAlert, TEMPLATE_ACK, type SellerEmailConfig } from './emails';
@@ -17,7 +18,7 @@ export const parseRecipients = (raw: string | undefined): string[] =>
   (raw ?? '').split(',').map((v) => v.trim()).filter((v) => /^[^\s@,]+@[^\s@,]+$/.test(v));
 
 export function sellerEmailConfig(env: Env, policy?: SellerPolicy): SellerEmailConfig {
-  const baseUrl = (env.PUBLIC_BASE_URL ?? 'https://casinosofmayfair.com').replace(/\/$/, '');
+  const baseUrl = (env.PUBLIC_BASE_URL ?? BRAND.siteUrl).replace(/\/$/, '');
   return { baseUrl, companyWebsite: env.SELLER_COMPANY_WEBSITE || baseUrl, includePhone: policy?.alertIncludePhone ?? env.SELLER_ALERT_INCLUDE_PHONE === 'true', includePrice: policy?.alertIncludePrice ?? env.SELLER_ALERT_INCLUDE_PRICE === 'true' };
 }
 

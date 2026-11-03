@@ -96,7 +96,7 @@
         return p;
       },
       fields: (it, ui) => [
-        ui.field('title', 'Heading', ui.input(it.title, { maxlength: 160, placeholder: 'e.g. Why Mayfair' })),
+        ui.field('title', 'Heading', ui.input(it.title, { maxlength: 160, placeholder: 'e.g. Why Luminous Agents' })),
         ui.field(
           'body',
           'Text',
@@ -221,7 +221,7 @@
     homepage_sections: {
       kind: 'sections',
       heading: 'Extra homepage sections',
-      help: 'Blocks shown at the bottom of the homepage under the label "More from Mayfair". Leave empty to show none.',
+      help: 'Blocks shown at the bottom of the homepage under the label "More from Luminous Agents". Leave empty to show none.',
     },
     geo_sections: {
       kind: 'sections',

@@ -3,7 +3,7 @@ import { BaseLayout } from '../layouts/base';
 import { STATIC_PAGES, staticPageSlug } from '../static-pages';
 import { findPageOverride } from '../public-listings-repo';
 import { ChairmanSection, ContactLines, FaqList, ServicesGrid, StatsBand, WorldwideSection } from '../components/sections';
-import { OFFICES, SERVICES } from '../content/site-content';
+import { text } from '../components/escape';
 import { servicesLd, webPageLd } from '../seo';
 import type { PublicApp } from './public-shared';
 import { SITE_URL } from './public-shared';
@@ -29,22 +29,23 @@ publicPages.get('/contact', (c) => {
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
       contact={c.get('contact')}
-      title="Contact Our Team | Casinos of Mayfair"
-      description="Contact the Casinos of Mayfair team about casino and hospitality investment opportunities."
+      content={c.get('content')}
+      title="Contact Our Team | Luminous Agents"
+      description="Contact the Luminous Agents team about casino and hospitality investment opportunities."
       canonicalPath="/contact"
       jsonLd={[
         webPageLd(
           (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''),
           '/contact',
-          'Contact Casinos of Mayfair',
-          'Contact the Casinos of Mayfair team about casino and hospitality investment opportunities.',
+          'Contact Luminous Agents',
+          'Contact the Luminous Agents team about casino and hospitality investment opportunities.',
           'ContactPage',
         ),
       ]}
     >
       <section class="page-hero">
         <div class="container">
-          <span class="eyebrow">CASINOS OF MAYFAIR</span>
+          <span class="eyebrow">LUMINOUS AGENTS</span>
           <h1>Start a conversation</h1>
           <p>
             Call, email or message us directly, or send an enquiry below. Please do not include
@@ -102,7 +103,7 @@ publicPages.get('/contact', (c) => {
                 </div>
               )}
               <label class="consent-label">
-                <input type="checkbox" name="consent" required /> I agree that Casinos of Mayfair
+                <input type="checkbox" name="consent" required /> I agree that Luminous Agents
                 may use these details to respond to my enquiry. *
               </label>
               <p class="form-privacy">
@@ -143,8 +144,8 @@ publicPages.get('/contact', (c) => {
             <div class="contact-offices">
               <strong>Offices</strong>
               <ul>
-                {OFFICES.map(([name]) => (
-                  <li>{name}</li>
+                {c.get('content').offices.map((office) => (
+                  <li>{text(office, 'title')}</li>
                 ))}
               </ul>
             </div>
@@ -164,8 +165,9 @@ publicPages.get('/staff-access', (c) =>
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
       contact={c.get('contact')}
-      title="Staff access | Casinos of Mayfair"
-      description="How Casinos of Mayfair staff accounts are created."
+      content={c.get('content')}
+      title="Staff access | Luminous Agents"
+      description="How Luminous Agents staff accounts are created."
       canonicalPath="/staff-access"
       noindex
     >
@@ -174,7 +176,7 @@ publicPages.get('/staff-access', (c) =>
           <span class="eyebrow">STAFF ACCESS</span>
           <h1>Staff accounts are invitation-only</h1>
           <p>
-            Brokers, editors and administrators are set up by a Casinos of Mayfair administrator.
+            Brokers, editors and administrators are set up by a Luminous Agents administrator.
             There is no public staff sign-up.
           </p>
         </div>
@@ -217,13 +219,14 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
         <BaseLayout
           siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
           contact={c.get('contact')}
-          title={`${override.seoTitle || override.title} | Casinos of Mayfair`}
+          content={c.get('content')}
+          title={`${override.seoTitle || override.title} | Luminous Agents`}
           description={override.seoDescription || override.description || description}
           canonicalPath={path}
         >
           <section class="page-hero">
             <div class="container">
-              <span class="eyebrow">CASINOS OF MAYFAIR</span>
+              <span class="eyebrow">LUMINOUS AGENTS</span>
               <h1>{override.title}</h1>
               {override.description && <p>{override.description}</p>}
             </div>
@@ -245,7 +248,8 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
         contact={c.get('contact')}
-        title={`${title} | Casinos of Mayfair`}
+        content={c.get('content')}
+        title={`${title} | Luminous Agents`}
         description={description}
         canonicalPath={path}
         jsonLd={[
@@ -257,13 +261,16 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
             path === '/about' ? 'AboutPage' : 'WebPage',
           ),
           ...(path === '/services'
-            ? [servicesLd((c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''), SERVICES)]
+            ? [servicesLd(
+                (c.env.PUBLIC_BASE_URL || SITE_URL).replace(/\/$/, ''),
+                c.get('content').services.map((row) => [text(row, 'title'), text(row, 'description')] as const),
+              )]
             : []),
         ]}
       >
         <section class="page-hero">
           <div class="container">
-            <span class="eyebrow">CASINOS OF MAYFAIR</span>
+            <span class="eyebrow">LUMINOUS AGENTS</span>
             <h1>{heading}</h1>
             <p>{copy}</p>
           </div>
@@ -271,21 +278,21 @@ for (const [path, title, description, heading, copy] of STATIC_PAGES) {
         {path === '/services' && (
           <section class="section">
             <div class="container">
-              <ServicesGrid />
+              <ServicesGrid content={c.get('content')} />
             </div>
           </section>
         )}
         {path === '/about' && (
           <>
-            <StatsBand />
-            <ChairmanSection contact={c.get('contact')} />
-            <WorldwideSection />
+            <StatsBand content={c.get('content')} />
+            <ChairmanSection contact={c.get('contact')} content={c.get('content')} />
+            <WorldwideSection content={c.get('content')} />
           </>
         )}
         {path === '/faq' && (
           <section class="section">
             <div class="container content-narrow-wide">
-              <FaqList />
+              <FaqList content={c.get('content')} />
             </div>
           </section>
         )}

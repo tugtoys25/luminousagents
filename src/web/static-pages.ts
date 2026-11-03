@@ -15,7 +15,7 @@ export const STATIC_PAGES = [
     'About Us',
     SITE_DESCRIPTION,
     'A personal approach to specialist brokerage',
-    'Casinos of Mayfair International Ltd opened its first London office in 1994 and now serves buyers and sellers of casino and casino-hotel assets worldwide. Our approach prioritises careful qualification, clear communication and appropriate handling of confidential information.',
+    'Luminous Agents opened its first London office in 1994 and now serves buyers and sellers of casino and casino-hotel assets worldwide. Our approach prioritises careful qualification, clear communication and appropriate handling of confidential information.',
   ],
   [
     '/faq',

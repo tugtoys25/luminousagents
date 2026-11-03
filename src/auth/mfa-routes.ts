@@ -45,7 +45,7 @@ mfaRoutes.get('/admin/mfa', async (c) => {
       portalPage({
         title: 'Two-factor check',
         heading: 'Enter your verification code.',
-        intro: 'Open your authenticator app and enter the 6-digit code for Casinos of Mayfair.',
+        intro: 'Open your authenticator app and enter the 6-digit code for Luminous Agents.',
         body: `<form id="mfa-verify" data-mfa-form="verify" data-next="${escapeAttr(safeReturnPath(c.req.query('next')))}" novalidate><div class="field"><label for="mfa-code">Authenticator code</label><input id="mfa-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></div><div class="field" id="mfa-recovery-field" hidden><label for="mfa-recovery">Recovery code</label><input id="mfa-recovery" name="recoveryCode" autocomplete="off" maxlength="12"></div><button type="submit">Verify</button><p class="notice" role="status" aria-live="polite"></p><p class="fine"><a href="#" id="mfa-use-recovery">Use a recovery code instead</a></p></form><script src="/static/js/staff-mfa.js" defer></script>`,
         links,
       }),

@@ -2,12 +2,15 @@ import type { Context } from 'hono';
 import type { Env } from '../../env';
 import type { ContactSettings } from '../site-settings';
 import { loadContact } from '../site-settings';
+import { loadSiteContent } from '../../site-content/load';
+import type { SiteContent } from '../../site-content/types';
 
 export type PublicApp = {
   Bindings: Env;
-  Variables: { requestId: string; contact: ContactSettings };
+  Variables: { requestId: string; contact: ContactSettings; content: SiteContent };
 };
-export const SITE_URL = 'https://casinosofmayfair.com';
+import { BRAND } from '../../brand/defaults';
+export const SITE_URL: string = BRAND.siteUrl;
 
 /** Load contact settings only for HTML page requests (this app is mounted at "/"). */
 export const loadContactForPages = async (
@@ -23,6 +26,10 @@ export const loadContactForPages = async (
     !path.startsWith('/media/') &&
     path !== '/robots.txt' &&
     path !== '/sitemap.xml';
-  if (isPage) c.set('contact', await loadContact(c.env));
+  if (isPage) {
+    const [contact, content] = await Promise.all([loadContact(c.env), loadSiteContent(c.env)]);
+    c.set('contact', contact);
+    c.set('content', content);
+  }
   await next();
 };

@@ -40,7 +40,7 @@ export const OFFICES = [
     'Original London office opened in 1994. The company is UK-based and serves international buyers and sellers.',
   ],
   ['Spain', 'International office presence supporting casino and hospitality opportunities.'],
-  ['Las Vegas', 'Representation in Las Vegas through Casinos of Mayfair International Inc.'],
+  ['Las Vegas', 'Representation in Las Vegas through Luminous Agents'],
 ] as const;
 
 export const MARKETS = [
@@ -52,7 +52,7 @@ export const MARKETS = [
 export const FAQS = [
   [
     'What types of casino properties are available?',
-    'Casinos of Mayfair presents land-based casinos, casino hotels, resort properties and other hospitality opportunities. Listings range from smaller opportunities to major international assets, subject to current availability.',
+    'Luminous Agents presents land-based casinos, casino hotels, resort properties and other hospitality opportunities. Listings range from smaller opportunities to major international assets, subject to current availability.',
   ],
   [
     'Where are the casino opportunities located?',
@@ -71,11 +71,11 @@ export const FAQS = [
     'Some listings require a completed confidentiality agreement before detailed information is released. Register a buyer account, then request confidential access from your account once it has been approved.',
   ],
   [
-    'Does Casinos of Mayfair provide casino management and consulting?',
+    'Does Luminous Agents provide casino management and consulting?',
     'Yes. Casino management and consulting services are provided by a team with a combined 180 years of casino-industry experience.',
   ],
   [
-    'How do I contact Casinos of Mayfair?',
-    'Call the Chairman on +44 (0) 781 702 7077 or the office on +44 (0) 1424 221226, email casinosofmayfair@btinternet.com, or use the contact page. A WhatsApp option is also available.',
+    'How do I contact Luminous Agents?',
+    'Call the Chairman on +44 (0) 781 702 7077 or the office on +44 (0) 1424 221226, email info@luminousagents.com, or use the contact page. A WhatsApp option is also available.',
   ],
 ] as const;

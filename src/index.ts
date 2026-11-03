@@ -35,6 +35,7 @@ import {
 } from './security/turnstile';
 import { listSettings } from './admin/repos/settings-repo';
 import { findPublicMediaAsset } from './admin/repos/media-repo';
+import { BRAND } from './brand/defaults';
 
 const app = new Hono<{ Bindings: Env; Variables: { requestId: string } }>();
 
@@ -208,8 +209,8 @@ app.use('*', async (c, next) => {
     }
     if (siteName)
       html = html
-        .replace(/Casinos of Mayfair/g, () => escape(siteName))
-        .replace(/CASINOS OF MAYFAIR/g, () => escape(siteName.toUpperCase()));
+        .replace(/Luminous Agents/g, () => escape(siteName))
+        .replace(/LUMINOUS AGENTS/g, () => escape(siteName.toUpperCase()));
     if (siteDescription)
       html = html.replace(
         /(<meta name="description" content=")[^"]*(">)/,
@@ -225,23 +226,25 @@ app.use('*', async (c, next) => {
       ((logoUrl.startsWith('/') && !logoUrl.startsWith('//')) || /^https:\/\//i.test(logoUrl))
     )
       html = html.replace(
-        /<span class="brand-mark"[^>]*>M<\/span>/g,
+        /<span class="brand-mark"[^>]*>[LM]<\/span>/g,
         `<img src="${escape(logoUrl)}" alt="${escape(get('logo_alt', siteName || 'Brand logo'))}" class="brand-logo-image">`,
       );
+    // Navigation customised in Site content wins over the older navigation settings.
+    const managed = (c as unknown as { get(key: string): { customised?: string[] } | undefined }).get('content')?.customised ?? [];
     const headerItems = navItems('header_navigation');
-    if (headerItems.length)
+    if (headerItems.length && !managed.includes('nav_header'))
       html = html.replace(
         /<nav aria-label="Main navigation" class="main-nav">[\s\S]*?<\/nav>/,
         `<nav aria-label="Main navigation" class="main-nav">${navHtml(headerItems, true)}</nav>`,
       );
     const exploreItems = navItems('footer_explore_navigation');
-    if (exploreItems.length)
+    if (exploreItems.length && !managed.includes('nav_footer_explore'))
       html = html.replace(
         /<div>\s*<strong>Explore<\/strong>[\s\S]*?<\/div>/,
         () => `<div><strong>Explore</strong>${navHtml(exploreItems)}</div>`,
       );
     const footerItems = navItems('footer_navigation');
-    if (footerItems.length)
+    if (footerItems.length && !managed.includes('nav_footer_info'))
       html = html.replace(
         /<div>\s*<strong>Information<\/strong>[\s\S]*?<\/div>/,
         `<div><strong>Information</strong>${navHtml(footerItems)}</div>`,
@@ -265,14 +268,14 @@ app.use('*', async (c, next) => {
           .join('');
       };
       const dynamicSections =
-        renderSections('homepage_sections', 'MORE FROM MAYFAIR') +
+        renderSections('homepage_sections', `MORE FROM ${BRAND.nameUpper}`) +
         renderSections('geo_sections', 'OUR MARKETS');
       if (dynamicSections) html = html.replace('</main>', `${dynamicSections}</main>`);
     }
     let head = '';
     if (favicon) head += `<link rel="icon" href="${escape(favicon)}">`;
     if (faviconSvg) head += `<link rel="icon" type="image/svg+xml" href="${escape(faviconSvg)}">`;
-    if (primary || accent || background || font)
+    if ((primary || accent || background || font) && !managed.includes('theme'))
       head += `<style>:root{${primary ? `--red:${primary};--color-primary:${primary};` : ''}${accent ? `--gold:${accent};--color-accent:${accent};` : ''}${background ? `--paper:${background};--color-background:${background};` : ''}${font ? `--sans:${font};--font-family:${font};` : ''}${
         get('font_heading')
           ? `--serif:${get('font_heading')
@@ -289,7 +292,7 @@ app.use('*', async (c, next) => {
     if (waDigits)
       widgets += whatsappFabHtml(
         waDigits,
-        get('whatsapp_message', 'Hello, I would like to enquire about Casinos of Mayfair.'),
+        get('whatsapp_message', 'Hello, I would like to enquire about Luminous Agents.'),
       );
     if (get('email_widget_enabled', 'on').toLowerCase() !== 'off')
       widgets += emailFabHtml(

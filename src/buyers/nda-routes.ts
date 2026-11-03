@@ -48,7 +48,7 @@ buyers.get('/api/buyer/nda-template/download', requireBuyer, async (c) => {
     version: template.version,
     templateHash: template.contentHash,
   });
-  const safeName = `Mayfair-NDA-v${template.version}.txt`;
+  const safeName = `Luminous-Agents-NDA-v${template.version}.txt`;
   c.header('Content-Type', 'text/plain; charset=utf-8');
   c.header('Content-Length', String(bytes.byteLength));
   c.header('Content-Disposition', `attachment; filename="${safeName}"`);

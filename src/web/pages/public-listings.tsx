@@ -23,7 +23,8 @@ publicPages.get('/casinos-for-sale', async (c) => {
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
         contact={c.get('contact')}
-        title="Casino & Hotel Opportunities | Casinos of Mayfair"
+        content={c.get('content')}
+        title="Casino & Hotel Opportunities | Luminous Agents"
         description="Browse published casino and casino-hotel investment opportunities."
         canonicalPath="/casinos-for-sale"
         jsonLd={[
@@ -175,7 +176,8 @@ publicPages.get('/casinos-for-sale', async (c) => {
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
         contact={c.get('contact')}
-        title="Opportunities | Casinos of Mayfair"
+        content={c.get('content')}
+        title="Opportunities | Luminous Agents"
         description="Explore casino and hospitality investment opportunities."
       >
         <section class="section">
@@ -204,7 +206,8 @@ publicPages.get('/casinos-for-sale/:country', async (c) => {
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
       contact={c.get('contact')}
-      title={`Casino Opportunities in ${countryName} | Casinos of Mayfair`}
+      content={c.get('content')}
+      title={`Casino Opportunities in ${countryName} | Luminous Agents`}
       description={`Explore verified public casino and hospitality opportunities in ${countryName}.`}
       canonicalPath={`/casinos-for-sale/${encodeURIComponent(countrySlug)}`}
       crumbs={[{ name: 'Opportunities', path: '/casinos-for-sale' }, { name: countryName }]}
@@ -268,7 +271,8 @@ publicPages.get('/casino-hotels', async (c) => {
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
       contact={c.get('contact')}
-      title="Casino Hotels for Sale | Casinos of Mayfair"
+      content={c.get('content')}
+      title="Casino Hotels for Sale | Luminous Agents"
       description="Explore publicly approved casino-hotel investment opportunities."
       canonicalPath="/casino-hotels"
       crumbs={[{ name: 'Opportunities', path: '/casinos-for-sale' }, { name: 'Casino hotels' }]}
@@ -315,7 +319,8 @@ publicPages.get('/archive', async (c) => {
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
       contact={c.get('contact')}
-      title="Past Opportunities | Casinos of Mayfair"
+      content={c.get('content')}
+      title="Past Opportunities | Luminous Agents"
       description="Selected past opportunities, where approved for public display."
       canonicalPath="/archive"
     >

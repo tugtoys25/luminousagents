@@ -94,7 +94,8 @@ publicSell.get('/sell-a-casino', async (c) => {
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
       contact={c.get('contact')}
-      title="Sell a Casino or Casino-Hotel | Casinos of Mayfair"
+      content={c.get('content')}
+      title="Sell a Casino or Casino-Hotel | Luminous Agents"
       description="Confidential enquiries from owners and authorised representatives of casinos, casino-hotels and related hospitality assets."
       canonicalPath="/sell-a-casino"
     >
@@ -102,7 +103,7 @@ publicSell.get('/sell-a-casino', async (c) => {
         <div class="container">
           <span class="eyebrow">CONFIDENTIAL BROKERAGE</span>
           <h1>Considering Selling a Casino or Casino-Hotel?</h1>
-          <p>Casinos of Mayfair works with owners and authorised representatives of casinos, casino-hotels and related hospitality assets. Tell us a little about the opportunity, and our brokerage team will review your enquiry and contact you to discuss the next steps.</p>
+          <p>Luminous Agents works with owners and authorised representatives of casinos, casino-hotels and related hospitality assets. Tell us a little about the opportunity, and our brokerage team will review your enquiry and contact you to discuss the next steps.</p>
           <p>If your proposed sale is confidential, you can indicate this below. Please do not submit sensitive documents or confidential financial information at this initial stage.</p>
         </div>
       </section>

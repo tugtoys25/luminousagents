@@ -2,16 +2,21 @@ import { raw } from 'hono/html';
 import type { ContactSettings } from '../site-settings';
 import { chairmanImage, DEFAULT_CHAIRMAN, socialInputs, telHref } from '../site-settings';
 import { socialRowHtml } from '../branding';
-import { FAQS, MARKETS, OFFICES, SERVICES, STATS } from '../content/site-content';
+import { safeUrl } from '../../site-content/fields';
+import type { SiteContent } from '../../site-content/types';
+import { text } from './escape';
 
-export function StatsBand() {
+type Content = { content: SiteContent };
+
+export function StatsBand({ content }: Content) {
+  if (!content.stats.length) return null;
   return (
     <section class="stats-band" aria-label="Company at a glance">
       <div class="container stats-grid">
-        {STATS.map(([value, label]) => (
+        {content.stats.map((row) => (
           <div class="stat">
-            <strong>{value}</strong>
-            <span>{label}</span>
+            <strong>{text(row, 'value')}</strong>
+            <span>{text(row, 'label')}</span>
           </div>
         ))}
       </div>
@@ -19,39 +24,58 @@ export function StatsBand() {
   );
 }
 
-export function ServicesGrid() {
+export function TrustStrip({ content }: Content) {
+  if (!content.trust.length) return null;
   return (
-    <div class="service-grid">
-      {SERVICES.map(([title, copy], index) => (
-        <article class="service-card">
-          <span class="service-num">{String(index + 1).padStart(2, '0')}</span>
-          <h3>{title}</h3>
-          <p>{copy}</p>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-export function ServicesSection() {
-  return (
-    <section class="section">
-      <div class="container">
-        <div class="section-head">
-          <span class="eyebrow">OUR SERVICES</span>
-          <h2>Casino expertise beyond brokerage.</h2>
-          <p>
-            Casino sales, hotels, management and consulting, supported by a team with a combined 180
-            years of casino-industry experience.
-          </p>
-        </div>
-        <ServicesGrid />
+    <section class="trust-strip">
+      <div class="container trust-grid">
+        {content.trust.map((row, index) => (
+          <div>
+            <span class="trust-number">{String(index + 1).padStart(2, '0')}</span>
+            <strong>{text(row, 'title')}</strong>
+            <span>{text(row, 'caption')}</span>
+          </div>
+        ))}
       </div>
     </section>
   );
 }
 
-export function ChairmanSection({ contact }: { contact: ContactSettings }) {
+export function ServicesGrid({ content }: Content) {
+  return (
+    <div class="service-grid">
+      {content.services.map((row, index) => {
+        const url = safeUrl(text(row, 'url'));
+        return (
+          <article class="service-card">
+            <span class="service-num">{String(index + 1).padStart(2, '0')}</span>
+            <h3>{url ? <a href={url}>{text(row, 'title')}</a> : text(row, 'title')}</h3>
+            <p>{text(row, 'description')}</p>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+export function ServicesSection({ content }: Content) {
+  const c = content.copy;
+  return (
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          {text(c, 'servicesEyebrow') && <span class="eyebrow">{text(c, 'servicesEyebrow')}</span>}
+          {text(c, 'servicesHeading') && <h2>{text(c, 'servicesHeading')}</h2>}
+          {text(c, 'servicesLead') && <p>{text(c, 'servicesLead')}</p>}
+        </div>
+        <ServicesGrid content={content} />
+      </div>
+    </section>
+  );
+}
+
+export function ChairmanSection({ contact, content }: { contact: ContactSettings } & Content) {
+  const c = content.copy;
   const name = contact.chairmanName || DEFAULT_CHAIRMAN.name;
   const title = contact.chairmanTitle || DEFAULT_CHAIRMAN.title;
   const paragraphs = (contact.chairmanBio || DEFAULT_CHAIRMAN.bio)
@@ -81,8 +105,8 @@ export function ChairmanSection({ contact }: { contact: ContactSettings }) {
           </figcaption>
         </figure>
         <div class="chairman-copy">
-          <span class="eyebrow">WELCOME FROM THE CHAIRMAN</span>
-          <h2>Personal, discreet and confidential.</h2>
+          {text(c, 'chairmanEyebrow') && <span class="eyebrow">{text(c, 'chairmanEyebrow')}</span>}
+          {text(c, 'chairmanHeading') && <h2>{text(c, 'chairmanHeading')}</h2>}
           {paragraphs.map((text) => (
             <p>{text}</p>
           ))}
@@ -100,10 +124,10 @@ export function ChairmanSection({ contact }: { contact: ContactSettings }) {
           )}
           <div class="chairman-actions">
             <a class="button button-primary" href={telHref(contact.phoneMobile)}>
-              Call {contact.phoneMobile}
+              {text(c, 'chairmanCall')} {contact.phoneMobile}
             </a>
             <a class="button button-dark" href={`mailto:${contact.chairmanEmail}`}>
-              Email the Chairman
+              {text(c, 'chairmanEmail')}
             </a>
           </div>
           {social && raw(social)}
@@ -113,24 +137,25 @@ export function ChairmanSection({ contact }: { contact: ContactSettings }) {
   );
 }
 
-export function WorldwideSection() {
+export function WorldwideSection({ content }: Content) {
+  const c = content.copy;
+  const officeCount = content.offices.length;
+  const cards = [...content.offices, ...content.markets];
+  if (!cards.length) return null;
   return (
     <section class="section section-muted" id="worldwide">
       <div class="container">
         <div class="section-head">
-          <span class="eyebrow">INTERNATIONAL NETWORK</span>
-          <h2>Offices and opportunities worldwide.</h2>
-          <p>
-            Casinos of Mayfair operates across international casino and hospitality markets, with
-            offices in England, Spain and Las Vegas.
-          </p>
+          {text(c, 'worldwideEyebrow') && <span class="eyebrow">{text(c, 'worldwideEyebrow')}</span>}
+          {text(c, 'worldwideHeading') && <h2>{text(c, 'worldwideHeading')}</h2>}
+          {text(c, 'worldwideLead') && <p>{text(c, 'worldwideLead')}</p>}
         </div>
         <div class="world-grid">
-          {[...OFFICES, ...MARKETS].map(([title, copy], index) => (
-            <article class={index < OFFICES.length ? 'world-card world-card-office' : 'world-card'}>
-              <span class="world-tag">{index < OFFICES.length ? 'OFFICE' : 'MARKET'}</span>
-              <h3>{title}</h3>
-              <p>{copy}</p>
+          {cards.map((row, index) => (
+            <article class={index < officeCount ? 'world-card world-card-office' : 'world-card'}>
+              <span class="world-tag">{index < officeCount ? text(c, 'officeTag') : text(c, 'marketTag')}</span>
+              <h3>{text(row, 'title')}</h3>
+              <p>{text(row, 'description')}</p>
             </article>
           ))}
         </div>
@@ -139,35 +164,34 @@ export function WorldwideSection() {
   );
 }
 
-export function FaqList() {
+export function FaqList({ content }: Content) {
   return (
     <div class="faq-list">
-      {FAQS.map(([question, answer]) => (
+      {content.faqs.map((row) => (
         <details class="faq-item">
-          <summary>{question}</summary>
-          <p>{answer}</p>
+          <summary>{text(row, 'question')}</summary>
+          <p>{text(row, 'answer')}</p>
         </details>
       ))}
     </div>
   );
 }
 
-export function FaqSection() {
+export function FaqSection({ content }: Content) {
+  const c = content.copy;
+  if (!content.faqs.length) return null;
   return (
     <section class="section" id="faq">
       <div class="container content-narrow-wide">
         <div class="section-head">
-          <span class="eyebrow">FREQUENTLY ASKED QUESTIONS</span>
-          <h2>Casino sales and brokerage FAQs.</h2>
-          <p>
-            Answers to common questions about listings, confidentiality, pricing information and
-            international opportunities.
-          </p>
+          {text(c, 'faqEyebrow') && <span class="eyebrow">{text(c, 'faqEyebrow')}</span>}
+          {text(c, 'faqHeading') && <h2>{text(c, 'faqHeading')}</h2>}
+          {text(c, 'faqLead') && <p>{text(c, 'faqLead')}</p>}
         </div>
-        <FaqList />
+        <FaqList content={content} />
         <p class="faq-more">
-          More questions? <a href="/faq">See the full FAQ</a> or{' '}
-          <a href="/contact">make a confidential enquiry</a>.
+          {text(c, 'faqMore')} <a href="/faq">{text(c, 'faqMoreLinkA')}</a> or{' '}
+          <a href="/contact">{text(c, 'faqMoreLinkB')}</a>.
         </p>
       </div>
     </section>
@@ -201,17 +225,15 @@ export function ContactLines({ contact }: { contact: ContactSettings }) {
   );
 }
 
-export function ContactBand({ contact }: { contact: ContactSettings }) {
+export function ContactBand({ contact, content }: { contact: ContactSettings } & Content) {
+  const c = content.copy;
   return (
     <section class="contact-band" aria-labelledby="contact-band-title">
       <div class="container contact-band-grid">
         <div>
-          <span class="eyebrow eyebrow-light">CONFIDENTIAL ENQUIRY</span>
-          <h2 id="contact-band-title">Speak directly with the Chairman.</h2>
-          <p>
-            For any casino for sale, casino hotel, management, consulting or investment requirement,
-            contact us directly. Enquiries are treated in strict confidence.
-          </p>
+          {text(c, 'contactEyebrow') && <span class="eyebrow eyebrow-light">{text(c, 'contactEyebrow')}</span>}
+          <h2 id="contact-band-title">{text(c, 'contactHeading')}</h2>
+          <p>{text(c, 'contactBody')}</p>
         </div>
         <ContactLines contact={contact} />
       </div>

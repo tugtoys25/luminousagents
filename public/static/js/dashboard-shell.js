@@ -191,6 +191,13 @@
           match: ['/dashboard/settings'],
           kw: 'branding colours navigation ga4',
         },
+        {
+          label: 'Site content',
+          href: '/dashboard/site-content/ui',
+          icon: 'cog',
+          match: ['/dashboard/site-content'],
+          kw: 'hero homepage sections services faq footer theme fonts navigation seo',
+        },
       ],
     },
     {
@@ -302,7 +309,7 @@
     sidebar.id = 'workspace-sidebar';
     sidebar.setAttribute('aria-label', 'Workspace navigation');
     sidebar.innerHTML =
-      '<a class="workspace-brand" href="/dashboard"><span class="workspace-brand-mark">M</span><span><strong>Mayfair</strong><small>STAFF WORKSPACE</small></span></a>';
+      '<a class="workspace-brand" href="/dashboard"><span class="workspace-brand-mark">L</span><span><strong>Luminous Agents</strong><small>STAFF WORKSPACE</small></span></a>';
     const logoMeta = document.querySelector('meta[name="mf-logo"]');
     if (logoMeta && logoMeta.content) {
       const mark = sidebar.querySelector('.workspace-brand-mark');
@@ -375,7 +382,7 @@
         .filter(Boolean)
         .slice(0, 2)
         .map((p) => p[0].toUpperCase())
-        .join('') || 'M';
+        .join('') || 'L';
     const user = el(
       'div',
       'workspace-user',

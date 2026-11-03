@@ -191,7 +191,7 @@
         }
       },
     });
-    const subject = encodeURIComponent('Re: your Casinos of Mayfair enquiry');
+    const subject = encodeURIComponent('Re: your Luminous Agents enquiry');
     detail.replaceChildren(
       h('h2', { text: e.name }),
       h(

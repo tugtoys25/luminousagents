@@ -6,9 +6,11 @@
  * before; a value is used only when it is a same-site path or an https:// address.
  */
 
-export const DEFAULT_WHATSAPP_MESSAGE = 'Hello, I would like to enquire about Casinos of Mayfair.';
-export const DEFAULT_EMAIL = 'casinosofmayfair@btinternet.com';
-export const DEFAULT_EMAIL_SUBJECT = 'Enquiry from the Casinos of Mayfair website';
+import { BRAND } from '../brand/defaults';
+
+export const DEFAULT_WHATSAPP_MESSAGE = `Hello, I would like to enquire about ${BRAND.name}.`;
+export const DEFAULT_EMAIL: string = BRAND.email;
+export const DEFAULT_EMAIL_SUBJECT = `Enquiry from the ${BRAND.name} website`;
 export const DEFAULT_SHARE_IMAGE_PATH = '/static/img/roulette.jpg';
 export const DEFAULT_CHAIRMAN_IMAGE = '/static/img/brian-minister.png';
 
@@ -222,7 +224,7 @@ export function brandFromSettings(get: (key: string) => string): BrandValues {
     icon192: brandUrl(get('icon_192_url')),
     icon512: brandUrl(get('icon_512_url')),
     og: brandUrl(get('og_image_url')),
-    name: name || 'Casinos of Mayfair',
+    name: name || BRAND.name,
   };
 }
 
@@ -248,7 +250,7 @@ export function buildManifest(b: BrandValues): Record<string, unknown> {
   }
   const manifest: Record<string, unknown> = {
     name: b.name,
-    short_name: b.name === 'Casinos of Mayfair' ? 'Mayfair' : b.name.slice(0, 12),
+    short_name: b.name === BRAND.name ? BRAND.shortName : b.name.slice(0, 12),
     start_url: '/',
     display: 'standalone',
     background_color: '#f7f4ee',
@@ -291,9 +293,9 @@ export function applyBrand(
     const alt = b.logoAlt || b.name;
     const img = `<img src="${escapeHtml(b.logo)}" alt="${escapeHtml(alt)}" class="brand-logo-image" decoding="async">`;
     html = html
-      .replace(/<span class="brand-mark"[^>]*>\s*M\s*<\/span>/g, () => img)
-      .replace(/<span class="mark">M<\/span>/g, () => img)
-      .replace(/<span class="buyer-brand-mark">M<\/span>/g, () => img);
+      .replace(/<span class="brand-mark"[^>]*>\s*[LM]\s*<\/span>/g, () => img)
+      .replace(/<span class="mark">[LM]<\/span>/g, () => img)
+      .replace(/<span class="buyer-brand-mark">[LM]<\/span>/g, () => img);
     head += `<style>${BRAND_LOGO_CSS}</style>`;
     if (opts.dashboard)
       head += `<meta name="mf-logo" content="${escapeHtml(b.logo)}" data-alt="${escapeHtml(alt)}">`;

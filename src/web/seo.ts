@@ -71,8 +71,8 @@ export function organizationLd(baseUrl: string, contact: ContactSettings) {
     '@context': 'https://schema.org',
     '@type': 'Organization',
     '@id': `${baseUrl}/#organization`,
-    name: 'Casinos of Mayfair International Ltd',
-    alternateName: 'Casinos of Mayfair',
+    name: 'Luminous Agents',
+    alternateName: 'Luminous Agents',
     url: baseUrl,
     description:
       'International brokerage for casino and casino-hotel investment opportunities, with casino management and consulting services.',
@@ -99,7 +99,7 @@ export function websiteLd(baseUrl: string) {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     '@id': `${baseUrl}/#website`,
-    name: 'Casinos of Mayfair',
+    name: 'Luminous Agents',
     url: baseUrl,
     inLanguage: 'en',
     publisher: { '@id': `${baseUrl}/#organization` },
@@ -134,7 +134,7 @@ export function servicesLd(baseUrl: string, services: readonly (readonly [string
   return {
     '@context': 'https://schema.org',
     '@type': 'ItemList',
-    name: 'Casinos of Mayfair services',
+    name: 'Luminous Agents services',
     itemListElement: services.map(([name, description], index) => ({
       '@type': 'ListItem',
       position: index + 1,

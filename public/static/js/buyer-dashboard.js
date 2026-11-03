@@ -511,7 +511,7 @@
       a.href = url;
       a.download =
         (/filename="([^"]+)"/.exec(response.headers.get('content-disposition') || '') || [])[1] ||
-        'Mayfair-NDA.txt';
+        'Luminous-Agents-NDA.txt';
       document.body.append(a);
       a.click();
       a.remove();
@@ -677,7 +677,7 @@
         .filter(Boolean)
         .slice(0, 2)
         .map((p) => p[0].toUpperCase())
-        .join('') || 'M';
+        .join('') || 'L';
     $('#buyer-password-choice')?.remove();
     if (!buyer.hasPassword) {
       const choice = document.createElement('p');

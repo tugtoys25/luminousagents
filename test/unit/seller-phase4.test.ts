@@ -11,10 +11,10 @@ describe('seller_enquiry_followup_v1', () => {
   const m = renderSellerFollowup({ contactName: 'Jane <i>Owner</i>', reference: 'CM-S-ABC234', questions: ['Who owns the licence?', 'Is <script>x</script> relevant?\nSecond line'], broker });
   it('has the approved id, subject, reference, signature and both bodies', () => {
     expect(TEMPLATE_FOLLOWUP).toBe('seller_enquiry_followup_v1');
-    expect(m.subject).toBe('Casinos of Mayfair — Follow-up to Your Enquiry CM-S-ABC234');
+    expect(m.subject).toBe('Luminous Agents — Follow-up to Your Enquiry CM-S-ABC234');
     expect(m.text).toContain('your enquiry number is CM-S-ABC234');
     expect(m.text).toContain('1. Who owns the licence?');
-    expect(m.text).toContain('Casinos of Mayfair International Ltd');
+    expect(m.text).toContain('Luminous Agents');
     expect(m.text).toContain('+44 20 7946 0958');
     expect(m.text).toContain('No brokerage appointment or marketing authority is created by this correspondence.');
     expect(m.html).toContain('<ol>');
