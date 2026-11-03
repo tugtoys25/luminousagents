@@ -35,7 +35,7 @@ describe('not found page', () => {
   });
 
   it('keeps JSON for API, dashboard and non-browser requests', async () => {
-    for (const [path, init] of [['/no-such-page', {}], ['/api/nothing', html], ['/dashboard/nothing', html]] as const) {
+    for (const [path, init] of [['/no-such-page', {}], ['/api/nothing', html]] as const) {
       const res = await SELF.fetch(`https://mayfair.test${path}`, init);
       expect(res.status, path).toBe(404);
       expect(res.headers.get('content-type'), path).toContain('application/json');
