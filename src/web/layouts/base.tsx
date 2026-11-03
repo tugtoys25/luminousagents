@@ -1,7 +1,12 @@
+import { BRAND } from '../../brand/defaults';
 import type { Child } from 'hono/jsx';
 import { raw } from 'hono/html';
 import { socialRowHtml } from '../branding';
-import { FAQS } from '../content/site-content';
+import { safeUrl } from '../../site-content/fields';
+import { defaultSiteContent } from '../../site-content/resolve';
+import { themeBodyClass, themeCss } from '../../site-content/theme-css';
+import type { NavItem, SiteContent } from '../../site-content/types';
+import { flag, text } from '../components/escape';
 import {
   DEFAULT_CONTACT,
   socialInputs,
@@ -24,6 +29,7 @@ interface BaseProps {
   canonicalPath?: string;
   siteUrl?: string;
   contact?: ContactSettings;
+  content?: SiteContent;
   noindex?: boolean;
   /** Absolute or site-relative share image (Open Graph / Twitter). */
   image?: string | null;
@@ -36,7 +42,15 @@ interface BaseProps {
   children: Child;
 }
 
-const SITE_URL = 'https://casinosofmayfair.com';
+const SITE_URL: string = BRAND.siteUrl;
+
+/** href plus new-tab attributes for a managed navigation link (links were already validated when loaded). */
+function linkAttrs(item: NavItem): Record<string, string> {
+  const href = safeUrl(item.url);
+  return item['newTab'] === true
+    ? { href, target: '_blank', rel: 'noopener noreferrer' }
+    : { href };
+}
 
 export function BaseLayout({
   title,
@@ -44,6 +58,7 @@ export function BaseLayout({
   canonicalPath = '/',
   siteUrl = SITE_URL,
   contact = DEFAULT_CONTACT,
+  content = defaultSiteContent(),
   noindex = false,
   image = null,
   imageAlt = '',
@@ -55,18 +70,26 @@ export function BaseLayout({
   const baseUrl = siteUrl.replace(/\/$/, '');
   const canonical = `${baseUrl}${canonicalPath}`;
   const shareImage = (() => {
-    const source = image || DEFAULT_SHARE_IMAGE;
+    const source = image || text(content.seo, 'shareImage') || DEFAULT_SHARE_IMAGE;
     return /^https?:\/\//i.test(source)
       ? source
       : `${baseUrl}${source.startsWith('/') ? '' : '/'}${source}`;
   })();
-  const shareAlt = imageAlt || (image ? title : 'Casino roulette wheel - Casinos of Mayfair');
+  const shareAlt = imageAlt || (image ? title : text(content.seo, 'shareImageAlt') || BRAND.name);
   const trail = crumbs ?? crumbsFromPath(canonicalPath);
   const footerSocial = socialRowHtml(
     socialInputs(contact, contact.chairmanEmail),
     'social-row footer-social',
   );
   const breadcrumbSchema = breadcrumbLd(baseUrl, trail);
+  const themeStyles = themeCss(content.theme);
+  const f = content.footer;
+  const brandCopy = (
+    <span class="brand-copy">
+      <strong>{BRAND.nameUpper}</strong>
+      {text(f, 'tagline') && <small>{text(f, 'tagline')}</small>}
+    </span>
+  );
   return (
     <html lang="en">
       <head>
@@ -84,8 +107,8 @@ export function BaseLayout({
               : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'
           }
         />
-        <meta name="author" content="Casinos of Mayfair International Ltd" />
-        <meta name="publisher" content="Casinos of Mayfair International Ltd" />
+        <meta name="author" content={BRAND.name} />
+        <meta name="publisher" content={BRAND.name} />
         <link rel="alternate" hreflang="en" href={canonical} />
         <link rel="canonical" href={canonical} />
         <link rel="manifest" href="/site.webmanifest" />
@@ -106,17 +129,17 @@ export function BaseLayout({
         {jsonLd.map((item) => (
           <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: ldJson(item) }} />
         ))}
-        {(canonicalPath === '/faq' || canonicalPath === '/') && (
+        {(canonicalPath === '/faq' || canonicalPath === '/') && content.faqs.length > 0 && (
           <script
             type="application/ld+json"
             dangerouslySetInnerHTML={{
               __html: ldJson({
                 '@context': 'https://schema.org',
                 '@type': 'FAQPage',
-                mainEntity: FAQS.map(([name, text]) => ({
+                mainEntity: content.faqs.map((row) => ({
                   '@type': 'Question',
-                  name,
-                  acceptedAnswer: { '@type': 'Answer', text },
+                  name: text(row, 'question'),
+                  acceptedAnswer: { '@type': 'Answer', text: text(row, 'answer') },
                 })),
               }),
             }}
@@ -124,7 +147,7 @@ export function BaseLayout({
         )}
         <meta property="og:type" content={ogType} />
         <meta property="og:locale" content="en_GB" />
-        <meta property="og:site_name" content="Casinos of Mayfair" />
+        <meta property="og:site_name" content={BRAND.name} />
         <meta property="og:title" content={title} />
         <meta property="og:description" content={description} />
         <meta property="og:url" content={canonical} />
@@ -137,22 +160,21 @@ export function BaseLayout({
         <meta name="twitter:image:alt" content={shareAlt} />
         <link rel="stylesheet" href="/static/css/site.css" />
         <link rel="stylesheet" href="/static/css/social.css" />
+        <link rel="stylesheet" href="/static/css/site-content.css" />
+        {themeStyles && <style dangerouslySetInnerHTML={{ __html: themeStyles }} />}
         <script src="/static/js/site-nav.js"></script>
       </head>
-      <body class="has-footer">
+      <body class={`has-footer ${themeBodyClass(content.theme)}`.trim()}>
         <a class="skip-link" href="#main">
           Skip to content
         </a>
         <header class="site-header" id="site-header">
           <div class="container header-inner">
-            <a class="brand" href="/" aria-label="Casinos of Mayfair home">
+            <a class="brand" href="/" aria-label={`${BRAND.name} home`}>
               <span class="brand-mark" aria-hidden="true">
-                M
+                {BRAND.markLetter}
               </span>
-              <span class="brand-copy">
-                <strong>CASINOS OF MAYFAIR</strong>
-                <small>International Brokerage</small>
-              </span>
+              {brandCopy}
             </a>
             <button
               class="menu-toggle"
@@ -170,13 +192,11 @@ export function BaseLayout({
             </button>
             <div class="header-panel" id="site-menu">
               <nav aria-label="Main navigation" class="main-nav">
-                <a href="/casinos-for-sale">Opportunities</a>
-                <a href="/services">Services</a>
-                <a href="/about">About</a>
-                <a href="/faq">FAQ</a>
-                <a class="nav-cta" href="/contact">
-                  Contact our team
-                </a>
+                {content.navHeader.map((item) => (
+                  <a class={item['style'] === 'cta' ? 'nav-cta' : undefined} {...linkAttrs(item)}>
+                    {item.label}
+                  </a>
+                ))}
               </nav>
               <div class="header-auth">
                 <div class="auth-menu">
@@ -250,9 +270,9 @@ export function BaseLayout({
           <div class="container footer-grid">
             <div>
               <a class="brand brand-footer" href="/">
-                <span class="brand-mark">M</span>
+                <span class="brand-mark">L</span>
                 <span class="brand-copy">
-                  <strong>CASINOS OF MAYFAIR</strong>
+                  <strong>LUMINOUS AGENTS</strong>
                   <small>International Brokerage</small>
                 </span>
               </a>
@@ -260,40 +280,39 @@ export function BaseLayout({
               {footerSocial && raw(footerSocial)}
             </div>
             <div>
-              <strong>Explore</strong>
-              <a href="/casinos-for-sale">Opportunities</a>
-              <a href="/services">Services</a>
-              <a href="/about">About us</a>
+              <strong>{text(f, 'exploreHeading')}</strong>
+              {content.navFooterExplore.map((item) => (
+                <a {...linkAttrs(item)}>{item.label}</a>
+              ))}
             </div>
             <div>
-              <strong>Information</strong>
-              <a href="/faq">FAQ</a>
-              <a href="/contact">Contact</a>
-              <a href="/legal/privacy">Privacy</a>
-              <a href="/legal/terms">Terms</a>
-              <a href="/legal/cookies">Cookies</a>
-              <a href="/legal/aml-kyc">AML / KYC</a>
-              <a href="/legal/sanctions">Sanctions</a>
-              <a href="/legal/anti-bribery">Anti-bribery</a>
-              <a href="/legal/disclaimer">Listing disclaimer</a>
-              <a href="/legal/complaints">Complaints</a>
+              <strong>{text(f, 'infoHeading')}</strong>
+              {content.navFooterInfo.map((item) => (
+                <a {...linkAttrs(item)}>{item.label}</a>
+              ))}
             </div>
             <div>
-              <strong>Contact</strong>
+              <strong>{text(f, 'contactHeading')}</strong>
               <a href={telHref(contact.phoneMobile)}>{contact.phoneMobile}</a>
               <a href={telHref(contact.phoneOffice)}>{contact.phoneOffice}</a>
               <a href={`mailto:${contact.email}`}>{contact.email}</a>
-              <a href="/account">Buyer sign in</a>
-              <a href="/admin/login">Staff sign in</a>
+              {flag(f, 'showAccountLinks') && (
+                <>
+                  <a href="/account">Buyer sign in</a>
+                  <a href="/admin/login">Staff sign in</a>
+                </>
+              )}
             </div>
           </div>
           <div class="container footer-bottom">
-            <span>© {new Date().getUTCFullYear()} Casinos of Mayfair. All rights reserved.</span>
+            <span>{text(f, 'copyright').replace('{year}', String(new Date().getUTCFullYear()))}</span>
             <span>
-              All opportunities are subject to verification and qualification.{' '}
-              <a href="/legal/cookies" data-cookie-settings>
-                Cookie settings
-              </a>
+              {text(f, 'disclaimer')}{' '}
+              {text(f, 'cookieLabel') && (
+                <a href="/legal/cookies" data-cookie-settings>
+                  {text(f, 'cookieLabel')}
+                </a>
+              )}
             </span>
           </div>
         </footer>

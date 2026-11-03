@@ -16,7 +16,8 @@ publicPages.get('/opportunities/:slug', async (c) => {
       <BaseLayout
         siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
         contact={c.get('contact')}
-        title="Opportunity not found | Casinos of Mayfair"
+        content={c.get('content')}
+        title="Opportunity not found | Luminous Agents"
         description="This opportunity may no longer be available."
       >
         <section class="section">
@@ -36,7 +37,8 @@ publicPages.get('/opportunities/:slug', async (c) => {
     <BaseLayout
       siteUrl={c.env.PUBLIC_BASE_URL || SITE_URL}
       contact={c.get('contact')}
-      title={`${item.seoTitle} | Casinos of Mayfair`}
+      content={c.get('content')}
+      title={`${item.seoTitle} | Luminous Agents`}
       description={item.seoDescription}
       image={item.coverMediaPath}
       imageAlt={item.coverMediaAlt}

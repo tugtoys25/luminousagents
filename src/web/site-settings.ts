@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { BRAND } from '../brand/defaults';
 import { brandUrl, DEFAULT_CHAIRMAN_IMAGE, type SocialInputs } from './branding';
 import { listSettingsByKeys } from '../admin/repos/settings-repo';
 
@@ -26,8 +27,8 @@ export interface ContactSettings {
 export const DEFAULT_CONTACT: ContactSettings = {
   phoneMobile: '+44 (0) 781 702 7077',
   phoneOffice: '+44 (0) 1424 221226',
-  email: 'casinosofmayfair@btinternet.com',
-  chairmanEmail: 'briancasinosofmayfair@gmail.com',
+  email: BRAND.email,
+  chairmanEmail: BRAND.chairmanEmail,
   whatsapp: '447817027077',
 };
 
@@ -56,7 +57,7 @@ const EXTRA_KEYS = {
 
 export const DEFAULT_CHAIRMAN = {
   name: 'Brian Minister',
-  title: 'Chairman, Casinos of Mayfair International Ltd',
+  title: 'Chairman, Luminous Agents',
   bio: 'We opened our first office in London in 1994 with only two casinos for sale. Today we present a worldwide portfolio of land-based casino and casino-hotel opportunities, with prices from under $1 million to over $1 billion.\n\nIf you wish to discuss any casino for sale or casino hotel personally, please contact me directly. Every enquiry is treated in strict confidence, and opportunities are advertised in a way that protects the identity and location of the property.',
 };
 

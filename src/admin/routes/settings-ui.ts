@@ -155,12 +155,12 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
     instagram_url: 'Empty = icon hidden. https://www.instagram.com/yourname/ or @yourname',
     linkedin_url: 'Empty = icon hidden. https://www.linkedin.com/in/...',
     chairman_name: 'Brian Minister',
-    chairman_title: 'Chairman, Casinos of Mayfair International Ltd',
+    chairman_title: 'Chairman, Luminous Agents',
     chairman_bio: 'Empty = built-in welcome text. Leave a blank line between paragraphs.',
     chairman_expertise: 'Optional. One item per line or comma separated, shown as small tags under the bio.',
     chairman_languages: 'Optional, for example English, Spanish',
     email_widget_address: 'Empty = use the contact email',
-    email_widget_subject: 'Enquiry from the Casinos of Mayfair website',
+    email_widget_subject: 'Enquiry from the Luminous Agents website',
     cookie_banner_title: 'Your privacy matters',
     cookie_banner_text:
       'We use essential cookies to run this site. With your consent we also use analytics cookies to understand how it is used.',
@@ -207,7 +207,7 @@ admin.get('/settings/ui', requireRole('admin', 'super_admin', 'editor'), async (
     )
     .join('');
   return c.html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform settings</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform settings</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Platform settings</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/dashboard/audit/ui">Audit log</a><a href="/admin/change-password">Change password</a><a href="/admin/logout">Sign out</a></nav><p class="setting-help">Edit branding, contact channels, GA4, typography, colours, navigation and structured homepage/geo sections. Changes appear on the public site after you save.</p><form id="settings-form" class="flow" data-flow><div class="flow-bar"><h2>Platform settings</h2><span class="flow-state" aria-live="polite">All changes saved</span><button type="submit">Save platform settings</button></div>${fields}<p id="settings-notice" role="status" aria-live="polite"></p></form><section class="ws-card"><h2>Custom content</h2><p><a href="/dashboard/pages/ui">Manage pages</a> · <a href="/dashboard/forms/ui">Manage custom forms</a></p></section></main><script src="/static/js/dashboard-settings.js" defer></script></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform settings</title><link rel="stylesheet" href="/static/css/site.css"><link rel="stylesheet" href="/static/css/dashboard.css"></head><body><main class="admin"><p class="eyebrow">STAFF WORKSPACE</p><h1>Platform settings</h1><nav class="admin-nav"><a href="/dashboard">Overview</a><a href="/dashboard/settings/ui">Platform settings</a><a href="/dashboard/site-content/ui">Site content</a><a href="/dashboard/pages/ui">Pages</a><a href="/dashboard/forms/ui">Forms</a><a href="/dashboard/audit/ui">Audit log</a><a href="/admin/change-password">Change password</a><a href="/admin/logout">Sign out</a></nav><p class="setting-help">Edit branding, contact channels, GA4, typography, colours, navigation and structured homepage/geo sections. Changes appear on the public site after you save.</p><form id="settings-form" class="flow" data-flow><div class="flow-bar"><h2>Platform settings</h2><span class="flow-state" aria-live="polite">All changes saved</span><button type="submit">Save platform settings</button></div>${fields}<p id="settings-notice" role="status" aria-live="polite"></p></form><section class="ws-card"><h2>Custom content</h2><p><a href="/dashboard/pages/ui">Manage pages</a> · <a href="/dashboard/forms/ui">Manage custom forms</a></p></section></main><script src="/static/js/dashboard-settings.js" defer></script></body></html>`,
   );
 });
 

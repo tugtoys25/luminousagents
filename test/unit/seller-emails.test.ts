@@ -15,7 +15,7 @@ describe('seller acknowledgement', () => {
   it('has the approved subject, template id, reference and plain-text alternative', () => {
     const m = renderSellerAcknowledgement(enquiry(), cfg);
     expect(m.templateId).toBe('seller_enquiry_received_v1');
-    expect(m.subject).toBe('Casinos of Mayfair — Enquiry Received');
+    expect(m.subject).toBe('Luminous Agents — Enquiry Received');
     expect(m.text).toContain('CM-S-ABC234');
     expect(m.text).toContain('does not constitute acceptance of an engagement');
     expect(m.html).toContain('CM-S-ABC234');

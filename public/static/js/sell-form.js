@@ -71,7 +71,7 @@
       const body = await res.json().catch(() => ({}));
       if (res.status === 202 && body.data && body.data.reference) {
         const h = document.createElement('h2'); h.textContent = 'Thank You for Your Enquiry';
-        const p1 = document.createElement('p'); p1.textContent = 'Thank you for contacting Casinos of Mayfair. Your enquiry has been received and will be reviewed by our brokerage team. If further information is required, a member of the team may contact you.';
+        const p1 = document.createElement('p'); p1.textContent = 'Thank you for contacting Luminous Agents. Your enquiry has been received and will be reviewed by our brokerage team. If further information is required, a member of the team may contact you.';
         const p2 = document.createElement('p'); p2.textContent = 'Your reference is ';
         const strong = document.createElement('strong'); strong.textContent = body.data.reference; p2.appendChild(strong); p2.append('.');
         const p3 = document.createElement('p'); p3.textContent = 'Submission does not create a brokerage mandate or guarantee that the opportunity will be accepted or marketed. Please do not send sensitive supporting documents in response to an automated email.';

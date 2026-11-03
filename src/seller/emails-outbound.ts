@@ -9,9 +9,9 @@ export interface BrokerIdentity { name: string; title: string; email: string; te
 const BRAND_OPEN = '<div style="font-family:Georgia,serif;color:#292522;max-width:640px;margin:0 auto;line-height:1.6">';
 const p = (s: string) => `<p>${s}</p>`;
 const signatureText = (b: BrokerIdentity, withWebsite: boolean): string =>
-  [oneLine(b.name), oneLine(b.title), 'Casinos of Mayfair International Ltd', '', oneLine(b.email), ...(b.telephone ? [oneLine(b.telephone)] : []), ...(withWebsite ? [b.website] : [])].join('\n');
+  [oneLine(b.name), oneLine(b.title), 'Luminous Agents', '', oneLine(b.email), ...(b.telephone ? [oneLine(b.telephone)] : []), ...(withWebsite ? [b.website] : [])].join('\n');
 const signatureHtml = (b: BrokerIdentity, withWebsite: boolean): string =>
-  [escapeHtml(oneLine(b.name)), escapeHtml(oneLine(b.title)), 'Casinos of Mayfair International Ltd', '', escapeHtml(oneLine(b.email)), ...(b.telephone ? [escapeHtml(oneLine(b.telephone))] : []), ...(withWebsite ? [escapeHtml(b.website)] : [])].join('<br>');
+  [escapeHtml(oneLine(b.name)), escapeHtml(oneLine(b.title)), 'Luminous Agents', '', escapeHtml(oneLine(b.email)), ...(b.telephone ? [escapeHtml(oneLine(b.telephone))] : []), ...(withWebsite ? [escapeHtml(b.website)] : [])].join('<br>');
 
 const DISCUSS = [
   'Your role in relation to the asset and the ownership or decision-making structure.',
@@ -28,7 +28,7 @@ export function renderSellerFollowup(i: { contactName: string; reference: string
   const qs = i.questions.map((q) => oneLine(q));
   const text = `Dear ${name},
 
-Thank you for contacting Casinos of Mayfair regarding your potential sale or investment opportunity.
+Thank you for contacting Luminous Agents regarding your potential sale or investment opportunity.
 
 Our brokerage team has reviewed your initial enquiry and would welcome the opportunity to understand the circumstances and objectives behind the proposed transaction in more detail.
 
@@ -60,7 +60,7 @@ No brokerage appointment or marketing authority is created by this correspondenc
 `;
   const html = BRAND_OPEN + [
     `Dear ${escapeHtml(name)},`,
-    'Thank you for contacting Casinos of Mayfair regarding your potential sale or investment opportunity.',
+    'Thank you for contacting Luminous Agents regarding your potential sale or investment opportunity.',
     'Our brokerage team has reviewed your initial enquiry and would welcome the opportunity to understand the circumstances and objectives behind the proposed transaction in more detail.',
     'To help us assess whether we may be able to assist, we would appreciate clarification on the following points, where you are comfortable providing it:',
   ].map(p).join('') + `<ol>${qs.map((q) => `<li>${escapeHtml(q)}</li>`).join('')}</ol>` + p('Depending on the nature of the opportunity, it may also be helpful to discuss:') +
@@ -74,7 +74,7 @@ No brokerage appointment or marketing authority is created by this correspondenc
     'Please let us know if your confidentiality requirements change or if there are restrictions on how information about the opportunity may be discussed or disclosed.',
     'No brokerage appointment or marketing authority is created by this correspondence. Any engagement will be subject to the necessary reviews and a separate written agreement, where applicable.',
   ].map(p).join('') + '</div>';
-  return { templateId: TEMPLATE_FOLLOWUP, subject: `Casinos of Mayfair — Follow-up to Your Enquiry ${i.reference}`, html, text };
+  return { templateId: TEMPLATE_FOLLOWUP, subject: `Luminous Agents — Follow-up to Your Enquiry ${i.reference}`, html, text };
 }
 
 export interface InterestEmailInput { contactName: string; assetReference: string; interestType: string; interestStage: string; approvedSummary: string; proposedNextStep: string; broker: BrokerIdentity }

@@ -9,7 +9,7 @@ session. `yes` means the role is named in that route's `requireRole(...)`; `·` 
 This matrix describes route-level access only. Record-level rules (for example a broker seeing only
 assigned records) are enforced inside the handlers and are covered by their own tests.
 
-151 routes · 1 open to any signed-in staff role.
+161 routes · 1 open to any signed-in staff role.
 
 | Method | Path | super_admin | admin | editor | broker | publisher | auditor | compliance |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -154,6 +154,16 @@ assigned records) are enforced inside the handlers and are covered by their own 
 | GET | `/dashboard/settings` | yes | yes | yes | · | · | · | · |
 | PUT | `/dashboard/settings` | yes | yes | · | · | · | · | · |
 | GET | `/dashboard/settings/ui` | yes | yes | yes | · | · | · | · |
+| DELETE | `/dashboard/site-content/api/:collection` | yes | yes | · | · | · | · | · |
+| GET | `/dashboard/site-content/api/:collection` | yes | yes | yes | · | · | · | · |
+| POST | `/dashboard/site-content/api/:collection/customise` | yes | yes | yes | · | · | · | · |
+| POST | `/dashboard/site-content/api/:collection/items` | yes | yes | yes | · | · | · | · |
+| DELETE | `/dashboard/site-content/api/:collection/items/:itemId` | yes | yes | · | · | · | · | · |
+| PUT | `/dashboard/site-content/api/:collection/items/:itemId` | yes | yes | yes | · | · | · | · |
+| POST | `/dashboard/site-content/api/:collection/reorder` | yes | yes | yes | · | · | · | · |
+| PUT | `/dashboard/site-content/api/:collection/singleton` | yes | yes | yes | · | · | · | · |
+| GET | `/dashboard/site-content/api/schema` | yes | yes | yes | · | · | · | · |
+| GET | `/dashboard/site-content/ui` | yes | yes | yes | · | · | · | · |
 | GET | `/dashboard/staff` | yes | · | · | · | · | · | · |
 | POST | `/dashboard/staff` | yes | · | · | · | · | · | · |
 | PATCH | `/dashboard/staff/:id` | yes | · | · | · | · | · | · |

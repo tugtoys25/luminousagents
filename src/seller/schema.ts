@@ -8,11 +8,11 @@ export const ACCURACY_DECLARATION_VERSION = 'seller-form-accuracy-v1';
 export const MARKETING_CONSENT_VERSION = 'seller-form-marketing-v1';
 
 export const PRIVACY_ACK_TEXT =
-  'I acknowledge that I have read the Privacy Notice and understand that Casinos of Mayfair will process the personal information I provide to review and respond to my enquiry.';
+  'I acknowledge that I have read the Privacy Notice and understand that Luminous Agents will process the personal information I provide to review and respond to my enquiry.';
 export const ACCURACY_DECLARATION_TEXT =
-  'I confirm that the information I have provided is accurate to the best of my knowledge and that I am entitled to submit this enquiry. I understand that submitting this form does not establish that I have authority to sell the asset or authorise Casinos of Mayfair to market it.';
+  'I confirm that the information I have provided is accurate to the best of my knowledge and that I am entitled to submit this enquiry. I understand that submitting this form does not establish that I have authority to sell the asset or authorise Luminous Agents to market it.';
 export const MARKETING_CONSENT_TEXT =
-  "I would like to receive occasional updates about Casinos of Mayfair's services and relevant investment opportunities. I understand that I can withdraw this consent at any time.";
+  "I would like to receive occasional updates about Luminous Agents's services and relevant investment opportunities. I understand that I can withdraw this consent at any time.";
 
 export const CONTACT_ROLES = ['OWNER', 'DIRECTOR_EXECUTIVE', 'AUTHORISED_REPRESENTATIVE', 'BROKER_INTERMEDIARY', 'PROFESSIONAL_ADVISER', 'OTHER'] as const;
 export const CONTACT_METHODS = ['EMAIL', 'TELEPHONE', 'EITHER'] as const;

@@ -2,7 +2,7 @@
 
 ## Product boundaries
 
-Casinos of Mayfair is a confidential B2B brokerage platform, not a consumer gambling service. The
+Luminous Agents is a confidential B2B brokerage platform, not a consumer gambling service. The
 planned product combines public opportunity discovery, buyer accounts, a staff operating system, and
 approval-controlled confidential document access. Sprint 0 establishes only the runtime foundation.
 

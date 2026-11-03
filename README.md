@@ -1,4 +1,4 @@
-# Casinos of Mayfair Platform
+# Luminous Agents Platform
 
 Confidential B2B brokerage platform for casino and casino-hotel investment opportunities. Cloudflare
 Workers + Hono + TypeScript, with D1, private R2, KV, Queues (with DLQ) and a 5-minute cron.

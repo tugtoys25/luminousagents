@@ -1,0 +1,48 @@
+/* Staff-managed content: hero variants, custom sections, header styles, button shapes, theme hooks. */
+.container { width: min(var(--container, 1160px), calc(100% - 48px)); }
+:root { --radius: 10px; }
+.button, .nav-cta, .service-card, .world-card, .contact-card, .callout, .faq-item { border-radius: var(--radius); }
+
+.theme-button-pill .button, .theme-button-pill .nav-cta { border-radius: 999px; }
+.theme-button-square .button, .theme-button-square .nav-cta { border-radius: 0; }
+
+.theme-header-dark .site-header { background: #111; color: #fff; border-color: #111; }
+.theme-header-dark .site-header a, .theme-header-dark .site-header .menu-label { color: #fff; }
+.theme-header-accent .site-header { background: var(--red); color: #fff; border-color: var(--red); }
+.theme-header-accent .site-header a, .theme-header-accent .site-header .menu-label { color: #fff; }
+
+/* Hero layouts */
+.hero--centered .hero-grid { grid-template-columns: 1fr; text-align: center; }
+.hero--centered .hero-copy { margin-inline: auto; max-width: 760px; }
+.hero--centered .hero-actions, .hero--centered .hero-note { justify-content: center; }
+.hero--image { position: relative; color: #fff; background-size: cover; background-position: center; isolation: isolate; }
+.hero--image::before { content: ""; position: absolute; inset: 0; z-index: -1; background: #000; opacity: var(--hero-overlay, .45); }
+.hero--image h1, .hero--image .hero-lead, .hero--image .eyebrow, .hero--image .hero-note, .hero--image .text-link { color: #fff; }
+.hero--image .hero-grid { grid-template-columns: 1fr; }
+.hero--align-center .hero-copy { text-align: center; margin-inline: auto; }
+.hero--align-center .hero-actions, .hero--align-center .hero-note { justify-content: center; }
+.hero--tall { min-height: 70vh; display: grid; align-items: center; }
+.hero--screen { min-height: 100vh; display: grid; align-items: center; }
+
+/* Custom sections */
+.cs { padding-block: clamp(48px, 7vw, 96px); }
+.cs--muted { background: var(--surface); }
+.cs--dark { background: #15130f; color: #fff; }
+.cs--dark h2, .cs--dark p, .cs--dark .eyebrow { color: #fff; }
+.cs--accent { background: var(--red); color: #fff; }
+.cs--accent h2, .cs--accent p, .cs--accent .eyebrow { color: #fff; }
+.cs--image { background-size: cover; background-position: center; position: relative; isolation: isolate; }
+.cs--image::before { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0, 0, 0, .45); }
+.cs--image h2, .cs--image p, .cs--image .eyebrow { color: #fff; }
+.cs-split { display: grid; gap: clamp(24px, 5vw, 64px); grid-template-columns: 1fr 1fr; align-items: center; }
+.cs-split--reverse > :first-child { order: 2; }
+.cs-split img { width: 100%; height: auto; border-radius: var(--radius); display: block; }
+.cs-cards { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 28px; }
+.cs-card { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); color: var(--ink); }
+.cs-card h3 { margin-top: 0; }
+.cs-cta { text-align: center; max-width: 760px; margin-inline: auto; }
+.cs p { white-space: pre-line; }
+@media (max-width: 760px) {
+  .cs-split { grid-template-columns: 1fr; }
+  .cs-split--reverse > :first-child { order: 0; }
+}
