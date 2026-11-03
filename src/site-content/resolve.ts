@@ -54,6 +54,7 @@ export function resolveSiteContent(stored: Stored): SiteContent {
     copy: singleton(def('copy'), stored),
     footer: singleton(def('footer'), stored),
     seo: singleton(def('seo'), stored),
+    notFound: singleton(def('not_found'), stored),
     trust: list('trust', stored),
     stats: list('stats', stored),
     services: list('services', stored),

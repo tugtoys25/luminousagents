@@ -32,6 +32,16 @@ const SEO_FIELDS: FieldDef[] = [
   { name: 'shareImageAlt', label: 'Sharing image description', type: 'text', max: 160 },
 ];
 
+const NOT_FOUND_FIELDS: FieldDef[] = [
+  { name: 'eyebrow', label: 'Small label above the heading', type: 'text', max: 40 },
+  { name: 'heading', label: 'Heading', type: 'text', max: 120 },
+  { name: 'message', label: 'Message', type: 'textarea', max: 300, wide: true },
+  { name: 'primaryLabel', label: 'First button label', type: 'text', max: 60 },
+  { name: 'primaryUrl', label: 'First button link', type: 'url', help: '/page or https://…' },
+  { name: 'secondaryLabel', label: 'Second button label', type: 'text', max: 60 },
+  { name: 'secondaryUrl', label: 'Second button link', type: 'url', help: '/page or https://…' },
+];
+
 export const SITE_COLLECTIONS: CollectionDef[] = [
   { key: 'nav_header', label: 'Header menu', group: 'Navigation', kind: 'list', titleField: 'label', maxItems: 12,
     help: 'Links in the top navigation. A highlighted button is shown as the call to action.',
@@ -62,5 +72,12 @@ export const SITE_COLLECTIONS: CollectionDef[] = [
       homeTitle: `${BRAND.name} | Casino & Hospitality Brokerage`,
       homeDescription: 'Discreet, professional brokerage for casino and casino-hotel investment opportunities.',
       shareImage: '', shareImageAlt: `Casino roulette wheel - ${BRAND.name}`,
+    }] },
+  { key: 'not_found', label: 'Page not found (404)', group: 'Search and footer', kind: 'singleton', fields: NOT_FOUND_FIELDS,
+    help: 'Wording and buttons of the page visitors see when a link does not exist. Empty a button label to hide that button.',
+    defaults: [{
+      eyebrow: 'Error 404', heading: 'Page not found',
+      message: 'The page you requested does not exist or is no longer available.',
+      primaryLabel: 'Return home', primaryUrl: '/', secondaryLabel: 'Browse opportunities', secondaryUrl: '/casinos-for-sale',
     }] },
 ];

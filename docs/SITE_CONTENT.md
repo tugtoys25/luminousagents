@@ -10,7 +10,7 @@ dashboard form, so adding a field in one place adds it everywhere.
 | Lists | `trust`, `stats`, `services`, `offices`, `markets`, `faqs` |
 | Navigation | `nav_header`, `nav_footer_explore`, `nav_footer_info` |
 | Appearance | `theme` (colours, fonts, size, corners, page width, header style, button shape, page background) |
-| Search and footer | `seo`, `footer` |
+| Search and footer | `seo`, `footer`, `not_found` (the 404 page wording and buttons) |
 
 ## How defaults work
 - A collection with no row in `site_content_collections` shows its **built-in** content (code defaults).

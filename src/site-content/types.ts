@@ -51,6 +51,7 @@ export interface SiteContent {
   copy: Row;
   footer: Row;
   seo: Row;
+  notFound: Row;
   trust: Row[];
   stats: Row[];
   services: Row[];
