@@ -1,11 +1,19 @@
 import type { FieldDef, Row, Value } from './types';
 
-const CONTROL = /[\u0000-\u001f\u007f]/;
+/** True when the text holds a control character (tab and newline are allowed only when `allowWhitespace`). */
+function hasControl(value: string, allowWhitespace = false): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (allowWhitespace && (code === 9 || code === 10 || code === 13)) continue;
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
+}
 
 /** Same-site path, https address, or (when allowed) mailto:/tel:. Returns '' when unusable. */
 export function safeUrl(value: unknown, allowContact = false): string {
   const v = typeof value === 'string' ? value.trim() : '';
-  if (!v || v.length > 500 || CONTROL.test(v) || /[\s"'<>\\]/.test(v)) return '';
+  if (!v || v.length > 500 || hasControl(v) || /[\s"'<>\\]/.test(v)) return '';
   if (v.startsWith('#')) return /^#[A-Za-z0-9_-]{1,80}$/.test(v) ? v : '';
   if (v.startsWith('/')) return v.startsWith('//') ? '' : v;
   if (/^https:\/\/[^/]+/i.test(v)) return v;
@@ -57,8 +65,7 @@ export function validateField(field: FieldDef, input: unknown): FieldResult {
       const v = (typeof input === 'string' ? input : '').replace(/\r\n/g, '\n').trim();
       if (!v) return field.required ? bad('is required.') : { ok: true, value: '' };
       if (v.length > (field.max ?? 300)) return bad(`is too long (maximum ${field.max ?? 300} characters).`);
-      // eslint-disable-next-line no-control-regex
-      if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(v)) return bad('contains unsupported characters.');
+      if (hasControl(v, true)) return bad('contains unsupported characters.');
       return { ok: true, value: v };
     }
   }
