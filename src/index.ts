@@ -37,6 +37,7 @@ import { listSettings } from './admin/repos/settings-repo';
 import { findPublicMediaAsset } from './admin/repos/media-repo';
 import { BRAND } from './brand/defaults';
 import { withSharedFooter } from './web/shared-footer';
+import { notFoundPage } from './web/pages/not-found';
 
 const app = new Hono<{ Bindings: Env; Variables: { requestId: string } }>();
 
@@ -344,7 +345,7 @@ app.route('/', sellerRoutes);
 app.route('/', buyerRoutes);
 app.route('/dashboard', adminRoutes);
 
-app.notFound((c) => c.json({ error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404));
+app.notFound(async (c) => (await notFoundPage(c.env, c.req.raw)) ?? c.json({ error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404));
 
 app.onError((error, c) => {
   const safe = toSafeErrorResponse(error, c.get('requestId'));

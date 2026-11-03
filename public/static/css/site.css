@@ -596,6 +596,12 @@ p {
   color: var(--muted);
   font-size: 13px;
 }
+.not-found .eyebrow {
+  text-transform: uppercase;
+}
+.not-found .button {
+  margin: 0 3px;
+}
 .empty-icon {
   color: var(--gold);
   font-size: 25px;
