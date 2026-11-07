@@ -27,7 +27,7 @@ const browser = {
 const node = { process: 'readonly', console: 'readonly' };
 
 export default tseslint.config(
-  { ignores: ['node_modules/**', 'dist/**', '.wrangler/**', 'legacy-source/**', 'e2e/**'] },
+  { ignores: ['node_modules/**', 'dist/**', '.wrangler/**', 'legacy-source/**', 'e2e/**', 'tools/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

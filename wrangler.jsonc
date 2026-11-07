@@ -8,7 +8,7 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/healthz", "/api/*", "/dashboard/*", "/account/*"],
+    "run_worker_first": ["/healthz", "/api/*", "/dashboard/*", "/account/*", "/en/api/*"],
   },
   "observability": {
     "enabled": true,

@@ -1,0 +1,65 @@
+name: Release brokerage template
+
+# Publishes this repository to the Lummet control plane as a release of the "brokerage" application line:
+# the Worker bundle, the D1 migrations and the static files go to R2 (lummet-tenant-templates) and the release becomes the
+# one every NEW brokerage site is provisioned with. Publishing changes no existing site. Roll it out to the live sites
+# from the control plane (staff Deployments page) or tick "rollout" here.
+#
+# One-time setup (GitHub > Settings > Secrets and variables > Actions, environment "control-plane"):
+#   secret   LUMMET_STAFF_TOKEN       a control plane staff API token with release:publish (and rollout:run for rollouts)
+#   variable LUMMET_CONTROL_PLANE_URL https://luminousagents.com (no trailing slash)
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (letters, digits, dot, dash, underscore), for example 2026.11.1
+        required: true
+      notes:
+        description: Release notes
+        required: false
+      rollout:
+        description: Also roll it out to every live brokerage site, one at a time (stops at the first failure)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-tenant
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: control-plane
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - name: Release gates (structure, role matrix, leak audit)
+        run: |
+          node scripts/check-structure.mjs
+          node scripts/role-matrix.mjs --check
+          node --no-warnings scripts/leak-audit.mjs
+      - name: Publish to the control plane
+        env:
+          LUMMET_STAFF_TOKEN: ${{ secrets.LUMMET_STAFF_TOKEN }}
+          BASE: ${{ vars.LUMMET_CONTROL_PLANE_URL }}
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+          ROLLOUT: ${{ inputs.rollout }}
+        run: |
+          export PATH="$PWD/node_modules/.bin:$PATH"
+          FLAGS=""
+          if [ "$ROLLOUT" = "true" ]; then FLAGS="--rollout --wait"; fi
+          node tools/release/publish-tenant-release.mjs --base "$BASE" --version "$VERSION" --line brokerage \
+            --assets-root public --assets-dirs . --migrations-dir migrations --notes "${NOTES:-Release $VERSION}" \
+            --allow-existing $FLAGS
