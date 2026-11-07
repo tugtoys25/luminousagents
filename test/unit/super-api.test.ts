@@ -110,17 +110,23 @@ describe('storage limit and usage', () => {
     expect(await json(await call('PUT', '/en/api/super/storage-limit', await pushed(limit(99, 2))))).toMatchObject({ accepted: false, reason: 'stale_generation' });
     expect(await json(await call('GET', '/en/api/super/storage-usage'))).toMatchObject({ limitBytes: 10, limitGeneration: 3 });
 
-    const form = new FormData();
-    form.append('file', new File([new Uint8Array(4096)], 'big.png', { type: 'image/png' }));
-    const blocked = await SELF.fetch(`${BASE}/dashboard/media/upload`, { method: 'POST', body: form });
+    // A hand-built multipart body with an explicit Content-Length: the gate sizes uploads from that header, as browsers send it.
+    const boundary = '----supertest';
+    const body = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="big.png"\r\nContent-Type: image/png\r\n\r\n${'x'.repeat(4096)}\r\n--${boundary}--\r\n`;
+    const upload = () =>
+      SELF.fetch(`${BASE}/dashboard/media/upload`, {
+        method: 'POST',
+        headers: { 'content-type': `multipart/form-data; boundary=${boundary}`, 'content-length': String(body.length) },
+        body,
+      });
+    const blocked = await upload();
     expect(blocked.status).toBe(413);
     expect(await json(blocked)).toMatchObject({ error: { code: 'STORAGE_LIMIT_REACHED' } });
     const jsonPost = await SELF.fetch(`${BASE}/dashboard/tasks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"a":1}' });
     expect(jsonPost.status).not.toBe(413);
 
     expect(await json(await call('PUT', '/en/api/super/storage-limit', await pushed(limit(null, 4))))).toMatchObject({ accepted: true });
-    const open = await SELF.fetch(`${BASE}/dashboard/media/upload`, { method: 'POST', body: form });
-    expect(open.status).not.toBe(413);
+    expect((await upload()).status).not.toBe(413);
   });
 
   it('rejects an invalid or badly signed cap', async () => {
