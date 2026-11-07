@@ -47,7 +47,7 @@ export async function writeState(db: D1Database, key: StateKey, value: string, g
 export async function usedBytes(db: D1Database): Promise<number> {
   const row = await db
     .prepare(
-      `SELECT (SELECT COALESCE(SUM(byte_size), 0) FROM media_library)
+      `SELECT (SELECT COALESCE(SUM(byte_size), 0) FROM media_assets)
             + (SELECT COALESCE(SUM(byte_size), 0) FROM opportunity_media)
             + (SELECT COALESCE(SUM(byte_size), 0) FROM documents)
             + (SELECT COALESCE(SUM(byte_size), 0) FROM seller_authority_evidence WHERE r2_key IS NOT NULL) AS bytes`,
