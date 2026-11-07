@@ -92,14 +92,32 @@ function walk(dir) {
     e.isDirectory() ? walk(join(dir, e.name)) : e.name.startsWith(".") || CONFIG_FILES.has(e.name) ? [] : [join(dir, e.name)]);
 }
 
+// Strips line and block comments plus trailing commas from JSONC without touching string contents
+// (a rule like "/api/*" next to a cron like "*/5 * * * *" would otherwise be eaten as one block comment).
+function stripJsonc(text) {
+  let out = "", inStr = false, i = 0;
+  while (i < text.length) {
+    const c = text[i], n = text[i + 1];
+    if (inStr) {
+      out += c;
+      if (c === "\\") { out += n ?? ""; i += 2; continue; }
+      if (c === '"') inStr = false;
+      i++; continue;
+    }
+    if (c === '"') { inStr = true; out += c; i++; continue; }
+    if (c === "/" && n === "/") { while (i < text.length && text[i] !== "\n") i++; continue; }
+    if (c === "/" && n === "*") { i += 2; while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++; i += 2; continue; }
+    out += c; i++;
+  }
+  return out.replace(/,(\s*[}\]])/g, "$1");
+}
+
 /** The static-file rules of an application that defines its own (every line but casino): wrangler.jsonc + _headers. */
 function readAssetsConfig() {
   if (LINE === "casino") return null;
   const config = {};
   try {
-    const raw = readFileSync("wrangler.jsonc", "utf8")
-      .replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/,(\s*[}\]])/g, "$1");
-    const first = JSON.parse(raw)?.assets?.run_worker_first;
+    const first = JSON.parse(stripJsonc(readFileSync("wrangler.jsonc", "utf8")))?.assets?.run_worker_first;
     if (Array.isArray(first)) config.runWorkerFirst = first;
   } catch { console.error("Could not read assets.run_worker_first from wrangler.jsonc; every request will go to the Worker first."); }
   try { config.headers = readFileSync(join(ROOT, "_headers"), "utf8"); } catch { /* no _headers file */ }
