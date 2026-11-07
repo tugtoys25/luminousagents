@@ -26,7 +26,14 @@ export default defineWorkersConfig(async () => {
       poolOptions: {
         workers: {
           wrangler: { configPath: './wrangler.jsonc' },
-          miniflare: { bindings: { TEST_MIGRATIONS: migrations } },
+          miniflare: {
+            bindings: {
+              TEST_MIGRATIONS: migrations,
+              // Test-only control plane credential for test/unit/super-api.test.ts.
+              SUPER_API_CREDENTIAL_ID: 'test-credential',
+              SUPER_API_SECRET: 'test-super-secret-0123456789abcdef',
+            },
+          },
         },
       },
     },

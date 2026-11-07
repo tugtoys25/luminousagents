@@ -6,6 +6,11 @@ export type AppEnvironment = z.infer<typeof AppEnvironmentSchema>;
 export interface Env {
   APP_ENV: AppEnvironment;
   IP_HASH_SECRET?: string;
+  // Control plane (tenant) mode: set only on sites the Lummet control plane provisions and manages.
+  SUPER_API_CREDENTIAL_ID?: string;
+  SUPER_API_SECRET?: string;
+  DEPLOYMENT_ID?: string;
+  STORAGE_METERING_MODE?: string;
   TURNSTILE_SECRET_KEY?: string;
   TURNSTILE_SITE_KEY?: string;
   /** Temporary rollout switch. Leave unset (enforce). `log-only` logs and allows failed checks. */

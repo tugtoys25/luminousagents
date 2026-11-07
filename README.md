@@ -66,3 +66,5 @@ Layering: routes → services → `*repo.ts` (SQL lives only in repositories). N
 
 See `docs/RUNBOOK.md`, `docs/SECURITY.md`, `docs/LAUNCH_CHECKLIST.md`, `docs/BACKUPS_AND_RESTORE.md`,
 `docs/MONITORING_AND_ALERTS.md`. Product decisions: `docs/PRODUCT_DECISIONS.md`.
+
+Managed by a Lummet control plane (brokerage line, Super API, releases): see docs/CONTROL_PLANE.md.

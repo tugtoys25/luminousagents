@@ -38,12 +38,15 @@ import { findPublicMediaAsset } from './admin/repos/media-repo';
 import { BRAND } from './brand/defaults';
 import { withSharedFooter } from './web/shared-footer';
 import { notFoundPage } from './web/pages/not-found';
+import { mountSuperApi } from './super-api/mount';
+import { withInlineQueue } from './operations/inline-queue';
 
 const app = new Hono<{ Bindings: Env; Variables: { requestId: string } }>();
 
 app.use('*', requestIdMiddleware);
 app.use('*', securityHeadersMiddleware);
 app.use('*', publicCacheMiddleware);
+mountSuperApi(app);
 app.use('/api/buyer/*', sameOriginMutationMiddleware);
 app.use('/api/admin/*', sameOriginMutationMiddleware);
 app.use('/dashboard/*', sameOriginMutationMiddleware);
@@ -363,9 +366,10 @@ app.onError((error, c) => {
 });
 
 export default {
-  fetch: app.fetch,
+  fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, withInlineQueue(env, ctx), ctx),
   queue: consumeNotifications,
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+  async scheduled(_controller: ScheduledController, rawEnv: Env, ctx: ExecutionContext) {
+    const env = withInlineQueue(rawEnv, ctx);
     ctx.waitUntil(
       runEvidencePurge(env).catch((error: unknown) => {
         loggerFor(env).error('seller_evidence_purge_failed', { errorType: error instanceof Error ? error.name : 'UnknownError' });
